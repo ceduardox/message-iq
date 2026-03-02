@@ -683,6 +683,12 @@ export async function registerRoutes(
   );
 
   // === DIAGNOSTIC ENDPOINTS (Public) ===
+  app.get("/api/public-config", (_req, res) => {
+    res.json({
+      oneSignalAppId: process.env.ONESIGNAL_APP_ID || null,
+    });
+  });
+
   app.get("/api/audio-logs", (req, res) => {
     res.json({ logs: audioDebugLogs, count: audioDebugLogs.length });
   });

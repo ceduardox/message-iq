@@ -55,7 +55,7 @@
     <script>
       // OneSignal initialization with full configuration
       const configuredOneSignalAppId = "%VITE_ONESIGNAL_APP_ID%";
-      const oneSignalAppId =
+      let oneSignalAppId =
         configuredOneSignalAppId && configuredOneSignalAppId !== "%VITE_ONESIGNAL_APP_ID%"
           ? configuredOneSignalAppId
           : "";
@@ -65,46 +65,66 @@
       window.oneSignalClient = null;
       window.oneSignalInitError = null;
       window.oneSignalInitPromise = null;
+      window.oneSignalAppId = oneSignalAppId || null;
+
+      async function resolveOneSignalAppId() {
+        if (oneSignalAppId) return oneSignalAppId;
+        try {
+          const response = await fetch("/api/public-config", { credentials: "same-origin" });
+          if (!response.ok) return "";
+          const config = await response.json();
+          if (config?.oneSignalAppId && typeof config.oneSignalAppId === "string") {
+            oneSignalAppId = config.oneSignalAppId;
+            window.oneSignalAppId = oneSignalAppId;
+            return oneSignalAppId;
+          }
+        } catch (error) {
+          console.error("[OneSignal] Failed to fetch public config:", error);
+        }
+        return "";
+      }
 
       function initOneSignalClient() {
         if (window.oneSignalInitPromise) return window.oneSignalInitPromise;
-        window.oneSignalInitPromise = new Promise((resolve) => {
-          if (!oneSignalAppId) {
+        window.oneSignalInitPromise = (async function () {
+          const resolvedAppId = await resolveOneSignalAppId();
+          if (!resolvedAppId) {
             window.oneSignalReady = false;
-            window.oneSignalInitError = "Missing VITE_ONESIGNAL_APP_ID";
-            resolve(false);
-            return;
+            window.oneSignalInitError = "Missing OneSignal App ID";
+            return false;
           }
 
-          window.OneSignalDeferred.push(async function(OneSignal) {
-            try {
-              await OneSignal.init({
-                appId: oneSignalAppId,
-                allowLocalhostAsSecureOrigin: true,
-                serviceWorkerPath: "/OneSignalSDKWorker.js",
-                serviceWorkerParam: { scope: "/" },
-                notifyButton: {
-                  enable: false
-                }
-              });
-              
-              window.oneSignalClient = OneSignal;
-              window.oneSignalReady = true;
-              window.oneSignalInitError = null;
-              console.log("[OneSignal] SDK initialized successfully. App ID:", oneSignalAppId);
-              
-              const permission = OneSignal.Notifications.permission;
-              const subscribed = OneSignal.User.PushSubscription.optedIn;
-              console.log("[OneSignal] Current status - Permission:", permission, "Subscribed:", subscribed);
-              resolve(true);
-            } catch (error) {
-              window.oneSignalReady = false;
-              window.oneSignalInitError = error?.message || "OneSignal init failed";
-              console.error("[OneSignal] Init error:", error);
-              resolve(false);
-            }
+          return new Promise((resolve) => {
+            window.OneSignalDeferred.push(async function(OneSignal) {
+              try {
+                await OneSignal.init({
+                  appId: resolvedAppId,
+                  allowLocalhostAsSecureOrigin: true,
+                  serviceWorkerPath: "/OneSignalSDKWorker.js",
+                  serviceWorkerParam: { scope: "/" },
+                  notifyButton: {
+                    enable: false
+                  }
+                });
+                
+                window.oneSignalClient = OneSignal;
+                window.oneSignalReady = true;
+                window.oneSignalInitError = null;
+                console.log("[OneSignal] SDK initialized successfully. App ID:", resolvedAppId);
+                
+                const permission = OneSignal.Notifications.permission;
+                const subscribed = OneSignal.User.PushSubscription.optedIn;
+                console.log("[OneSignal] Current status - Permission:", permission, "Subscribed:", subscribed);
+                resolve(true);
+              } catch (error) {
+                window.oneSignalReady = false;
+                window.oneSignalInitError = error?.message || "OneSignal init failed";
+                console.error("[OneSignal] Init error:", error);
+                resolve(false);
+              }
+            });
           });
-        });
+        })();
         return window.oneSignalInitPromise;
       }
 
