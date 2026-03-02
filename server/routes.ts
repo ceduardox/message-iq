@@ -2000,7 +2000,9 @@ Máximo 2 líneas. Sé específico y práctico.`;
   // === AGENT MANAGEMENT (Admin only) ===
   app.get("/api/agents", requireAdmin, async (_req, res) => {
     try {
-      const statsResult = await db.execute(sql`
+      let statsResult;
+      try {
+        statsResult = await db.execute(sql`
         SELECT
           a.id,
           a.name,
@@ -2029,6 +2031,42 @@ Máximo 2 líneas. Sé específico y práctico.`;
         ) s ON s.agent_id = a.id
         ORDER BY a.name ASC
       `);
+      } catch (error: any) {
+        // Backward-compatible fallback if production DB still lacks is_ai_auto_reply_enabled
+        if (String(error?.message || "").includes("is_ai_auto_reply_enabled")) {
+          statsResult = await db.execute(sql`
+            SELECT
+              a.id,
+              a.name,
+              a.username,
+              a.password,
+              a.is_active AS "isActive",
+              true AS "isAiAutoReplyEnabled",
+              a.weight,
+              a.created_at AS "createdAt",
+              COALESCE(s.assigned_conversations, 0) AS "assignedConversations",
+              COALESCE(s.inbound_messages, 0) AS "inboundMessages",
+              COALESCE(s.should_call_count, 0) AS "shouldCallCount",
+              s.last_activity_at AS "lastActivityAt"
+            FROM agents a
+            LEFT JOIN (
+              SELECT
+                c.assigned_agent_id AS agent_id,
+                COUNT(DISTINCT c.id) AS assigned_conversations,
+                COUNT(m.id) FILTER (WHERE m.direction = 'in') AS inbound_messages,
+                COUNT(DISTINCT c.id) FILTER (WHERE c.should_call = true) AS should_call_count,
+                MAX(m.created_at) AS last_activity_at
+              FROM conversations c
+              LEFT JOIN messages m ON m.conversation_id = c.id
+              WHERE c.assigned_agent_id IS NOT NULL
+              GROUP BY c.assigned_agent_id
+            ) s ON s.agent_id = a.id
+            ORDER BY a.name ASC
+          `);
+        } else {
+          throw error;
+        }
+      }
 
       const agentsList = statsResult.rows.map((row: any) => ({
         ...row,
@@ -2039,6 +2077,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
 
       res.json(agentsList);
     } catch (error) {
+      console.error("Error fetching agents:", error);
       res.status(500).json({ message: "Error fetching agents" });
     }
   });
