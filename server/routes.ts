@@ -1345,6 +1345,13 @@ export async function registerRoutes(
     }
     
     const updated = await storage.updateConversation(id, { orderStatus: parsed.data.orderStatus });
+    if (parsed.data.orderStatus === "pending") {
+      sendPushNotification(
+        "Pedido en Proceso",
+        `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
+      );
+    }
     res.json(updated);
   });
 
@@ -1397,6 +1404,13 @@ export async function registerRoutes(
     }
 
     const updated = await storage.updateConversation(id, updates);
+    if (column === "proceso") {
+      sendPushNotification(
+        "Pedido en Proceso",
+        `${updated.contactName || updated.waId}: Pedido marcado en proceso`,
+        { conversationId: id.toString(), waId: updated.waId, event: "order_pending" },
+      );
+    }
     res.json(updated);
   });
 
