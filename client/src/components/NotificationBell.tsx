@@ -19,7 +19,7 @@ import {
 declare global {
   interface Window {
     subscribeToNotifications: () => Promise<{ success: boolean; subscribed?: boolean; reason?: string; message?: string }>;
-    getNotificationStatus: () => { ready: boolean; permission: boolean; subscribed: boolean };
+    getNotificationStatus: () => { ready: boolean; permission: boolean; subscribed: boolean; error?: string | null };
     oneSignalReady: boolean;
   }
 }
@@ -131,10 +131,7 @@ export function NotificationBell() {
     }
 
     if (status === "loading") {
-      toast({
-        title: "Cargando...",
-        description: "Espera unos segundos e intenta de nuevo",
-      });
+      handleSubscribe();
       return;
     }
 

@@ -57,40 +57,62 @@
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       window.oneSignalReady = false;
       window.oneSignalClient = null;
-      
-      OneSignalDeferred.push(async function(OneSignal) {
-        try {
-          await OneSignal.init({
-            appId: "07dfe1e4-83b1-4623-b57c-e6e33232d4eb",
-            allowLocalhostAsSecureOrigin: true,
-            serviceWorkerPath: "/OneSignalSDKWorker.js",
-            serviceWorkerParam: { scope: "/" },
-            notifyButton: {
-              enable: false
+      window.oneSignalInitError = null;
+      window.oneSignalInitPromise = null;
+
+      function initOneSignalClient() {
+        if (window.oneSignalInitPromise) return window.oneSignalInitPromise;
+        window.oneSignalInitPromise = new Promise((resolve) => {
+          window.OneSignalDeferred.push(async function(OneSignal) {
+            try {
+              await OneSignal.init({
+                appId: "07dfe1e4-83b1-4623-b57c-e6e33232d4eb",
+                allowLocalhostAsSecureOrigin: true,
+                serviceWorkerPath: "/OneSignalSDKWorker.js",
+                serviceWorkerParam: { scope: "/" },
+                notifyButton: {
+                  enable: false
+                }
+              });
+              
+              window.oneSignalClient = OneSignal;
+              window.oneSignalReady = true;
+              window.oneSignalInitError = null;
+              console.log("[OneSignal] SDK initialized successfully");
+              
+              const permission = OneSignal.Notifications.permission;
+              const subscribed = OneSignal.User.PushSubscription.optedIn;
+              console.log("[OneSignal] Current status - Permission:", permission, "Subscribed:", subscribed);
+              resolve(true);
+            } catch (error) {
+              window.oneSignalReady = false;
+              window.oneSignalInitError = error?.message || "OneSignal init failed";
+              console.error("[OneSignal] Init error:", error);
+              resolve(false);
             }
           });
-          
-          window.oneSignalClient = OneSignal;
-          window.oneSignalReady = true;
-          console.log("[OneSignal] SDK initialized successfully");
-          
-          // Check current status
-          const permission = OneSignal.Notifications.permission;
-          const subscribed = OneSignal.User.PushSubscription.optedIn;
-          console.log("[OneSignal] Current status - Permission:", permission, "Subscribed:", subscribed);
-          
-        } catch (error) {
-          console.error("[OneSignal] Init error:", error);
-        }
-      });
+        });
+        return window.oneSignalInitPromise;
+      }
+
+      initOneSignalClient();
       
       // Expose function to manually trigger subscription
       window.subscribeToNotifications = async function() {
         console.log("[OneSignal] Subscribe called, ready:", window.oneSignalReady);
+        if (!window.oneSignalReady) {
+          const initPromise = initOneSignalClient();
+          await Promise.race([
+            initPromise,
+            new Promise((resolve) => setTimeout(() => resolve(false), 8000)),
+          ]);
+        }
+
         const OneSignal = window.oneSignalClient;
         
         if (!window.oneSignalReady || !OneSignal) {
-          return { success: false, reason: "OneSignal not ready yet" };
+          const reason = window.oneSignalInitError || "OneSignal not ready yet";
+          return { success: false, reason };
         }
         
         try {
@@ -125,7 +147,7 @@
       window.getNotificationStatus = function() {
         const OneSignal = window.oneSignalClient;
         if (!window.oneSignalReady || !OneSignal) {
-          return { ready: false, permission: false, subscribed: false };
+          return { ready: false, permission: false, subscribed: false, error: window.oneSignalInitError || null };
         }
         return {
           ready: true,
