@@ -400,9 +400,68 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
   return Buffer.from(response.data);
 }
 
+async function generateTtsAudioBuffer(
+  text: string,
+  voice: string = "nova",
+  options: TtsOptions = {},
+  output: "whatsapp" | "preview" = "whatsapp",
+): Promise<{ audioBuffer: Buffer; fileExt: "mp3" | "opus"; contentType: string }> {
+  const provider = options.provider || "openai";
+  const isElevenLabs = provider === "elevenlabs";
+  const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (isElevenLabs) {
+    const elVoiceId = options.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
+    const audioBuffer = await generateElevenLabsAudio(text, elVoiceId);
+    return {
+      audioBuffer,
+      fileExt: "mp3",
+      contentType: "audio/mpeg",
+    };
+  }
+
+  if (!openaiKey) {
+    throw new Error("Missing OpenAI API key");
+  }
+
+  const openai = new OpenAI({ apiKey: openaiKey });
+  const realisticVoices = ["ash", "ballad", "sage", "verse", "marin", "cedar"];
+  const isRealisticVoice = realisticVoices.includes(voice.toLowerCase());
+  const ttsModel = isRealisticVoice ? "gpt-4o-mini-tts" : "tts-1";
+  const speed = options.speed ? Math.max(0.25, Math.min(4.0, options.speed)) : 1.0;
+  const responseFormat = output === "preview" ? "mp3" : "opus";
+
+  const ttsRequest: any = {
+    model: ttsModel,
+    voice: voice as any,
+    input: text,
+    response_format: responseFormat,
+    speed,
+  };
+
+  if (isRealisticVoice && options.instructions) {
+    ttsRequest.instructions = options.instructions;
+  }
+
+  const audioResponse = await openai.audio.speech.create(ttsRequest);
+  const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+  if (output === "preview") {
+    return {
+      audioBuffer,
+      fileExt: "mp3",
+      contentType: "audio/mpeg",
+    };
+  }
+
+  return {
+    audioBuffer,
+    fileExt: "opus",
+    contentType: "audio/ogg; codecs=opus",
+  };
+}
+
 // Generate audio response and send via WhatsApp
 async function sendAudioResponse(phoneNumber: string, text: string, voice: string = "nova", options: TtsOptions = {}): Promise<boolean> {
-  const openaiKey = process.env.OPENAI_API_KEY;
   const token = process.env.META_ACCESS_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
   
@@ -413,52 +472,14 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
   
   const provider = options.provider || "openai";
   
-  if (provider === "openai" && !openaiKey) {
-    console.log("[TTS] Missing OpenAI API key");
-    return false;
-  }
-  
   let tempPath: string | null = null;
   
   try {
-    let audioBuffer: Buffer;
-    const isElevenLabs = provider === "elevenlabs";
-    const fileExt = isElevenLabs ? "mp3" : "opus";
-    const contentType = isElevenLabs ? "audio/mpeg" : "audio/ogg; codecs=opus";
-    
-    if (isElevenLabs) {
-      const elVoiceId = options.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
-      console.log("[TTS] ElevenLabs generating audio, voice:", elVoiceId);
-      audioBuffer = await generateElevenLabsAudio(text, elVoiceId);
-      console.log("[TTS] ElevenLabs audio generated:", audioBuffer.length, "bytes");
-    } else {
-      console.log("[TTS] OpenAI generating audio for:", text.substring(0, 50) + "...");
-      const openai = new OpenAI({ apiKey: openaiKey });
-      
-      const realisticVoices = ["ash", "ballad", "sage", "verse", "marin", "cedar"];
-      const isRealisticVoice = realisticVoices.includes(voice.toLowerCase());
-      const ttsModel = isRealisticVoice ? "gpt-4o-mini-tts" : "tts-1";
-      const speed = options.speed ? Math.max(0.25, Math.min(4.0, options.speed)) : 1.0;
-      
-      console.log("[TTS] Using model:", ttsModel, "for voice:", voice, "speed:", speed);
-      
-      const ttsRequest: any = {
-        model: ttsModel,
-        voice: voice as any,
-        input: text,
-        response_format: "opus",
-        speed: speed
-      };
-      
-      if (isRealisticVoice && options.instructions) {
-        ttsRequest.instructions = options.instructions;
-        console.log("[TTS] Using instructions:", options.instructions.substring(0, 50) + "...");
-      }
-      
-      const audioResponse = await openai.audio.speech.create(ttsRequest);
-      audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-      console.log("[TTS] OpenAI audio generated:", audioBuffer.length, "bytes");
-    }
+    const generated = await generateTtsAudioBuffer(text, voice, options, "whatsapp");
+    const audioBuffer = generated.audioBuffer;
+    const fileExt = generated.fileExt;
+    const contentType = generated.contentType;
+    console.log("[TTS] Audio generated:", audioBuffer.length, "bytes", { provider, fileExt });
     
     tempPath = path.join(os.tmpdir(), `tts_${Date.now()}.${fileExt}`);
     fs.writeFileSync(tempPath, audioBuffer);
@@ -1919,6 +1940,14 @@ NO uses saludos formales. Sé directo y amigable.`
     title: z.string().max(200).nullable().optional(),
     content: z.string().min(1),
   });
+  const ttsPreviewSchema = z.object({
+    provider: z.enum(["openai", "elevenlabs"]),
+    voice: z.string().optional(),
+    elevenlabsVoiceId: z.string().optional(),
+    speed: z.number().min(25).max(400).optional(),
+    instructions: z.string().nullable().optional(),
+    text: z.string().min(1).max(300).optional(),
+  });
 
   // Get ElevenLabs available voices (user's own + shared Latin American female voices)
   app.get("/api/elevenlabs/voices", requireAuth, async (req, res) => {
@@ -2077,6 +2106,32 @@ NO uses saludos formales. Sé directo y amigable.`
   // Get push notification logs
   app.get("/api/push-logs", requireAuth, async (req, res) => {
     res.json(pushLogs);
+  });
+
+  app.post("/api/tts/preview", requireAuth, async (req, res) => {
+    try {
+      const parsed = ttsPreviewSchema.parse(req.body);
+      const previewText =
+        parsed.text?.trim() ||
+        "Hola, esta es una prueba de voz para tu CRM de WhatsApp.";
+      const voice = parsed.voice || "nova";
+      const options: TtsOptions = {
+        provider: parsed.provider,
+        elevenlabsVoiceId: parsed.elevenlabsVoiceId,
+        speed: parsed.speed ? parsed.speed / 100 : 1.0,
+        instructions: parsed.instructions ?? null,
+      };
+      const generated = await generateTtsAudioBuffer(previewText, voice, options, "preview");
+      res.setHeader("Content-Type", generated.contentType);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(generated.audioBuffer);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid preview payload", errors: error.errors });
+      }
+      console.error("Error generating TTS preview:", error.response?.data || error.message || error);
+      res.status(500).json({ message: "Error generating TTS preview" });
+    }
   });
 
   const pushSettingsUpdateSchema = z.object({

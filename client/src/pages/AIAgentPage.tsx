@@ -108,6 +108,7 @@ export default function AIAgentPage() {
   const [ttsProvider, setTtsProvider] = useState("openai");
   const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState("JBFqnCBsd6RMkjVDRZzb");
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(100);
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
@@ -335,6 +336,58 @@ export default function AIAgentPage() {
   const handleSaveConfig = () => {
     console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
     updateSettingsMutation.mutate({ maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioVoice, ttsProvider, elevenlabsVoiceId, ttsSpeed, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
+  };
+
+  const playVoicePreview = async () => {
+    try {
+      setPreviewPlaying(true);
+      const payload =
+        ttsProvider === "elevenlabs"
+          ? {
+              provider: "elevenlabs",
+              elevenlabsVoiceId,
+              text: "Hola, esta es una prueba de voz para tu CRM.",
+            }
+          : {
+              provider: "openai",
+              voice: audioVoice,
+              speed: ttsSpeed,
+              instructions: ttsInstructions || null,
+              text: "Hola, esta es una prueba de voz para tu CRM.",
+            };
+
+      const response = await fetch("/api/tts/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        setPreviewPlaying(false);
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        setPreviewPlaying(false);
+        toast({ title: "Error", description: "No se pudo reproducir la muestra", variant: "destructive" });
+      };
+      await audio.play();
+    } catch (error: any) {
+      setPreviewPlaying(false);
+      toast({
+        title: "Error al generar muestra",
+        description: error?.message || "No se pudo generar la muestra de voz",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddProduct = () => {
@@ -657,8 +710,8 @@ export default function AIAgentPage() {
                       className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                       data-testid="input-search-voice-openai"
                     />
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {filteredOpenAiVoices.map((voice) => (
+	                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+	                      {filteredOpenAiVoices.map((voice) => (
                         <button
                           key={voice.value}
                           type="button"
@@ -678,10 +731,21 @@ export default function AIAgentPage() {
                           <div className="font-semibold text-sm text-white">{voice.label}</div>
                           <div className={`text-xs ${voice.realistic ? "text-amber-400" : "text-slate-400"}`}>{voice.desc}</div>
                         </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+	                      ))}
+	                    </div>
+	                    <Button
+	                      type="button"
+	                      variant="outline"
+	                      onClick={playVoicePreview}
+	                      disabled={previewPlaying}
+	                      className="border-emerald-500/40 hover:bg-emerald-500/10"
+	                      data-testid="button-preview-openai-voice"
+	                    >
+	                      {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+	                      Probar voz seleccionada
+	                    </Button>
+	                  </>
+	                )}
 
                 {ttsProvider === "elevenlabs" && (
                   <>
@@ -704,8 +768,9 @@ export default function AIAgentPage() {
                         <p className="text-sm text-violet-300">Cargando voces de ElevenLabs...</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
-                        {filteredElevenLabsVoices.map((voice) => (
+                      <>
+	                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+	                        {filteredElevenLabsVoices.map((voice) => (
                           <button
                             key={voice.voice_id}
                             type="button"
@@ -730,11 +795,23 @@ export default function AIAgentPage() {
                             </div>
                             <div className="text-xs text-violet-400 truncate">{voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "Custom"}</div>
                           </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
+	                        ))}
+	                      </div>
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        onClick={playVoicePreview}
+	                        disabled={previewPlaying}
+	                        className="border-violet-500/40 hover:bg-violet-500/10"
+	                        data-testid="button-preview-elevenlabs-voice"
+		                      >
+		                        {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+		                        Probar voz seleccionada
+		                      </Button>
+                      </>
+	                    )}
+	                  </>
+	                )}
                 
                 <div className="grid gap-4 sm:grid-cols-2 mt-4 pt-4 border-t border-slate-700/50">
                   {ttsProvider === "openai" && (
