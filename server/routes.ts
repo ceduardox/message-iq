@@ -1492,6 +1492,7 @@ export async function registerRoutes(
       }
 
       const normalizedMimeType = String(file.mimetype || "").toLowerCase();
+      const baseMimeType = normalizedMimeType.split(";")[0].trim();
       const allowedAudioMimePrefixes = [
         "audio/ogg",
         "audio/mpeg",
@@ -1502,7 +1503,7 @@ export async function registerRoutes(
         "audio/x-wav",
         "audio/webm",
       ];
-      if (!allowedAudioMimePrefixes.some((prefix) => normalizedMimeType.startsWith(prefix))) {
+      if (!allowedAudioMimePrefixes.some((prefix) => baseMimeType.startsWith(prefix))) {
         return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, WAV o WEBM." });
       }
 
@@ -1514,9 +1515,9 @@ export async function registerRoutes(
 
       const FormData = (await import("form-data")).default;
       const formData = new FormData();
-      formData.append("file", file.buffer, { filename: file.originalname, contentType: normalizedMimeType });
+      formData.append("file", file.buffer, { filename: file.originalname, contentType: baseMimeType });
       formData.append("messaging_product", "whatsapp");
-      formData.append("type", normalizedMimeType);
+      formData.append("type", baseMimeType);
 
       const uploadRes = await axios.post(
         `https://graph.facebook.com/v24.0/${phoneId}/media`,
@@ -1557,15 +1558,16 @@ export async function registerRoutes(
         conversationId: conversation.id, waMessageId,
         direction: "out", type: "audio",
         text: "[audio]",
-        mediaId, mimeType: normalizedMimeType,
+        mediaId, mimeType: baseMimeType,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent", rawJson: waResponse.data,
       });
 
       res.json({ success: true, messageId: waMessageId });
     } catch (error: any) {
+      const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
       console.error("Audio upload error:", error.response?.data || error.message);
-      res.status(500).json({ message: "Failed to send audio", error: error.message });
+      res.status(500).json({ message: "Failed to send audio", error: details });
     }
   });
 

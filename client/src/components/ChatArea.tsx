@@ -176,10 +176,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const getRecordingMimeType = () => {
     if (typeof MediaRecorder === "undefined") return "";
     const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
       "audio/ogg;codecs=opus",
       "audio/ogg",
+      "audio/mp4",
+      "audio/webm;codecs=opus",
+      "audio/webm",
     ];
     for (const candidate of candidates) {
       if (MediaRecorder.isTypeSupported(candidate)) return candidate;
