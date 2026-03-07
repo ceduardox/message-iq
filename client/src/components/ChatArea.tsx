@@ -250,10 +250,10 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     }
     const mimeType = getRecordingMimeType();
     if (!mimeType) {
+      audioInputRef.current?.click();
       toast({
-        title: "Formato no compatible",
-        description: "Este navegador no graba en OGG/Opus compatible con WhatsApp. Usa Audio (archivo) en MP3/M4A.",
-        variant: "destructive",
+        title: "Grabacion directa no disponible",
+        description: "Se abrio selector de audio del telefono. Graba/sube en MP3 o M4A.",
       });
       return;
     }
@@ -1197,6 +1197,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         ref={audioInputRef}
         type="file"
         accept="audio/*"
+        capture="user"
         className="hidden"
         onChange={handleAudioFileSelect}
         data-testid="input-file-audio"
