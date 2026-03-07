@@ -43,6 +43,21 @@ const LABEL_COLORS = [
   { name: "orange", bg: "bg-orange-500", text: "text-white" },
 ];
 
+const recordingWaveCss = `
+@keyframes recording-wave {
+  0%, 100% { transform: scaleY(0.35); opacity: 0.6; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+.recording-wave-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 9999px;
+  background: rgb(239 68 68);
+  transform-origin: bottom;
+  animation: recording-wave 1s ease-in-out infinite;
+}
+`;
+
 export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -607,6 +622,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
 
   return (
     <div className="flex flex-col h-full max-h-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
+      <style dangerouslySetInnerHTML={{ __html: recordingWaveCss }} />
       {/* Chat Header */}
       <header className="flex-shrink-0 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/30 flex flex-col md:flex-row md:items-center md:justify-between px-3 md:px-4 py-2 md:py-0 z-20">
         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1114,7 +1130,15 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         {isRecording && (
           <div className="mb-2 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="flex items-end gap-0.5 h-4">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <span
+                    key={index}
+                    className="recording-wave-bar"
+                    style={{ animationDelay: `${index * 90}ms` }}
+                  />
+                ))}
+              </span>
               Grabando: {formatRecordingTime(recordingSeconds)}
             </span>
             <span>Toca mic para detener</span>
