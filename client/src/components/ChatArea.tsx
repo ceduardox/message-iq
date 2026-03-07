@@ -115,6 +115,26 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     setFailedMediaIds((prev) => (prev[mediaId] ? prev : { ...prev, [mediaId]: true }));
   };
 
+  const getReferralInfo = (msg: Message) => {
+    const raw = msg.rawJson as any;
+    const referral = raw?.referral || raw?.context?.referral;
+    if (!referral) return null;
+
+    const sourceType = referral.source_type || referral.sourceType || "";
+    const sourceUrl = referral.source_url || referral.sourceUrl || "";
+    const headline = referral.headline || referral.title || "Ver detalles";
+
+    let sourceLabel = "Anuncio";
+    if (String(sourceType).toLowerCase().includes("facebook")) sourceLabel = "Anuncio de Facebook";
+    if (String(sourceType).toLowerCase().includes("instagram")) sourceLabel = "Anuncio de Instagram";
+
+    return {
+      sourceLabel,
+      headline: String(headline),
+      sourceUrl: sourceUrl ? String(sourceUrl) : "",
+    };
+  };
+
   const reassignMutation = useMutation({
     mutationFn: async (agentId: number | null) => {
       const res = await fetch(`/api/conversations/${conversation.id}/assign`, {
@@ -790,6 +810,26 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                       </div>
                     </div>
                   ) : null;
+                })()}
+
+                {(() => {
+                  const referral = getReferralInfo(msg);
+                  if (!referral) return null;
+                  return (
+                    <div className="mb-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-xs">
+                      <p className="font-medium text-emerald-700 dark:text-emerald-300">{referral.sourceLabel}</p>
+                      <p className="text-slate-700 dark:text-slate-200">{referral.headline}</p>
+                      {referral.sourceUrl && (
+                        <button
+                          type="button"
+                          className="mt-1 text-cyan-700 dark:text-cyan-300 underline"
+                          onClick={() => window.open(referral.sourceUrl, "_blank", "noopener,noreferrer")}
+                        >
+                          Ver detalles
+                        </button>
+                      )}
+                    </div>
+                  );
                 })()}
                 
                 {msg.text && !(msg.type === "sticker" && msg.text.startsWith("[Sticker")) && (
