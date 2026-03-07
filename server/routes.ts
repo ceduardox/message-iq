@@ -1505,7 +1505,15 @@ export async function registerRoutes(
       if (!allowedAudioMimePrefixes.some((prefix) => baseMimeType.startsWith(prefix))) {
         return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, AAC o AMR." });
       }
+      const isOggOpus = baseMimeType === "audio/ogg" && /codecs\s*=\s*opus/.test(normalizedMimeType);
+      if (baseMimeType === "audio/ogg" && !isOggOpus) {
+        return res.status(400).json({
+          message: "OGG no compatible",
+          error: "WhatsApp requiere OGG con codec OPUS. Usa M4A/MP3 o graba desde el microfono del CRM.",
+        });
+      }
       const mimeTypeForMeta =
+        baseMimeType === "audio/ogg" ? (isOggOpus ? "audio/ogg; codecs=opus" : "audio/ogg") :
         baseMimeType === "audio/x-m4a" ? "audio/mp4" :
         baseMimeType === "audio/mp3" ? "audio/mpeg" :
         baseMimeType;
