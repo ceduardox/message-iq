@@ -229,7 +229,6 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     const candidates = [
       "audio/ogg;codecs=opus",
       "audio/ogg",
-      "audio/mp4",
     ];
     for (const candidate of candidates) {
       if (MediaRecorder.isTypeSupported(candidate)) return candidate;
@@ -253,7 +252,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     if (!mimeType) {
       toast({
         title: "Formato no compatible",
-        description: "Este navegador no graba en OGG/MP4 compatible con WhatsApp. Usa Audio (archivo) en MP3/M4A.",
+        description: "Este navegador no graba en OGG/Opus compatible con WhatsApp. Usa Audio (archivo) en MP3/M4A.",
         variant: "destructive",
       });
       return;
@@ -312,6 +311,15 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           toast({
             title: "Formato no compatible",
             description: "Esta grabacion salio en WEBM y WhatsApp puede rechazarla. Usa Audio (archivo) en MP3/M4A/OGG.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (!finalMimeType.includes("ogg")) {
+          toast({
+            title: "Grabacion incompatible",
+            description: "La grabacion no salio en OGG/Opus. Usa Audio (archivo) en MP3/M4A.",
             variant: "destructive",
           });
           return;
