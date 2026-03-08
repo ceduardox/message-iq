@@ -16,6 +16,8 @@ import path from "path";
 import os from "os";
 import multer from "multer";
 import { sql } from "drizzle-orm";
+import { spawn } from "child_process";
+import ffmpegStatic from "ffmpeg-static";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
@@ -239,6 +241,69 @@ function logAudioDebug(step: string, data: any) {
   audioDebugLogs.push(entry);
   if (audioDebugLogs.length > 50) audioDebugLogs.shift(); // Keep last 50 entries
   console.log(`[Audio] ${step}:`, JSON.stringify(data));
+}
+
+function inferAudioMimeType(rawMimeType: string, filename: string): string {
+  const normalized = String(rawMimeType || "").toLowerCase().split(";")[0].trim();
+  if (normalized && normalized !== "application/octet-stream") return normalized;
+
+  const ext = path.extname(filename || "").toLowerCase();
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".m4a" || ext === ".mp4") return "audio/mp4";
+  if (ext === ".ogg" || ext === ".oga" || ext === ".opus") return "audio/ogg";
+  if (ext === ".aac") return "audio/aac";
+  if (ext === ".amr") return "audio/amr";
+  if (ext === ".wav") return "audio/wav";
+  if (ext === ".webm") return "audio/webm";
+  if (ext === ".3gp" || ext === ".3gpp") return "audio/3gpp";
+  return normalized;
+}
+
+async function transcodeToWhatsAppAudio(input: Buffer): Promise<Buffer> {
+  const ffmpegPath = ffmpegStatic || process.env.FFMPEG_PATH || "ffmpeg";
+
+  return await new Promise<Buffer>((resolve, reject) => {
+    const args = [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      "pipe:0",
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "libopus",
+      "-b:a",
+      "32k",
+      "-f",
+      "ogg",
+      "pipe:1",
+    ];
+    const ffmpeg = spawn(ffmpegPath, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+
+    ffmpeg.stdout.on("data", (chunk: Buffer) => outChunks.push(chunk));
+    ffmpeg.stderr.on("data", (chunk: Buffer) => errChunks.push(chunk));
+    ffmpeg.on("error", (err) => reject(new Error(`FFmpeg spawn error: ${err.message}`)));
+    ffmpeg.on("close", (code) => {
+      if (code !== 0) {
+        const stderr = Buffer.concat(errChunks).toString("utf8").trim();
+        return reject(new Error(stderr || `FFmpeg exited with code ${code}`));
+      }
+      const output = Buffer.concat(outChunks);
+      if (!output.length) return reject(new Error("FFmpeg output is empty"));
+      resolve(output);
+    });
+
+    ffmpeg.stdin.on("error", () => {
+      // ignore EPIPE when ffmpeg exits early on invalid input
+    });
+    ffmpeg.stdin.end(input);
+  });
 }
 
 // Download audio from WhatsApp and transcribe with Whisper
@@ -1516,8 +1581,8 @@ export async function registerRoutes(
       }
 
       const normalizedMimeType = String(file.mimetype || "").toLowerCase();
-      const baseMimeType = normalizedMimeType.split(";")[0].trim();
-      const allowedAudioMimePrefixes = [
+      const inferredMimeType = inferAudioMimeType(normalizedMimeType, file.originalname);
+      const allowedInputAudioPrefixes = [
         "audio/aac",
         "audio/amr",
         "audio/ogg",
@@ -1525,15 +1590,18 @@ export async function registerRoutes(
         "audio/mp3",
         "audio/mp4",
         "audio/x-m4a",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/webm",
+        "audio/3gpp",
       ];
-      if (!allowedAudioMimePrefixes.some((prefix) => baseMimeType.startsWith(prefix))) {
-        return res.status(400).json({ message: "Formato no soportado. Usa OGG, MP3, M4A, AAC o AMR." });
+      const hasSupportedMime = allowedInputAudioPrefixes.some((prefix) => inferredMimeType.startsWith(prefix));
+      if (!hasSupportedMime) {
+        return res.status(400).json({
+          message: "Formato no soportado. Usa MP3, M4A, OGG, AAC, AMR o WEBM.",
+          error: `MIME detectado: ${inferredMimeType || normalizedMimeType || "desconocido"}`,
+        });
       }
-      const mimeTypeForMeta =
-        baseMimeType === "audio/ogg" ? "audio/ogg" :
-        baseMimeType === "audio/x-m4a" ? "audio/mp4" :
-        baseMimeType === "audio/mp3" ? "audio/mpeg" :
-        baseMimeType;
 
       const token = process.env.META_ACCESS_TOKEN;
       const phoneId = process.env.WA_PHONE_NUMBER_ID;
@@ -1541,9 +1609,22 @@ export async function registerRoutes(
         return res.status(500).json({ message: "Missing Meta configuration" });
       }
 
+      let transcodedBuffer: Buffer;
+      try {
+        transcodedBuffer = await transcodeToWhatsAppAudio(file.buffer);
+      } catch (transcodeError: any) {
+        console.error("Audio transcode error:", transcodeError?.message || transcodeError);
+        return res.status(400).json({
+          message: "No se pudo procesar el audio",
+          error: transcodeError?.message || "Transcode failed",
+        });
+      }
+      const mimeTypeForMeta = "audio/ogg";
+      const uploadFilename = `audio-${Date.now()}.ogg`;
+
       const FormData = (await import("form-data")).default;
       const formData = new FormData();
-      formData.append("file", file.buffer, { filename: file.originalname, contentType: mimeTypeForMeta });
+      formData.append("file", transcodedBuffer, { filename: uploadFilename, contentType: mimeTypeForMeta });
       formData.append("messaging_product", "whatsapp");
       formData.append("type", mimeTypeForMeta);
 
