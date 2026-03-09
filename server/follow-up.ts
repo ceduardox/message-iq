@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import { db } from "./db";
 import { conversations } from "@shared/schema";
-import { eq, desc, and, isNull, lte, gte, sql } from "drizzle-orm";
+import { eq, desc, and, lte, gte, sql } from "drizzle-orm";
 import { generateAiResponse } from "./ai-service";
 
 let sendAiResponseFn: ((to: string, responseText: string) => Promise<any>) | null = null;
@@ -29,6 +29,7 @@ async function checkAndSendFollowUps() {
 
   const now = Date.now();
   const waitMinutes = settings.followUpMinutes || 20;
+  const catalogAfterMs = 5 * 60 * 60 * 1000; // 5h
   const cutoff = new Date(now - waitMinutes * 60 * 1000);
   const window24hStart = new Date(now - 24 * 60 * 60 * 1000);
 
@@ -37,7 +38,6 @@ async function checkAndSendFollowUps() {
     .from(conversations)
     .where(
       and(
-        isNull(conversations.lastFollowUpAt),
         eq(conversations.aiDisabled, false),
         gte(conversations.lastMessageTimestamp, window24hStart),
         lte(conversations.lastMessageTimestamp, cutoff),
@@ -60,45 +60,88 @@ async function checkAndSendFollowUps() {
       // Enforce 24h window from the last inbound customer message.
       const lastInbound = [...msgs].reverse().find((m) => m.direction === "in");
       if (!lastInbound?.createdAt) continue;
-      if (new Date(lastInbound.createdAt).getTime() < window24hStart.getTime()) continue;
+      const lastInboundTs = new Date(lastInbound.createdAt).getTime();
+      if (lastInboundTs < window24hStart.getTime()) continue;
 
-      const recentMessages = msgs.slice(-10);
-      const result = await generateAiResponse(
-        conv.id,
-        `[SISTEMA: Seguimiento automatico dentro de ventana de 24 horas. El cliente no respondio en ${waitMinutes} minutos. Genera UN mensaje corto de reenganche, natural y no invasivo. No saludes de nuevo.]`,
-        recentMessages,
-      );
-
-      if (!result?.response) continue;
       if (!sendAiResponseFn) continue;
 
+      // Stage 1: regular AI follow-up (X minutes)
+      if (!conv.lastFollowUpAt) {
+        const recentMessages = msgs.slice(-10);
+        const result = await generateAiResponse(
+          conv.id,
+          `[SISTEMA: Seguimiento automatico dentro de ventana de 24 horas. El cliente no respondio en ${waitMinutes} minutos. Genera UN mensaje corto de reenganche, natural y no invasivo. No saludes de nuevo.]`,
+          recentMessages,
+        );
+
+        if (!result?.response) continue;
+
+        try {
+          await sendAiResponseFn(conv.waId, result.response);
+        } catch (sendErr) {
+          console.error(`[FollowUp] Send failed for conv ${conv.id}:`, sendErr);
+          continue;
+        }
+
+        await storage.createMessage({
+          conversationId: conv.id,
+          waMessageId: `followup_${Date.now()}_${conv.id}`,
+          direction: "out",
+          type: "text",
+          text: result.response,
+          timestamp: Math.floor(Date.now() / 1000).toString(),
+          status: "sent",
+        });
+
+        await storage.updateConversation(conv.id, {
+          lastMessage: result.response,
+          lastMessageTimestamp: new Date(),
+          lastFollowUpAt: new Date(),
+        });
+
+        console.log(`[FollowUp] Stage1 sent to ${conv.contactName || conv.waId}`);
+        continue;
+      }
+
+      // Stage 2: catalog buttons follow-up (5h after stage1, only once)
+      const lastFollowUpTs = new Date(conv.lastFollowUpAt).getTime();
+      if (now - lastFollowUpTs < catalogAfterMs) continue;
+
+      const alreadySentCatalog = msgs.some((m) => {
+        if (m.direction !== "out" || !m.waMessageId || !m.createdAt) return false;
+        return m.waMessageId.startsWith("followup_catalog_") && new Date(m.createdAt).getTime() > lastInboundTs;
+      });
+      if (alreadySentCatalog) continue;
+
+      const catalogMessage =
+        "Si gusta, le muestro opciones segun lo que busca. [BOTONES: Diabetes/Azucar, Peso/Antojos, Estres/Calambres]";
+
       try {
-        await sendAiResponseFn(conv.waId, result.response);
+        await sendAiResponseFn(conv.waId, catalogMessage);
       } catch (sendErr) {
-        console.error(`[FollowUp] Send failed for conv ${conv.id}:`, sendErr);
+        console.error(`[FollowUp] Catalog send failed for conv ${conv.id}:`, sendErr);
         continue;
       }
 
       await storage.createMessage({
         conversationId: conv.id,
-        waMessageId: `followup_${Date.now()}_${conv.id}`,
+        waMessageId: `followup_catalog_${Date.now()}_${conv.id}`,
         direction: "out",
         type: "text",
-        text: result.response,
+        text: catalogMessage,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent",
       });
 
       await storage.updateConversation(conv.id, {
-        lastMessage: result.response,
+        lastMessage: "Seguimiento con catalogo enviado",
         lastMessageTimestamp: new Date(),
         lastFollowUpAt: new Date(),
       });
 
-      console.log(`[FollowUp] Sent to ${conv.contactName || conv.waId}`);
+      console.log(`[FollowUp] Stage2 catalog sent to ${conv.contactName || conv.waId}`);
     } catch (err) {
       console.error(`[FollowUp] Error conv ${conv.id}:`, err);
     }
   }
 }
-
