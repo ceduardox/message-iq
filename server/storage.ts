@@ -122,6 +122,43 @@ export class DatabaseStorage implements IStorage {
     return String((error as any)?.message || "").includes("is_ai_auto_reply_enabled");
   }
 
+  private async ensureAssignmentCursorTable(): Promise<void> {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS agent_assignment_cursor (
+        id INTEGER PRIMARY KEY,
+        cursor INTEGER NOT NULL DEFAULT -1,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT agent_assignment_cursor_singleton CHECK (id = 1)
+      )
+    `);
+    await db.execute(sql`
+      INSERT INTO agent_assignment_cursor (id, cursor)
+      VALUES (1, -1)
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
+
+  private async getAssignmentCursor(): Promise<number> {
+    await this.ensureAssignmentCursorTable();
+    const result: any = await db.execute(sql`
+      SELECT cursor
+      FROM agent_assignment_cursor
+      WHERE id = 1
+      LIMIT 1
+    `);
+    const row = result?.rows?.[0];
+    return Number(row?.cursor ?? -1);
+  }
+
+  private async setAssignmentCursor(nextCursor: number): Promise<void> {
+    await this.ensureAssignmentCursorTable();
+    await db.execute(sql`
+      UPDATE agent_assignment_cursor
+      SET cursor = ${nextCursor}, updated_at = NOW()
+      WHERE id = 1
+    `);
+  }
+
   async validateAdmin(username: string, pass: string): Promise<boolean> {
     // Check against environment variables as requested
     const adminUser = process.env.ADMIN_USER;
@@ -504,25 +541,21 @@ export class DatabaseStorage implements IStorage {
     const activeAgents = await this.getActiveAgents();
     if (activeAgents.length === 0) return undefined;
 
-    const allConvos = await db.select().from(conversations);
-    const countByAgent: Record<number, number> = {};
-    for (const a of activeAgents) countByAgent[a.id] = 0;
-    for (const c of allConvos) {
-      if (c.assignedAgentId && countByAgent[c.assignedAgentId] !== undefined) {
-        countByAgent[c.assignedAgentId]++;
-      }
-    }
-
-    let bestAgent = activeAgents[0];
-    let bestRatio = Infinity;
+    const weightedSlots: number[] = [];
     for (const agent of activeAgents) {
-      const ratio = countByAgent[agent.id] / (agent.weight || 1);
-      if (ratio < bestRatio) {
-        bestRatio = ratio;
-        bestAgent = agent;
+      const weight = Math.max(1, Math.floor(Number(agent.weight ?? 1)));
+      for (let i = 0; i < weight; i++) {
+        weightedSlots.push(agent.id);
       }
     }
-    return bestAgent;
+    if (weightedSlots.length === 0) return activeAgents[0];
+
+    const cursor = await this.getAssignmentCursor();
+    const nextCursor = ((cursor + 1) % weightedSlots.length + weightedSlots.length) % weightedSlots.length;
+    await this.setAssignmentCursor(nextCursor);
+
+    const nextAgentId = weightedSlots[nextCursor];
+    return activeAgents.find((agent) => agent.id === nextAgentId) || activeAgents[0];
   }
 
   async deleteConversation(id: number): Promise<void> {
