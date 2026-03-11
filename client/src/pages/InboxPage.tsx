@@ -27,8 +27,12 @@ export default function InboxPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [visibleConversations, setVisibleConversations] = useState(INITIAL_VISIBLE_CONVERSATIONS);
   const maxDays = 30;
+  const serverLimit = useMemo(
+    () => (searchQuery.trim() ? Math.max(visibleConversations, 200) : visibleConversations),
+    [searchQuery, visibleConversations],
+  );
   
-  const { data: conversations = [], isLoading: loadingList } = useConversations();
+  const { data: conversations = [], isLoading: loadingList } = useConversations(serverLimit);
 
   const filteredByRangeAndSearch = useMemo(() => {
     const now = new Date();
@@ -55,7 +59,7 @@ export default function InboxPage() {
     [filteredByRangeAndSearch, visibleConversations],
   );
 
-  const hasMoreConversations = filteredByRangeAndSearch.length > visibleConversations;
+  const hasMoreConversations = conversations.length >= serverLimit;
 
   useEffect(() => {
     setVisibleConversations(INITIAL_VISIBLE_CONVERSATIONS);

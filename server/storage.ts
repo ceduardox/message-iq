@@ -34,7 +34,7 @@ import {
   type Agent,
   type InsertAgent,
 } from "@shared/schema";
-import { eq, desc, asc, sql } from "drizzle-orm";
+import { eq, and, lt, desc, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Auth
@@ -42,6 +42,11 @@ export interface IStorage {
 
   // Conversations
   getConversations(): Promise<Conversation[]>;
+  getConversationsPage(options?: {
+    limit?: number;
+    before?: Date;
+    assignedAgentId?: number;
+  }): Promise<Conversation[]>;
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationByWaId(waId: string): Promise<Conversation | undefined>;
   createConversation(conversation: InsertConversation): Promise<Conversation>;
@@ -167,7 +172,44 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getConversations(): Promise<Conversation[]> {
-    return await db.select().from(conversations).orderBy(desc(conversations.updatedAt));
+    return this.getConversationsPage();
+  }
+
+  async getConversationsPage(options: {
+    limit?: number;
+    before?: Date;
+    assignedAgentId?: number;
+  } = {}): Promise<Conversation[]> {
+    const { limit, before, assignedAgentId } = options;
+    const safeLimit =
+      typeof limit === "number"
+        ? Math.max(1, Math.min(limit, 200))
+        : undefined;
+
+    const filters: any[] = [];
+    if (typeof assignedAgentId === "number") {
+      filters.push(eq(conversations.assignedAgentId, assignedAgentId));
+    }
+    if (before) {
+      filters.push(lt(conversations.updatedAt, before));
+    }
+
+    const whereExpr =
+      filters.length === 0
+        ? undefined
+        : filters.length === 1
+          ? filters[0]
+          : and(...filters);
+
+    const query = whereExpr
+      ? db.select().from(conversations).where(whereExpr).orderBy(desc(conversations.updatedAt))
+      : db.select().from(conversations).orderBy(desc(conversations.updatedAt));
+
+    if (safeLimit) {
+      return await query.limit(safeLimit);
+    }
+
+    return await query;
   }
 
   async getConversation(id: number): Promise<Conversation | undefined> {

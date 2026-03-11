@@ -5,11 +5,16 @@ import { useToast } from "@/hooks/use-toast";
 
 const POLL_INTERVAL = 5000;
 
-export function useConversations() {
+export function useConversations(limit?: number, before?: string) {
   return useQuery({
-    queryKey: [api.conversations.list.path],
+    queryKey: [api.conversations.list.path, limit, before ?? null],
     queryFn: async () => {
-      const res = await fetch(api.conversations.list.path);
+      const params = new URLSearchParams();
+      if (typeof limit === "number") params.set("limit", String(limit));
+      if (before) params.set("before", before);
+      const qs = params.toString();
+      const url = qs ? `${api.conversations.list.path}?${qs}` : api.conversations.list.path;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch conversations");
       return api.conversations.list.responses[200].parse(await res.json());
     },

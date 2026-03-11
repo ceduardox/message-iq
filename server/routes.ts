@@ -1423,12 +1423,26 @@ export async function registerRoutes(
 
   // Conversations
   app.get(api.conversations.list.path, requireAuth, async (req, res) => {
-    let allConversations = await storage.getConversations();
-    if ((req.session as any).role === "agent") {
-      const agentId = (req.session as any).agentId;
-      allConversations = allConversations.filter(c => c.assignedAgentId === agentId);
-    }
-    res.json(allConversations);
+    const limitRaw = typeof req.query.limit === "string" ? req.query.limit : undefined;
+    const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const limit = typeof parsedLimit === "number" && Number.isFinite(parsedLimit)
+      ? parsedLimit
+      : undefined;
+
+    const beforeRaw = typeof req.query.before === "string" ? req.query.before : undefined;
+    const parsedBefore = beforeRaw ? new Date(beforeRaw) : undefined;
+    const before = parsedBefore && !Number.isNaN(parsedBefore.getTime()) ? parsedBefore : undefined;
+
+    const assignedAgentId = (req.session as any).role === "agent"
+      ? Number((req.session as any).agentId)
+      : undefined;
+
+    const page = await storage.getConversationsPage({
+      limit,
+      before,
+      assignedAgentId,
+    });
+    res.json(page);
   });
 
   app.get(api.conversations.get.path, requireAuth, async (req, res) => {
