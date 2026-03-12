@@ -897,25 +897,45 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
               >
                 +{conversation.waId}
               </button>
-              {currentLabel && (
-                <Badge
-                  className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
-                  title={currentLabel.name}
-                  onClick={() => showFullLabelName(currentLabel.name)}
-                >
-                  {toCompactLabel(currentLabel.name)}
-                </Badge>
-              )}
-              {conversation.reminderAt && (
-                <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
-                  <Clock className="h-2.5 w-2.5 mr-1" />
-                  {reminderBadgeText}
-                </Badge>
-              )}
+              <div className="flex items-center gap-1.5 md:hidden">
+                {currentLabel && (
+                  <Badge
+                    className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
+                    title={currentLabel.name}
+                    onClick={() => showFullLabelName(currentLabel.name)}
+                  >
+                    {toCompactLabel(currentLabel.name)}
+                  </Badge>
+                )}
+                {conversation.reminderAt && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
+                    <Clock className="h-2.5 w-2.5 mr-1" />
+                    {reminderBadgeText}
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </div>
-        <div className="mt-1.5 w-full flex items-center justify-center gap-1 overflow-x-auto md:mt-0 md:w-auto md:justify-end md:gap-0 md:overflow-visible md:ml-2">
+        <div className="mt-1.5 w-full md:mt-0 md:w-auto md:ml-2">
+        <div className="hidden md:flex items-center justify-end gap-1 flex-row-reverse mb-1">
+          {conversation.reminderAt && (
+            <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
+              <Clock className="h-2.5 w-2.5 mr-1" />
+              {reminderBadgeText}
+            </Badge>
+          )}
+          {currentLabel && (
+            <Badge
+              className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
+              title={currentLabel.name}
+              onClick={() => showFullLabelName(currentLabel.name)}
+            >
+              {toCompactLabel(currentLabel.name)}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center justify-center gap-1 overflow-x-auto md:justify-end md:gap-0 md:overflow-visible">
         {/* Reassign Agent Dropdown (admin only) */}
         {isAdmin && (
           <DropdownMenu>
@@ -1253,6 +1273,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
         </div>
       </header>
 
