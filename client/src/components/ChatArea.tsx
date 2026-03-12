@@ -879,16 +879,16 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 {conversation.contactName || conversation.waId}
               </h3>
             </div>
-            <button
-              type="button"
-              onClick={() => copyToClipboard(getWaMeLink())}
-              className="mt-0.5 text-xs text-muted-foreground hover:text-emerald-500 transition-colors text-left block"
-              data-testid="button-copy-wa-link"
-              title="Copiar enlace wa.me"
-            >
-              +{conversation.waId}
-            </button>
-            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => copyToClipboard(getWaMeLink())}
+                className="text-xs text-muted-foreground hover:text-emerald-500 transition-colors text-left block"
+                data-testid="button-copy-wa-link"
+                title="Copiar enlace wa.me"
+              >
+                +{conversation.waId}
+              </button>
               {currentLabel && (
                 <Badge className={cn("text-[10px] px-1.5 py-0", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}>
                   {currentLabel.name}
@@ -903,7 +903,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             </div>
           </div>
         </div>
-        <div className="mt-1.5 w-full flex items-center justify-center gap-1 overflow-x-auto md:mt-0 md:w-auto md:justify-end md:gap-0.5 md:overflow-visible md:rounded-xl md:border md:border-border/40 md:bg-slate-900/20 md:px-1.5 md:py-1 md:ml-3">
+        <div className="mt-1.5 w-full flex items-center justify-center gap-1 overflow-x-auto md:mt-0 md:w-auto md:justify-end md:gap-0.5 md:overflow-visible md:rounded-2xl md:border md:border-slate-300/70 dark:md:border-slate-700/70 md:bg-slate-200/90 dark:md:bg-slate-800/70 md:px-1.5 md:py-1 md:ml-3">
         {/* Reassign Agent Dropdown (admin only) */}
         {isAdmin && (
           <DropdownMenu>
