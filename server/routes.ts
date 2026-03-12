@@ -1605,18 +1605,18 @@ export async function registerRoutes(
   // Labels
   app.get("/api/labels", requireAuth, async (req, res) => {
     const allLabels = await storage.getLabels();
-    const agentId = (req.session as any).agentId;
-    if (agentId) {
-      res.json(allLabels.filter(l => !l.agentId || l.agentId === agentId));
-    } else {
-      res.json(allLabels);
+    const session = req.session as any;
+    if (session.role === "agent" && session.agentId) {
+      return res.json(allLabels.filter((l) => l.agentId === session.agentId));
     }
+    return res.json(allLabels.filter((l) => !l.agentId));
   });
 
   app.post("/api/labels", requireAuth, async (req, res) => {
     try {
       const parsed = api.labels.create.input.parse(req.body);
-      const agentId = (req.session as any).agentId || null;
+      const session = req.session as any;
+      const agentId = session.role === "agent" ? (session.agentId || null) : null;
       const label = await storage.createLabel({ ...parsed, agentId });
       res.json(label);
     } catch (error) {
@@ -1624,9 +1624,70 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/labels/:id", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ message: "Invalid label id" });
+    }
+
+    const parsed = z.object({
+      name: z.string().min(1).max(50).optional(),
+      color: z.string().min(1).max(20).optional(),
+    }).safeParse(req.body);
+
+    if (!parsed.success || (!parsed.data.name && !parsed.data.color)) {
+      return res.status(400).json({ message: "Invalid label payload" });
+    }
+
+    const session = req.session as any;
+    const label = await storage.getLabel(id);
+    if (!label) {
+      return res.status(404).json({ message: "Label not found" });
+    }
+
+    const isOwner = session.role === "agent"
+      ? label.agentId === session.agentId
+      : !label.agentId;
+    if (!isOwner) {
+      return res.status(403).json({ message: "Forbidden label access" });
+    }
+
+    const updates: { name?: string; color?: string } = {};
+    if (parsed.data.name) {
+      const trimmedName = parsed.data.name.trim();
+      if (!trimmedName) {
+        return res.status(400).json({ message: "Label name is required" });
+      }
+      updates.name = trimmedName;
+    }
+    if (parsed.data.color) updates.color = parsed.data.color;
+
+    const updated = await storage.updateLabel(id, updates);
+    return res.json(updated);
+  });
+
   app.delete("/api/labels/:id", requireAuth, async (req, res) => {
-    await storage.deleteLabel(parseInt(req.params.id));
-    res.json({ success: true });
+    const id = parseInt(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ message: "Invalid label id" });
+    }
+
+    const session = req.session as any;
+    const label = await storage.getLabel(id);
+    if (!label) {
+      return res.status(404).json({ message: "Label not found" });
+    }
+
+    const isOwner = session.role === "agent"
+      ? label.agentId === session.agentId
+      : !label.agentId;
+    if (!isOwner) {
+      return res.status(403).json({ message: "Forbidden label access" });
+    }
+
+    await storage.clearLabelFromConversations(id);
+    await storage.deleteLabel(id);
+    return res.json({ success: true });
   });
 
   // Quick Messages
@@ -1836,7 +1897,27 @@ export async function registerRoutes(
   app.patch("/api/conversations/:id/label", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
     const { labelId } = req.body;
-    const updated = await storage.updateConversation(id, { labelId: labelId || null });
+    const nextLabelId = labelId ? Number(labelId) : null;
+
+    if (nextLabelId !== null && !Number.isInteger(nextLabelId)) {
+      return res.status(400).json({ message: "Invalid label id" });
+    }
+
+    if (nextLabelId !== null) {
+      const label = await storage.getLabel(nextLabelId);
+      if (!label) {
+        return res.status(404).json({ message: "Label not found" });
+      }
+      const session = req.session as any;
+      const isOwner = session.role === "agent"
+        ? label.agentId === session.agentId
+        : !label.agentId;
+      if (!isOwner) {
+        return res.status(403).json({ message: "Forbidden label access" });
+      }
+    }
+
+    const updated = await storage.updateConversation(id, { labelId: nextLabelId });
     res.json(updated);
   });
 

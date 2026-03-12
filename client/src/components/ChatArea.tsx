@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -92,6 +92,10 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [showDebug, setShowDebug] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("blue");
+  const [showLabelManagerDialog, setShowLabelManagerDialog] = useState(false);
+  const [editingLabelId, setEditingLabelId] = useState<number | null>(null);
+  const [editingLabelName, setEditingLabelName] = useState("");
+  const [editingLabelColor, setEditingLabelColor] = useState("blue");
   const [newQmName, setNewQmName] = useState("");
   const [newQmText, setNewQmText] = useState("");
   const [newQmImageUrl, setNewQmImageUrl] = useState("");
@@ -714,11 +718,63 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "Error al crear etiqueta");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
       setNewLabelName("");
+      toast({ title: "Etiqueta creada" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async (data: { id: number; name: string; color: string }) => {
+      const res = await fetch(`/api/labels/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: data.name, color: data.color }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "Error al actualizar etiqueta");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      setEditingLabelId(null);
+      setEditingLabelName("");
+      toast({ title: "Etiqueta actualizada" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteLabelMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/labels/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "Error al eliminar etiqueta");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Etiqueta eliminada" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -871,6 +927,18 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     }
   };
 
+  const openLabelEditor = (label: Label) => {
+    setEditingLabelId(label.id);
+    setEditingLabelName(label.name);
+    setEditingLabelColor(label.color);
+  };
+
+  const cancelLabelEditor = () => {
+    setEditingLabelId(null);
+    setEditingLabelName("");
+    setEditingLabelColor("blue");
+  };
+
   return (
     <div className="flex flex-col h-full max-h-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
       <style dangerouslySetInnerHTML={{ __html: recordingWaveCss }} />
@@ -983,6 +1051,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setShowLabelManagerDialog(true)} data-testid="menu-label-manage">
+                <Pencil className="h-4 w-4 mr-2" />
+                Gestionar etiquetas
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={openReminderEditor} data-testid="menu-reminder-edit">
                 <Clock className="h-4 w-4 mr-2 text-amber-500" />
                 {conversation.reminderAt ? "Editar recordatorio" : "Agregar recordatorio"}
@@ -1005,10 +1078,10 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
               </DialogTrigger>
             </DropdownMenuContent>
           </DropdownMenu>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Nueva Etiqueta</DialogTitle>
-            </DialogHeader>
+	          <DialogContent>
+	            <DialogHeader>
+	              <DialogTitle>Nueva Etiqueta</DialogTitle>
+	            </DialogHeader>
             <div className="space-y-4 mt-4">
               <Input placeholder="Nombre (ej: Cliente)" value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} />
               <div className="flex gap-2">
@@ -1020,13 +1093,99 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                   />
                 ))}
               </div>
-              <Button onClick={() => createLabelMutation.mutate({ name: newLabelName, color: newLabelColor })} disabled={!newLabelName}>
-                Crear
-              </Button>
-            </div>
-          </DialogContent>
-	        </Dialog>
-	        <Dialog open={showReminderDialog} onOpenChange={setShowReminderDialog}>
+	              <Button onClick={() => createLabelMutation.mutate({ name: newLabelName, color: newLabelColor })} disabled={!newLabelName}>
+	                Crear
+	              </Button>
+	            </div>
+	          </DialogContent>
+		        </Dialog>
+		        <Dialog open={showLabelManagerDialog} onOpenChange={(open) => {
+		          setShowLabelManagerDialog(open);
+		          if (!open) cancelLabelEditor();
+		        }}>
+		          <DialogContent>
+		            <DialogHeader>
+		              <DialogTitle>Gestionar etiquetas</DialogTitle>
+		            </DialogHeader>
+		            <div className="space-y-3 mt-2 max-h-[60vh] overflow-y-auto">
+		              {labelsData.length === 0 ? (
+		                <p className="text-sm text-muted-foreground">No tiene etiquetas creadas.</p>
+		              ) : (
+		                labelsData.map((label) => {
+		                  const isEditing = editingLabelId === label.id;
+		                  return (
+		                    <div key={label.id} className="rounded-lg border border-border/60 p-3 space-y-2">
+		                      {isEditing ? (
+		                        <>
+		                          <Input
+		                            value={editingLabelName}
+		                            onChange={(e) => setEditingLabelName(e.target.value)}
+		                            placeholder="Nombre de etiqueta"
+		                          />
+		                          <div className="flex gap-2">
+		                            {LABEL_COLORS.map((c) => (
+		                              <button
+		                                key={c.name}
+		                                onClick={() => setEditingLabelColor(c.name)}
+		                                className={cn("w-7 h-7 rounded-full", c.bg, editingLabelColor === c.name && "ring-2 ring-offset-2 ring-primary")}
+		                              />
+		                            ))}
+		                          </div>
+		                          <div className="flex justify-end gap-2">
+		                            <Button variant="outline" size="sm" onClick={cancelLabelEditor}>
+		                              Cancelar
+		                            </Button>
+		                            <Button
+		                              size="sm"
+		                              onClick={() => {
+		                                const trimmed = editingLabelName.trim();
+		                                if (!trimmed) {
+		                                  toast({ title: "Nombre requerido", description: "Ingrese un nombre para la etiqueta", variant: "destructive" });
+		                                  return;
+		                                }
+		                                updateLabelMutation.mutate({ id: label.id, name: trimmed, color: editingLabelColor });
+		                              }}
+		                              disabled={updateLabelMutation.isPending}
+		                            >
+		                              {updateLabelMutation.isPending ? "Guardando..." : "Guardar"}
+		                            </Button>
+		                          </div>
+		                        </>
+		                      ) : (
+		                        <div className="flex items-center justify-between gap-3">
+		                          <div className="flex items-center gap-2 min-w-0">
+		                            <div className={cn("w-3 h-3 rounded-full", LABEL_COLORS.find((c) => c.name === label.color)?.bg || "bg-slate-400")} />
+		                            <span className="text-sm font-medium truncate">{label.name}</span>
+		                          </div>
+		                          <div className="flex items-center gap-1">
+		                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openLabelEditor(label)} data-testid={`button-edit-label-${label.id}`}>
+		                              <Pencil className="h-4 w-4" />
+		                            </Button>
+		                            <Button
+		                              variant="ghost"
+		                              size="icon"
+		                              className="h-7 w-7 text-red-500"
+		                              onClick={() => {
+		                                if (confirm(`¿Eliminar la etiqueta "${label.name}"?`)) {
+		                                  deleteLabelMutation.mutate(label.id);
+		                                }
+		                              }}
+		                              disabled={deleteLabelMutation.isPending}
+		                              data-testid={`button-delete-label-${label.id}`}
+		                            >
+		                              <Trash2 className="h-4 w-4" />
+		                            </Button>
+		                          </div>
+		                        </div>
+		                      )}
+		                    </div>
+		                  );
+		                })
+		              )}
+		            </div>
+		          </DialogContent>
+		        </Dialog>
+		        <Dialog open={showReminderDialog} onOpenChange={setShowReminderDialog}>
 	          <DialogContent>
 	            <DialogHeader>
 	              <DialogTitle>{conversation.reminderAt ? "Editar recordatorio" : "Nuevo recordatorio"}</DialogTitle>

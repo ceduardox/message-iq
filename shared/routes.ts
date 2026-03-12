@@ -86,6 +86,17 @@ export const api = {
         200: z.custom<typeof labels.$inferSelect>(),
       },
     },
+    update: {
+      method: "PATCH" as const,
+      path: "/api/labels/:id",
+      input: z.object({
+        name: z.string().min(1).max(50).optional(),
+        color: z.string().min(1).max(20).optional(),
+      }).refine((v) => !!v.name || !!v.color, "name or color is required"),
+      responses: {
+        200: z.custom<typeof labels.$inferSelect>(),
+      },
+    },
     delete: {
       method: "DELETE" as const,
       path: "/api/labels/:id",

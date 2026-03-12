@@ -60,7 +60,10 @@ export interface IStorage {
 
   // Labels
   getLabels(): Promise<Label[]>;
+  getLabel(id: number): Promise<Label | undefined>;
   createLabel(label: InsertLabel): Promise<Label>;
+  updateLabel(id: number, updates: Partial<InsertLabel>): Promise<Label>;
+  clearLabelFromConversations(labelId: number): Promise<void>;
   deleteLabel(id: number): Promise<void>;
 
   // Quick Messages
@@ -290,9 +293,30 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(labels);
   }
 
+  async getLabel(id: number): Promise<Label | undefined> {
+    const [label] = await db.select().from(labels).where(eq(labels.id, id));
+    return label;
+  }
+
   async createLabel(label: InsertLabel): Promise<Label> {
     const [created] = await db.insert(labels).values(label).returning();
     return created;
+  }
+
+  async updateLabel(id: number, updates: Partial<InsertLabel>): Promise<Label> {
+    const [updated] = await db
+      .update(labels)
+      .set(updates)
+      .where(eq(labels.id, id))
+      .returning();
+    return updated;
+  }
+
+  async clearLabelFromConversations(labelId: number): Promise<void> {
+    await db
+      .update(conversations)
+      .set({ labelId: null, updatedAt: new Date() })
+      .where(eq(conversations.labelId, labelId));
   }
 
   async deleteLabel(id: number): Promise<void> {
