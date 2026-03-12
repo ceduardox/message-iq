@@ -202,6 +202,14 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const reminderBadgeText = reminderDate && !Number.isNaN(reminderDate.getTime())
     ? format(reminderDate, "dd/MM HH:mm")
     : "";
+  const toCompactLabel = (value: string, max = 8) => {
+    const trimmed = value.trim();
+    return trimmed.length > max ? `${trimmed.slice(0, max)}..` : trimmed;
+  };
+
+  const showFullLabelName = (fullName: string) => {
+    toast({ title: fullName, duration: 1800 });
+  };
 
   const openReminderEditor = () => {
     setReminderAtInput(toDateTimeLocalValue(conversation.reminderAt));
@@ -890,8 +898,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 +{conversation.waId}
               </button>
               {currentLabel && (
-                <Badge className={cn("text-[10px] px-1.5 py-0", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}>
-                  {currentLabel.name}
+                <Badge
+                  className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === currentLabel.color)?.bg)}
+                  title={currentLabel.name}
+                  onClick={() => showFullLabelName(currentLabel.name)}
+                >
+                  {toCompactLabel(currentLabel.name)}
                 </Badge>
               )}
               {conversation.reminderAt && (
