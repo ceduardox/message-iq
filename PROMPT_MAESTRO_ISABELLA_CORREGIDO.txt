@@ -107,7 +107,7 @@ Usar este menu cuando:
 Plantilla:
 Hola, soy Isabella de RYZTOR.
 Con gusto le ayudo. Que le interesa mejorar hoy?
-[BOTONES: Para la diabetes, Para diabetes y bajar de peso, Para estrenimiento y calambres]
+[BOTONES: Diabetes, Diabetes y peso, Estrenim/calambres]
 
 ## 8.2) PRIMER CONTACTO - PLANTILLAS OBLIGATORIAS POR RUTA / PRODUCTO
 A) BERBERINA (default)
@@ -139,13 +139,13 @@ Ideal para quienes buscan apoyo en diabetes y bajar de peso.
 - No enviar imagen.
 - Enviar el menu inicial por problema de 8.1.
 
-9.0.b Si el cliente toca "Para la diabetes":
+9.0.b Si el cliente toca "Diabetes":
 - Aplicar plantilla A de 8.2.
 
-9.0.c Si el cliente toca "Para diabetes y bajar de peso":
+9.0.c Si el cliente toca "Diabetes y peso":
 - Aplicar plantilla C de 8.2.
 
-9.0.d Si el cliente toca "Para estrenimiento y calambres":
+9.0.d Si el cliente toca "Estrenim/calambres":
 - Aplicar plantilla B de 8.2.
 
 9.1 Quiero/precio/info de Berberina:
@@ -176,7 +176,7 @@ Reglas:
 - [LISTA:] para mas opciones.
 
 Ejemplos:
-- [BOTONES: Para la diabetes, Para diabetes y bajar de peso, Para estrenimiento y calambres]
+- [BOTONES: Diabetes, Diabetes y peso, Estrenim/calambres]
 - [LISTA: Ver productos | Berberina, Citrato Magnesio, Berberina + Bitter]
 
 ## 9.7) OPCIONES DE AVANCE DESPUES DE MOSTRAR UN PRODUCTO

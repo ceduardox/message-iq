@@ -8,7 +8,7 @@ import MemoryStore from "memorystore";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
-import { insertProductSchema, updateOrderStatusSchema } from "@shared/schema";
+import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage } from "@shared/schema";
 import { db } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
@@ -24,6 +24,9 @@ const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
+const FIRST_CONTACT_PROBLEM_MENU_RESPONSE = `Hola, soy Isabella de RYZTOR.
+Con gusto le ayudo. Que le interesa mejorar hoy?
+[BOTONES: Diabetes, Diabetes y peso, Estrenim/calambres]`;
 interface BufferedMessage {
   messageForAi: string;
   imageBase64ForAi?: string;
@@ -47,6 +50,71 @@ interface PushNotificationPreferences {
 }
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
+
+function normalizeInboundText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGenericFirstContactTrigger(text: string): boolean {
+  const normalized = normalizeInboundText(text);
+  if (!normalized) return false;
+
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length === 0 || tokens.length > 4) return false;
+
+  const allowedTokens = new Set([
+    "hola",
+    "ola",
+    "buenas",
+    "buenos",
+    "dias",
+    "dia",
+    "tardes",
+    "noches",
+    "precio",
+    "info",
+    "informacion",
+    "mas",
+    "esto",
+    "por",
+    "favor",
+    "consulta",
+  ]);
+
+  const coreTokens = new Set([
+    "hola",
+    "ola",
+    "buenas",
+    "precio",
+    "info",
+    "informacion",
+    "esto",
+    "consulta",
+  ]);
+
+  return tokens.every(token => allowedTokens.has(token)) && tokens.some(token => coreTokens.has(token));
+}
+
+function shouldForceFirstContactProblemMenu(
+  messageForAi: string,
+  recentMessages: StoredMessage[],
+  imageBase64ForAi?: string,
+  wasAudioMessage?: boolean,
+): boolean {
+  if (!messageForAi || imageBase64ForAi || wasAudioMessage) return false;
+
+  const lastTenMessages = recentMessages.slice(-10);
+  const hasOutboundHistory = lastTenMessages.some(message => message.direction === "out");
+  if (hasOutboundHistory) return false;
+
+  return isGenericFirstContactTrigger(messageForAi);
+}
 
 async function ensurePushSettingsTable() {
   await db.execute(sql`
@@ -132,6 +200,31 @@ async function processAiResponse(data: BufferedMessage) {
 
   try {
     const recentMessages = await storage.getMessages(conversationId);
+
+    if (shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
+      const waResponse = await sendAiResponseToWhatsApp(from, FIRST_CONTACT_PROBLEM_MENU_RESPONSE);
+      const waMessageId = waResponse.messages[0].id;
+
+      await storage.createMessage({
+        conversationId,
+        waMessageId,
+        direction: "out",
+        type: "text",
+        text: FIRST_CONTACT_PROBLEM_MENU_RESPONSE,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+        rawJson: waResponse,
+      });
+
+      await storage.updateConversation(conversationId, {
+        needsHumanAttention: false,
+        lastMessage: FIRST_CONTACT_PROBLEM_MENU_RESPONSE,
+        lastMessageTimestamp: new Date(),
+      });
+
+      return;
+    }
+
     const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi);
 
     if (aiResult && aiResult.needsHuman) {
