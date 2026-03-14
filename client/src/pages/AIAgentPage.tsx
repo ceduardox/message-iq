@@ -49,6 +49,12 @@ interface AiSettings {
   followUpMinutes: number | null;
 }
 
+interface PromptProfiles {
+  primaryPrompt: string;
+  secondaryPrompt: string;
+  activeSlot: "primary" | "secondary";
+}
+
 interface Product {
   id: number;
   name: string;
@@ -95,7 +101,9 @@ interface PushSettings {
 
 export default function AIAgentPage() {
   const { toast } = useToast();
-  const [systemPrompt, setSystemPrompt] = useState("");
+  const [primaryPrompt, setPrimaryPrompt] = useState("");
+  const [secondaryPrompt, setSecondaryPrompt] = useState("");
+  const [activePromptSlot, setActivePromptSlot] = useState<"primary" | "secondary">("primary");
   const [promptEdited, setPromptEdited] = useState(false);
   
   // AI config state
@@ -134,6 +142,10 @@ export default function AIAgentPage() {
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AiSettings>({
     queryKey: ["/api/ai/settings"],
+  });
+
+  const { data: promptProfiles } = useQuery<PromptProfiles>({
+    queryKey: ["/api/ai/prompt-profiles"],
   });
 
   interface ElevenLabsVoice {
@@ -247,8 +259,10 @@ export default function AIAgentPage() {
   });
 
   useEffect(() => {
-    if (settings && !promptEdited) {
-      setSystemPrompt(settings.systemPrompt || "");
+    if (promptProfiles && !promptEdited) {
+      setPrimaryPrompt(promptProfiles.primaryPrompt || "");
+      setSecondaryPrompt(promptProfiles.secondaryPrompt || "");
+      setActivePromptSlot(promptProfiles.activeSlot || "primary");
     }
     if (settings && !configEdited) {
       setMaxTokens(settings.maxTokens || 120);
@@ -266,7 +280,7 @@ export default function AIAgentPage() {
       setFollowUpEnabled(settings.followUpEnabled || false);
       setFollowUpMinutes(settings.followUpMinutes || 20);
     }
-  }, [settings, promptEdited, configEdited]);
+  }, [settings, promptProfiles, promptEdited, configEdited]);
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: Partial<AiSettings>) => {
@@ -276,10 +290,25 @@ export default function AIAgentPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/ai/settings"] });
       toast({ title: "Configuración guardada" });
       setConfigEdited(false);
-      setPromptEdited(false);
     },
     onError: (error: Error) => {
       toast({ title: "Error al guardar", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updatePromptProfilesMutation = useMutation({
+    mutationFn: async (data: PromptProfiles) => {
+      const response = await apiRequest("PATCH", "/api/ai/prompt-profiles", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/prompt-profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/settings"] });
+      toast({ title: "Prompts guardados" });
+      setPromptEdited(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al guardar prompts", description: error.message, variant: "destructive" });
     },
   });
 
@@ -333,7 +362,11 @@ export default function AIAgentPage() {
   };
 
   const handleSavePrompt = () => {
-    updateSettingsMutation.mutate({ systemPrompt });
+    updatePromptProfilesMutation.mutate({
+      primaryPrompt,
+      secondaryPrompt,
+      activeSlot: activePromptSlot,
+    });
   };
 
   const handleSaveConfig = () => {
@@ -494,27 +527,87 @@ export default function AIAgentPage() {
                 <p className="text-xs text-slate-400">Define cómo debe comportarse (máx: {maxPromptChars} caracteres)</p>
               </div>
             </div>
-            <div className="relative">
-              <Textarea
-                placeholder="Ej: Eres Isabella, asistente de ventas amigable. Responde siempre en español. Si quieren comprar, pide ubicación..."
-                value={systemPrompt}
-                onChange={(e) => {
-                  const newValue = e.target.value.slice(0, maxPromptChars);
-                  setSystemPrompt(newValue);
-                  setPromptEdited(true);
-                }}
-                rows={5}
-                data-testid="textarea-system-prompt"
-                className="bg-slate-900/50 border-slate-600/50 text-white placeholder:text-slate-500"
-              />
-              <div className={`text-xs mt-1 ${systemPrompt.length >= maxPromptChars ? 'text-red-400' : 'text-slate-500'}`}>
-                {systemPrompt.length} / {maxPromptChars} caracteres
+            <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+              <div className="space-y-2">
+                <Label htmlFor="active-prompt-slot" className="text-slate-300">Prompt activo</Label>
+                <Select
+                  value={activePromptSlot}
+                  onValueChange={(value: "primary" | "secondary") => {
+                    setActivePromptSlot(value);
+                    setPromptEdited(true);
+                  }}
+                >
+                  <SelectTrigger
+                    id="active-prompt-slot"
+                    className="bg-slate-900/50 border-slate-600/50 text-white"
+                    data-testid="select-active-prompt-slot"
+                  >
+                    <SelectValue placeholder="Seleccione prompt" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="primary">Prompt principal</SelectItem>
+                    <SelectItem value="secondary">Prompt alternativo</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-400">
+                  El prompt activo es el que usa la IA ahora. El otro queda guardado para cuando quiera volver a usarlo.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="primary-prompt" className="text-slate-300">Prompt principal</Label>
+                    {activePromptSlot === "primary" && (
+                      <span className="text-[11px] font-medium text-emerald-300">Activo ahora</span>
+                    )}
+                  </div>
+                  <Textarea
+                    id="primary-prompt"
+                    placeholder="Ej: Eres Isabella, asistente de ventas amigable. Responde siempre en espanol. Si quieren comprar, pide ubicacion..."
+                    value={primaryPrompt}
+                    onChange={(e) => {
+                      const newValue = e.target.value.slice(0, maxPromptChars);
+                      setPrimaryPrompt(newValue);
+                      setPromptEdited(true);
+                    }}
+                    rows={6}
+                    data-testid="textarea-primary-prompt"
+                    className="bg-slate-900/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                  />
+                  <div className={`text-xs ${primaryPrompt.length >= maxPromptChars ? 'text-red-400' : 'text-slate-500'}`}>
+                    {primaryPrompt.length} / {maxPromptChars} caracteres
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="secondary-prompt" className="text-slate-300">Prompt alternativo</Label>
+                    {activePromptSlot === "secondary" && (
+                      <span className="text-[11px] font-medium text-cyan-300">Activo ahora</span>
+                    )}
+                  </div>
+                  <Textarea
+                    id="secondary-prompt"
+                    placeholder="Use este espacio para otro flujo, por ejemplo reclutamiento o filtros informativos."
+                    value={secondaryPrompt}
+                    onChange={(e) => {
+                      const newValue = e.target.value.slice(0, maxPromptChars);
+                      setSecondaryPrompt(newValue);
+                      setPromptEdited(true);
+                    }}
+                    rows={6}
+                    data-testid="textarea-secondary-prompt"
+                    className="bg-slate-900/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                  />
+                  <div className={`text-xs ${secondaryPrompt.length >= maxPromptChars ? 'text-red-400' : 'text-slate-500'}`}>
+                    {secondaryPrompt.length} / {maxPromptChars} caracteres
+                  </div>
+                </div>
               </div>
             </div>
             {promptEdited && (
-              <Button onClick={handleSavePrompt} disabled={updateSettingsMutation.isPending} data-testid="button-save-prompt" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg shadow-emerald-500/30">
-                {updateSettingsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Guardar Instrucciones
+              <Button onClick={handleSavePrompt} disabled={updatePromptProfilesMutation.isPending} data-testid="button-save-prompt" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg shadow-emerald-500/30">
+                {updatePromptProfilesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Guardar Prompts
               </Button>
             )}
           </div>

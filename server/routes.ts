@@ -27,6 +27,14 @@ const INCOMING_PUSH_COOLDOWN_MS = 60000;
 const FIRST_CONTACT_PROBLEM_MENU_RESPONSE = `Hola, soy Isabella de RYZTOR.
 Con gusto le ayudo. Que le interesa mejorar hoy?
 [BOTONES: Diabetes, Diabetes y peso, Dolor muscular]`;
+const PROMPT_PROFILE_PRIMARY_TITLE = "__SYSTEM_PROMPT_PRIMARY__";
+const PROMPT_PROFILE_SECONDARY_TITLE = "__SYSTEM_PROMPT_SECONDARY__";
+const PROMPT_PROFILE_ACTIVE_TITLE = "__SYSTEM_PROMPT_ACTIVE__";
+const HIDDEN_PROMPT_PROFILE_TITLES = new Set([
+  PROMPT_PROFILE_PRIMARY_TITLE,
+  PROMPT_PROFILE_SECONDARY_TITLE,
+  PROMPT_PROFILE_ACTIVE_TITLE,
+]);
 const BERBERINA_IMAGE_URL = "https://i.ibb.co/vC27GxKC/BERBERINA-BANNER.jpg";
 const BITTER_IMAGE_URL = "https://i.ibb.co/whdDDLLC/image-Pippit-202602222317.jpg";
 const CITRATO_IMAGE_URL = "https://i.ibb.co/Q7TYCb0F/citrato.jpg";
@@ -282,6 +290,34 @@ async function updatePushNotificationPreferences(next: PushNotificationPreferenc
   `);
   pushSettingsCache = { settings: next, loadedAt: Date.now() };
   return next;
+}
+
+async function getPromptProfiles() {
+  const [settings, trainingData] = await Promise.all([
+    storage.getAiSettings(),
+    storage.getAiTrainingData(),
+  ]);
+
+  const byTitle = new Map(trainingData.map(item => [item.title || "", item]));
+  const primaryPrompt = byTitle.get(PROMPT_PROFILE_PRIMARY_TITLE)?.content || settings?.systemPrompt || "";
+  const secondaryPrompt = byTitle.get(PROMPT_PROFILE_SECONDARY_TITLE)?.content || "";
+  const rawActive = byTitle.get(PROMPT_PROFILE_ACTIVE_TITLE)?.content || "primary";
+  const activeSlot = rawActive === "secondary" ? "secondary" : "primary";
+
+  return { primaryPrompt, secondaryPrompt, activeSlot };
+}
+
+async function upsertPromptProfile(title: string, content: string) {
+  const trainingData = await storage.getAiTrainingData();
+  const existing = trainingData.find(item => item.title === title);
+  if (existing) {
+    return storage.updateAiTrainingData(existing.id, { content, title, type: "text" });
+  }
+  return storage.createAiTrainingData({ type: "text", title, content });
+}
+
+function isHiddenPromptProfileTitle(title?: string | null) {
+  return HIDDEN_PROMPT_PROFILE_TITLES.has(title || "");
 }
 
 function flushMessageBuffer(waId: string) {
@@ -2711,6 +2747,12 @@ NO uses saludos formales. Sé directo y amigable.`
     followUpMinutes: z.number().min(5).max(60).optional(),
   });
 
+  const promptProfilesUpdateSchema = z.object({
+    primaryPrompt: z.string().max(20000),
+    secondaryPrompt: z.string().max(20000),
+    activeSlot: z.enum(["primary", "secondary"]),
+  });
+
   const aiTrainingCreateSchema = z.object({
     type: z.enum(["text", "url", "image_url"]),
     title: z.string().max(200).nullable().optional(),
@@ -2815,11 +2857,47 @@ NO uses saludos formales. Sé directo y amigable.`
     }
   });
 
+  app.get("/api/ai/prompt-profiles", requireAuth, async (_req, res) => {
+    try {
+      const profiles = await getPromptProfiles();
+      res.json(profiles);
+    } catch (error) {
+      console.error("Error fetching prompt profiles:", error);
+      res.status(500).json({ message: "Error fetching prompt profiles" });
+    }
+  });
+
+  app.patch("/api/ai/prompt-profiles", requireAuth, async (req, res) => {
+    try {
+      const parsed = promptProfilesUpdateSchema.parse(req.body);
+      await Promise.all([
+        upsertPromptProfile(PROMPT_PROFILE_PRIMARY_TITLE, parsed.primaryPrompt),
+        upsertPromptProfile(PROMPT_PROFILE_SECONDARY_TITLE, parsed.secondaryPrompt),
+        upsertPromptProfile(PROMPT_PROFILE_ACTIVE_TITLE, parsed.activeSlot),
+      ]);
+
+      const activePrompt = parsed.activeSlot === "secondary" ? parsed.secondaryPrompt : parsed.primaryPrompt;
+      await storage.updateAiSettings({ systemPrompt: activePrompt });
+
+      res.json({
+        primaryPrompt: parsed.primaryPrompt,
+        secondaryPrompt: parsed.secondaryPrompt,
+        activeSlot: parsed.activeSlot,
+      });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid prompt profile data", errors: error.errors });
+      }
+      console.error("Error updating prompt profiles:", error);
+      res.status(500).json({ message: "Error updating prompt profiles" });
+    }
+  });
+
   // Get Training Data
   app.get("/api/ai/training", requireAuth, async (req, res) => {
     try {
       const data = await storage.getAiTrainingData();
-      res.json(data);
+      res.json(data.filter(item => !isHiddenPromptProfileTitle(item.title)));
     } catch (error) {
       console.error("Error fetching training data:", error);
       res.status(500).json({ message: "Error fetching training data" });
@@ -2830,6 +2908,9 @@ NO uses saludos formales. Sé directo y amigable.`
   app.post("/api/ai/training", requireAuth, async (req, res) => {
     try {
       const parsed = aiTrainingCreateSchema.parse(req.body);
+      if (isHiddenPromptProfileTitle(parsed.title)) {
+        return res.status(400).json({ message: "Reserved training data title" });
+      }
       const created = await storage.createAiTrainingData(parsed);
       res.json(created);
     } catch (error: any) {
@@ -2845,6 +2926,9 @@ NO uses saludos formales. Sé directo y amigable.`
   app.patch("/api/ai/training/:id", requireAuth, async (req, res) => {
     try {
       const parsed = aiTrainingCreateSchema.partial().parse(req.body);
+      if (isHiddenPromptProfileTitle(parsed.title)) {
+        return res.status(400).json({ message: "Reserved training data title" });
+      }
       const updated = await storage.updateAiTrainingData(parseInt(req.params.id), parsed);
       res.json(updated);
     } catch (error: any) {
