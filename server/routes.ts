@@ -32,6 +32,7 @@ const BITTER_IMAGE_URL = "https://i.ibb.co/whdDDLLC/image-Pippit-202602222317.jp
 const CITRATO_IMAGE_URL = "https://i.ibb.co/Q7TYCb0F/citrato.jpg";
 const FIRST_CONTACT_ROUTE_RESPONSES = {
   diabetes: {
+    productName: "Berberina RYZTOR",
     imageUrl: BERBERINA_IMAGE_URL,
     responseText: `🔥 *Berberina RYZTOR*
 🌟 Indicada para diabetes tipo 2 y prediabetes.
@@ -43,6 +44,7 @@ const FIRST_CONTACT_ROUTE_RESPONSES = {
 [LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
   diabetes_y_peso: {
+    productName: "Berberina + Bitter Melon RYZTOR",
     imageUrl: BITTER_IMAGE_URL,
     responseText: `🔥 *Berberina + Bitter Melon RYZTOR*
 🌟 Ideal para personas con diabetes que tambien buscan bajar de peso.
@@ -54,6 +56,7 @@ const FIRST_CONTACT_ROUTE_RESPONSES = {
 [LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
   dolor_muscular: {
+    productName: "Citrato de Magnesio RYZTOR",
     imageUrl: CITRATO_IMAGE_URL,
     responseText: `💪 *Citrato de Magnesio RYZTOR*
 🌟 Ideal para dolor muscular, calambres y tension.
@@ -157,23 +160,25 @@ function getForcedFirstContactRouteResponse(
   messageForAi: string,
   recentMessages: StoredMessage[],
 ) {
-  const lastTenMessages = recentMessages.slice(-10);
-  const hasRecentFirstContactMenu = lastTenMessages.some(
-    message =>
-      message.direction === "out" &&
-      typeof message.text === "string" &&
-      message.text.includes("Que le interesa mejorar hoy?") &&
-      message.text.includes("[BOTONES: Diabetes, Diabetes y peso, Dolor muscular]"),
-  );
-
-  if (!hasRecentFirstContactMenu) return null;
-
   const normalized = normalizeInboundText(messageForAi);
   if (normalized === "diabetes") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes;
   if (normalized === "diabetes y peso") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes_y_peso;
   if (normalized === "dolor muscular") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_muscular;
 
   return null;
+}
+
+function shouldSendImageForProduct(
+  recentMessages: StoredMessage[],
+  productName: string,
+  imageUrl: string,
+): boolean {
+  const lastTenMessages = recentMessages.slice(-10);
+
+  return !lastTenMessages.some(message => {
+    if (message.direction !== "out" || typeof message.text !== "string") return false;
+    return message.text.includes(imageUrl) || message.text.includes(productName);
+  });
 }
 
 async function ensurePushSettingsTable() {
@@ -287,19 +292,21 @@ async function processAiResponse(data: BufferedMessage) {
 
     const forcedRouteResponse = getForcedFirstContactRouteResponse(messageForAi, recentMessages);
     if (forcedRouteResponse && !imageBase64ForAi && !wasAudioMessage) {
-      const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: forcedRouteResponse.imageUrl });
-      await storage.createMessage({
-        conversationId,
-        waMessageId: imgResponse.messages[0].id,
-        direction: "out",
-        type: "image",
-        text: forcedRouteResponse.imageUrl,
-        mediaId: null,
-        mimeType: null,
-        timestamp: Math.floor(Date.now() / 1000).toString(),
-        status: "sent",
-        rawJson: imgResponse,
-      });
+      if (shouldSendImageForProduct(recentMessages, forcedRouteResponse.productName, forcedRouteResponse.imageUrl)) {
+        const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: forcedRouteResponse.imageUrl });
+        await storage.createMessage({
+          conversationId,
+          waMessageId: imgResponse.messages[0].id,
+          direction: "out",
+          type: "image",
+          text: forcedRouteResponse.imageUrl,
+          mediaId: null,
+          mimeType: null,
+          timestamp: Math.floor(Date.now() / 1000).toString(),
+          status: "sent",
+          rawJson: imgResponse,
+        });
+      }
 
       const waResponse = await sendAiResponseToWhatsApp(from, forcedRouteResponse.responseText);
       const waMessageId = waResponse.messages[0].id;

@@ -98,6 +98,10 @@ Si es primera vez por producto y hay intencion comercial
 Si ya se envio imagen de ese producto en los ultimos 10 mensajes:
 - NO reenviar imagen.
 
+Si el cliente cambia a otro producto o a otra ruta del menu principal:
+- Enviar la imagen del nuevo producto si todavia no se mostro ese producto en los ultimos 10 mensajes.
+- NO asumir que por haber enviado una imagen antes ya no corresponde enviar la del otro producto.
+
 ## 8.1) MENU INICIAL POR PROBLEMA (OBLIGATORIO EN PRIMER CONTACTO GENERICO)
 Usar este menu cuando:
 - no hay producto claro
