@@ -34,6 +34,7 @@ const FIRST_CONTACT_ROUTE_RESPONSES = {
   diabetes: {
     productName: "Berberina RYZTOR",
     imageUrl: BERBERINA_IMAGE_URL,
+    listText: "[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]",
     responseText: `🔥 *Berberina RYZTOR*
 🌟 Indicada para diabetes tipo 2 y prediabetes.
 ⛔ Ayuda con control de glucosa y picos de azucar.
@@ -42,10 +43,21 @@ const FIRST_CONTACT_ROUTE_RESPONSES = {
 🇺🇸 Producto americano de alta calidad.
 *280 Bs* | Envio segun ciudad.
 [LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    benefitsText: `✨ *Beneficios Berberina*
+⛔ Apoya control de glucosa y picos de azucar.
+⚖️ Ayuda con metabolismo y control de antojos.
+🫀 Tambien contribuye al equilibrio de colesterol y trigliceridos.
+[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    indicationsText: `📌 *Indicaciones Berberina*
+Adultos: 2 capsulas al dia.
+Preferiblemente con comida.
+Rendimiento referencial: aprox 30 dias por frasco.
+[LISTA: Opciones Berberina | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
   diabetes_y_peso: {
     productName: "Berberina + Bitter Melon RYZTOR",
     imageUrl: BITTER_IMAGE_URL,
+    listText: "[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]",
     responseText: `🔥 *Berberina + Bitter Melon RYZTOR*
 🌟 Ideal para personas con diabetes que tambien buscan bajar de peso.
 ⛔ Ayuda con control de azucar y picos de glucosa.
@@ -54,16 +66,37 @@ const FIRST_CONTACT_ROUTE_RESPONSES = {
 🇺🇸 Producto americano de alta calidad.
 *300 Bs* | Envio segun ciudad.
 [LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    benefitsText: `✨ *Beneficios Berberina + Bitter*
+⛔ Apoya control de azucar y picos de glucosa.
+⚖️ Ayuda con control de antojos, metabolismo y peso.
+🙂 Es una opcion enfocada en diabetes y control de peso.
+[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    indicationsText: `📌 *Indicaciones Berberina + Bitter*
+Adultos: 2 capsulas al dia.
+Tomarlas con comida y agua.
+Si preguntan horario, responder: preferiblemente con comida.
+[LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
   dolor_muscular: {
     productName: "Citrato de Magnesio RYZTOR",
     imageUrl: CITRATO_IMAGE_URL,
+    listText: "[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]",
     responseText: `💪 *Citrato de Magnesio RYZTOR*
 🌟 Ideal para dolor muscular, calambres y tension.
 😌 Favorece relajacion, descanso y bienestar muscular.
 🦵 Apoya alivio de calambres y recuperacion muscular.
 🇺🇸 Producto americano de alta calidad.
 *300 Bs* | Envio segun ciudad.
+[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    benefitsText: `✨ *Beneficios Citrato*
+💪 Apoya alivio de dolor muscular, calambres y tension.
+😌 Favorece relajacion, descanso y bienestar muscular.
+🦵 Puede apoyar recuperacion muscular y confort muscular.
+[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    indicationsText: `📌 *Indicaciones Citrato*
+Adultos: 2 capsulas al dia.
+Preferiblemente con comida.
+Si preguntan horario, responder: preferiblemente con una comida del dia.
 [LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
 } as const;
@@ -160,12 +193,27 @@ function getForcedFirstContactRouteResponse(
   messageForAi: string,
   recentMessages: StoredMessage[],
 ) {
+  const latestOutbound = [...recentMessages].reverse().find(message => message.direction === "out");
+  if (!latestOutbound?.text || !latestOutbound.text.includes("[BOTONES: Diabetes, Diabetes y peso, Dolor muscular]")) {
+    return null;
+  }
+
   const normalized = normalizeInboundText(messageForAi);
   if (normalized === "diabetes") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes;
   if (normalized === "diabetes y peso") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes_y_peso;
   if (normalized === "dolor muscular") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_muscular;
 
   return null;
+}
+
+function getCurrentProductContext(recentMessages: StoredMessage[]) {
+  const latestOutbound = [...recentMessages].reverse().find(message => message.direction === "out" && typeof message.text === "string");
+  if (!latestOutbound?.text) return null;
+
+  const outboundText = latestOutbound.text;
+  return Object.values(FIRST_CONTACT_ROUTE_RESPONSES).find(product =>
+    outboundText.includes(product.productName) || outboundText.includes(product.listText)
+  ) || null;
 }
 
 function shouldSendImageForProduct(
@@ -329,6 +377,41 @@ async function processAiResponse(data: BufferedMessage) {
       });
 
       return;
+    }
+
+    const currentProductContext = getCurrentProductContext(recentMessages);
+    const normalizedMessage = normalizeInboundText(messageForAi);
+    if (currentProductContext && !imageBase64ForAi && !wasAudioMessage) {
+      const submenuResponse =
+        normalizedMessage === "beneficios" || normalizedMessage === "beneficio"
+          ? currentProductContext.benefitsText
+          : normalizedMessage === "indicaciones" || normalizedMessage === "indicacion"
+            ? currentProductContext.indicationsText
+            : null;
+
+      if (submenuResponse) {
+        const waResponse = await sendAiResponseToWhatsApp(from, submenuResponse);
+        const waMessageId = waResponse.messages[0].id;
+
+        await storage.createMessage({
+          conversationId,
+          waMessageId,
+          direction: "out",
+          type: "text",
+          text: submenuResponse,
+          timestamp: Math.floor(Date.now() / 1000).toString(),
+          status: "sent",
+          rawJson: waResponse,
+        });
+
+        await storage.updateConversation(conversationId, {
+          needsHumanAttention: false,
+          lastMessage: submenuResponse,
+          lastMessageTimestamp: new Date(),
+        });
+
+        return;
+      }
     }
 
     const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi);
