@@ -312,9 +312,11 @@ async function processAiResponse(data: BufferedMessage) {
   }
 
   try {
+    const aiSettings = await storage.getAiSettings();
+    const fixedCommerceFlowEnabled = aiSettings?.learningMode !== true;
     const recentMessages = await storage.getMessages(conversationId);
 
-    if (shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
+    if (fixedCommerceFlowEnabled && shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
       const waResponse = await sendAiResponseToWhatsApp(from, FIRST_CONTACT_PROBLEM_MENU_RESPONSE);
       const waMessageId = waResponse.messages[0].id;
 
@@ -338,7 +340,9 @@ async function processAiResponse(data: BufferedMessage) {
       return;
     }
 
-    const forcedRouteResponse = getForcedFirstContactRouteResponse(messageForAi, recentMessages);
+    const forcedRouteResponse = fixedCommerceFlowEnabled
+      ? getForcedFirstContactRouteResponse(messageForAi, recentMessages)
+      : null;
     if (forcedRouteResponse && !imageBase64ForAi && !wasAudioMessage) {
       if (shouldSendImageForProduct(recentMessages, forcedRouteResponse.productName, forcedRouteResponse.imageUrl)) {
         const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: forcedRouteResponse.imageUrl });
@@ -379,7 +383,7 @@ async function processAiResponse(data: BufferedMessage) {
       return;
     }
 
-    const currentProductContext = getCurrentProductContext(recentMessages);
+    const currentProductContext = fixedCommerceFlowEnabled ? getCurrentProductContext(recentMessages) : null;
     const normalizedMessage = normalizeInboundText(messageForAi);
     if (currentProductContext && !imageBase64ForAi && !wasAudioMessage) {
       const submenuResponse =
@@ -427,18 +431,17 @@ async function processAiResponse(data: BufferedMessage) {
     } else if (aiResult && aiResult.response) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
-      const audioSettings = await storage.getAiSettings();
-      const shouldSendAudio = wasAudioMessage && audioSettings?.audioResponseEnabled;
+      const shouldSendAudio = wasAudioMessage && aiSettings?.audioResponseEnabled;
 
       let waResponse: any;
       let waMessageId: string;
 
       if (shouldSendAudio) {
-        const ttsProvider = audioSettings?.ttsProvider || "openai";
-        const selectedVoice = audioSettings?.audioVoice || "nova";
-        const elevenlabsVoiceId = audioSettings?.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
-        const ttsSpeed = audioSettings?.ttsSpeed ? audioSettings.ttsSpeed / 100 : 1.0;
-        const ttsInstructions = audioSettings?.ttsInstructions || null;
+        const ttsProvider = aiSettings?.ttsProvider || "openai";
+        const selectedVoice = aiSettings?.audioVoice || "nova";
+        const elevenlabsVoiceId = aiSettings?.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
+        const ttsSpeed = aiSettings?.ttsSpeed ? aiSettings.ttsSpeed / 100 : 1.0;
+        const ttsInstructions = aiSettings?.ttsInstructions || null;
         console.log("=== SENDING AUDIO ===", ttsProvider, selectedVoice, ttsSpeed);
 
         const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId });
@@ -2703,6 +2706,7 @@ NO uses saludos formales. Sé directo y amigable.`
     elevenlabsVoiceId: z.string().optional(),
     ttsSpeed: z.number().min(25).max(400).optional(),
     ttsInstructions: z.string().nullable().optional(),
+    learningMode: z.boolean().optional(),
     followUpEnabled: z.boolean().optional(),
     followUpMinutes: z.number().min(5).max(60).optional(),
   });

@@ -44,6 +44,7 @@ interface AiSettings {
   elevenlabsVoiceId: string | null;
   ttsSpeed: number | null;
   ttsInstructions: string | null;
+  learningMode: boolean | null;
   followUpEnabled: boolean | null;
   followUpMinutes: number | null;
 }
@@ -111,6 +112,7 @@ export default function AIAgentPage() {
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(100);
   const [ttsInstructions, setTtsInstructions] = useState("");
+  const [fixedCommerceFlowEnabled, setFixedCommerceFlowEnabled] = useState(true);
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [followUpMinutes, setFollowUpMinutes] = useState(20);
   const [configEdited, setConfigEdited] = useState(false);
@@ -260,6 +262,7 @@ export default function AIAgentPage() {
       setElevenlabsVoiceId(settings.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb");
       setTtsSpeed(settings.ttsSpeed || 100);
       setTtsInstructions(settings.ttsInstructions || "");
+      setFixedCommerceFlowEnabled(settings.learningMode !== true);
       setFollowUpEnabled(settings.followUpEnabled || false);
       setFollowUpMinutes(settings.followUpMinutes || 20);
     }
@@ -334,8 +337,8 @@ export default function AIAgentPage() {
   };
 
   const handleSaveConfig = () => {
-    console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
-    updateSettingsMutation.mutate({ maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioVoice, ttsProvider, elevenlabsVoiceId, ttsSpeed, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
+    console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory, fixedCommerceFlowEnabled });
+    updateSettingsMutation.mutate({ maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioVoice, ttsProvider, elevenlabsVoiceId, ttsSpeed, ttsInstructions: ttsInstructions || null, learningMode: !fixedCommerceFlowEnabled, followUpEnabled, followUpMinutes });
   };
 
   const playVoicePreview = async () => {
@@ -655,6 +658,24 @@ export default function AIAgentPage() {
               </div>
             </div>
             
+            <div className="flex items-center justify-between p-4 border border-slate-700/50 rounded-xl bg-slate-800/30">
+              <div className="space-y-1">
+                <Label htmlFor="fixedCommerceFlow" className="text-slate-300">Usar Flujo Comercial Fijo</Label>
+                <p className="text-xs text-slate-500">
+                  Mantiene activos los menus y respuestas fijas de productos. Si lo apaga, la IA usa solo prompt y contexto.
+                </p>
+              </div>
+              <Switch
+                id="fixedCommerceFlow"
+                checked={fixedCommerceFlowEnabled}
+                onCheckedChange={(checked) => {
+                  setFixedCommerceFlowEnabled(checked);
+                  setConfigEdited(true);
+                }}
+                data-testid="switch-fixed-commerce-flow"
+              />
+            </div>
+
             <div className="flex items-center justify-between p-4 border border-slate-700/50 rounded-xl bg-slate-800/30">
               <div className="space-y-1">
                 <Label htmlFor="audioResponse" className="text-slate-300">Responder con Audio</Label>
