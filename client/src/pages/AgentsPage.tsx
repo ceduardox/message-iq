@@ -46,6 +46,10 @@ interface AgentWithStats extends Agent {
   lastActivityAt?: string | null;
 }
 
+interface AgentAiColumnStatus {
+  exists: boolean;
+}
+
 const glowAnimation = `
 @keyframes glow-line {
   0% { background-position: -200% 0; }
@@ -82,6 +86,17 @@ export default function AgentsPage() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("No se pudo cargar la lista de agentes");
+      return res.json();
+    },
+  });
+
+  const { data: agentAiColumnStatus } = useQuery<AgentAiColumnStatus>({
+    queryKey: ["/api/agents/ai-column-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/agents/ai-column-status", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("No se pudo verificar la columna de IA por agente");
       return res.json();
     },
   });
@@ -214,6 +229,22 @@ export default function AgentsPage() {
             <p className="text-xs text-slate-500">Crea y administra agentes que atienden mensajes</p>
           </div>
         </div>
+
+        {agentAiColumnStatus && (
+          <div
+            className={cn(
+              "mb-5 rounded-2xl border px-4 py-3 text-sm",
+              agentAiColumnStatus.exists
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                : "border-red-500/30 bg-red-500/10 text-red-100",
+            )}
+            data-testid="alert-agent-ai-column-status"
+          >
+            {agentAiColumnStatus.exists
+              ? "Columna OK: is_ai_auto_reply_enabled existe en la base de datos. El toggle IA auto por agente puede guardarse."
+              : "Alerta: falta la columna is_ai_auto_reply_enabled en la base de datos. El toggle IA auto por agente no se guardara bien hasta corregir eso."}
+          </div>
+        )}
 
         <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
           <div className="flex flex-wrap items-end gap-3">

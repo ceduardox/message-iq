@@ -3216,6 +3216,24 @@ Máximo 2 líneas. Sé específico y práctico.`;
   });
 
   // === AGENT MANAGEMENT (Admin only) ===
+  app.get("/api/agents/ai-column-status", requireAdmin, async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'agents'
+            AND column_name = 'is_ai_auto_reply_enabled'
+        ) AS exists
+      `);
+      const exists = Boolean((result.rows as any[])[0]?.exists);
+      res.json({ exists });
+    } catch (error) {
+      console.error("Error checking agent AI column status:", error);
+      res.status(500).json({ message: "Error checking agent AI column status" });
+    }
+  });
+
   app.get("/api/agents", requireAdmin, async (req, res) => {
     try {
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
