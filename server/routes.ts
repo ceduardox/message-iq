@@ -22,6 +22,7 @@ import ffmpegStatic from "ffmpeg-static";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const uploadProductImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
@@ -169,7 +170,44 @@ interface PushNotificationPreferences {
 }
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
 let agentAiColumnEnsured = false;
+let productImageColumnsEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
+
+function getRuntimePublicDir() {
+  if (process.env.NODE_ENV === "production") {
+    return path.resolve(process.cwd(), "dist", "public");
+  }
+  return path.resolve(process.cwd(), "client", "public");
+}
+
+function getProductUploadDirectory() {
+  return path.join(getRuntimePublicDir(), "uploads", "products");
+}
+
+function sanitizeFilePart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+async function ensureProductImageColumnsExist() {
+  if (productImageColumnsEnsured) return;
+  await db.execute(sql`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS image_bottle_url TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS image_dose_url TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS image_ingredients_url TEXT
+  `);
+  productImageColumnsEnsured = true;
+}
 
 function normalizeInboundText(text: string): string {
   return text
@@ -1457,6 +1495,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  await ensureProductImageColumnsExist();
+
   // === SESSION SETUP ===
   const SessionStore = MemoryStore(session);
   app.use(
@@ -3371,9 +3411,41 @@ Máximo 2 líneas. Sé específico y práctico.`;
 
   // === PRODUCTS ROUTES ===
 
+  app.post("/api/products/upload-image", requireAuth, uploadProductImage.single("image"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ message: "No se recibiÃ³ imagen" });
+      }
+      if (!file.mimetype?.startsWith("image/")) {
+        return res.status(400).json({ message: "El archivo debe ser una imagen" });
+      }
+
+      const uploadDir = getProductUploadDirectory();
+      fs.mkdirSync(uploadDir, { recursive: true });
+
+      const extension = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+      const baseName = sanitizeFilePart(path.basename(file.originalname || "producto", extension)) || "producto";
+      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}-${baseName}${extension}`;
+      const absolutePath = path.join(uploadDir, fileName);
+      fs.writeFileSync(absolutePath, file.buffer);
+
+      res.json({
+        url: `/uploads/products/${fileName}`,
+        fileName,
+        size: file.size,
+        mimeType: file.mimetype,
+      });
+    } catch (error) {
+      console.error("Error uploading product image:", error);
+      res.status(500).json({ message: "Error subiendo imagen" });
+    }
+  });
+
   // Get all products
   app.get("/api/products", requireAuth, async (req, res) => {
     try {
+      await ensureProductImageColumnsExist();
       const products = await storage.getProducts();
       res.json(products);
     } catch (error) {
@@ -3385,6 +3457,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
   // Create product
   app.post("/api/products", requireAuth, async (req, res) => {
     try {
+      await ensureProductImageColumnsExist();
       const parsed = insertProductSchema.parse(req.body);
       const product = await storage.createProduct(parsed);
       res.json(product);
@@ -3400,6 +3473,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
   // Update product - require name if provided
   app.patch("/api/products/:id", requireAuth, async (req, res) => {
     try {
+      await ensureProductImageColumnsExist();
       const id = parseInt(req.params.id);
       const updateSchema = insertProductSchema.partial().refine(
         (data) => data.name === undefined || (data.name && data.name.length > 0),
@@ -3420,6 +3494,7 @@ Máximo 2 líneas. Sé específico y práctico.`;
   // Delete product
   app.delete("/api/products/:id", requireAuth, async (req, res) => {
     try {
+      await ensureProductImageColumnsExist();
       const id = parseInt(req.params.id);
       await storage.deleteProduct(id);
       res.json({ success: true });

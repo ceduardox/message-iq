@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { Progress } from "@/components/ui/progress";
 import { 
   ArrowLeft, 
   Bot, 
@@ -62,6 +63,9 @@ interface Product {
   description: string | null;
   price: string | null;
   imageUrl: string | null;
+  imageBottleUrl?: string | null;
+  imageDoseUrl?: string | null;
+  imageIngredientsUrl?: string | null;
   createdAt: string;
 }
 
@@ -131,6 +135,11 @@ export default function AIAgentPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [newImageUrl, setNewImageUrl] = useState("");
+  const [newImageBottleUrl, setNewImageBottleUrl] = useState("");
+  const [newImageDoseUrl, setNewImageDoseUrl] = useState("");
+  const [newImageIngredientsUrl, setNewImageIngredientsUrl] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadingSlots, setUploadingSlots] = useState<Record<string, boolean>>({});
   
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -139,6 +148,9 @@ export default function AIAgentPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
+  const [editImageBottleUrl, setEditImageBottleUrl] = useState("");
+  const [editImageDoseUrl, setEditImageDoseUrl] = useState("");
+  const [editImageIngredientsUrl, setEditImageIngredientsUrl] = useState("");
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AiSettings>({
     queryKey: ["/api/ai/settings"],
@@ -323,6 +335,11 @@ export default function AIAgentPage() {
       setNewDescription("");
       setNewPrice("");
       setNewImageUrl("");
+      setNewImageBottleUrl("");
+      setNewImageDoseUrl("");
+      setNewImageIngredientsUrl("");
+      setUploadProgress({});
+      setUploadingSlots({});
       toast({ title: "Producto agregado" });
     },
     onError: (error: Error) => {
@@ -433,6 +450,69 @@ export default function AIAgentPage() {
     }
   };
 
+  const uploadProductImageWithProgress = (file: File, slotKey: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("image", file);
+      const xhr = new XMLHttpRequest();
+
+      setUploadingSlots((prev) => ({ ...prev, [slotKey]: true }));
+      setUploadProgress((prev) => ({ ...prev, [slotKey]: 0 }));
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress((prev) => ({ ...prev, [slotKey]: percent }));
+      };
+
+      xhr.onerror = () => {
+        setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
+        reject(new Error("No se pudo subir la imagen"));
+      };
+
+      xhr.onload = () => {
+        setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(xhr.responseText || "Error subiendo imagen"));
+          return;
+        }
+        try {
+          const parsed = JSON.parse(xhr.responseText) as { url?: string };
+          if (!parsed.url) {
+            reject(new Error("Respuesta de subida sin URL"));
+            return;
+          }
+          setUploadProgress((prev) => ({ ...prev, [slotKey]: 100 }));
+          resolve(parsed.url);
+        } catch {
+          reject(new Error("Respuesta invÃ¡lida del servidor al subir imagen"));
+        }
+      };
+
+      xhr.open("POST", "/api/products/upload-image");
+      xhr.withCredentials = true;
+      xhr.send(formData);
+    });
+
+  const handleSelectAndUploadProductImage = async (
+    file: File | null,
+    slotKey: string,
+    setter: (url: string) => void
+  ) => {
+    if (!file) return;
+    try {
+      const uploadedUrl = await uploadProductImageWithProgress(file, slotKey);
+      setter(uploadedUrl);
+      toast({ title: "Imagen subida", description: uploadedUrl });
+    } catch (error: any) {
+      toast({
+        title: "Error al subir imagen",
+        description: error?.message || "No se pudo subir la imagen",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleAddProduct = () => {
     if (!newName.trim()) {
       toast({ title: "El nombre es requerido", variant: "destructive" });
@@ -444,6 +524,9 @@ export default function AIAgentPage() {
       description: newDescription || null,
       price: newPrice || null,
       imageUrl: newImageUrl || null,
+      imageBottleUrl: newImageBottleUrl || null,
+      imageDoseUrl: newImageDoseUrl || null,
+      imageIngredientsUrl: newImageIngredientsUrl || null,
     });
   };
 
@@ -454,6 +537,9 @@ export default function AIAgentPage() {
     setEditDescription(product.description || "");
     setEditPrice(product.price || "");
     setEditImageUrl(product.imageUrl || "");
+    setEditImageBottleUrl(product.imageBottleUrl || "");
+    setEditImageDoseUrl(product.imageDoseUrl || "");
+    setEditImageIngredientsUrl(product.imageIngredientsUrl || "");
   };
 
   const saveEdit = () => {
@@ -466,6 +552,9 @@ export default function AIAgentPage() {
         description: editDescription || null,
         price: editPrice || null,
         imageUrl: editImageUrl || null,
+        imageBottleUrl: editImageBottleUrl || null,
+        imageDoseUrl: editImageDoseUrl || null,
+        imageIngredientsUrl: editImageIngredientsUrl || null,
       },
     });
   };
@@ -1091,15 +1180,98 @@ export default function AIAgentPage() {
                   className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                 />
               </div>
-              <div>
-                <Label className="text-slate-300">URL de imagen</Label>
-                <Input
-                  placeholder="https://..."
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  data-testid="input-product-image"
-                  className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
-                />
+              <div className="space-y-3">
+                <Label className="text-slate-300">ImÃ¡genes del producto (con % de carga)</Label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="URL imagen principal"
+                      value={newImageUrl}
+                      onChange={(e) => setNewImageUrl(e.target.value)}
+                      data-testid="input-product-image-main"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, "principal", setNewImageUrl)}
+                      data-testid="input-product-image-main-file"
+                      className="bg-slate-800/50 border-slate-600/50 text-white file:text-slate-300"
+                    />
+                    {uploadingSlots.principal && (
+                      <div className="space-y-1">
+                        <Progress value={uploadProgress.principal || 0} className="h-2" />
+                        <p className="text-xs text-slate-400">{uploadProgress.principal || 0}%</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="URL imagen frasco"
+                      value={newImageBottleUrl}
+                      onChange={(e) => setNewImageBottleUrl(e.target.value)}
+                      data-testid="input-product-image-bottle"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, "frasco", setNewImageBottleUrl)}
+                      data-testid="input-product-image-bottle-file"
+                      className="bg-slate-800/50 border-slate-600/50 text-white file:text-slate-300"
+                    />
+                    {uploadingSlots.frasco && (
+                      <div className="space-y-1">
+                        <Progress value={uploadProgress.frasco || 0} className="h-2" />
+                        <p className="text-xs text-slate-400">{uploadProgress.frasco || 0}%</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="URL imagen dosis"
+                      value={newImageDoseUrl}
+                      onChange={(e) => setNewImageDoseUrl(e.target.value)}
+                      data-testid="input-product-image-dose"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, "dosis", setNewImageDoseUrl)}
+                      data-testid="input-product-image-dose-file"
+                      className="bg-slate-800/50 border-slate-600/50 text-white file:text-slate-300"
+                    />
+                    {uploadingSlots.dosis && (
+                      <div className="space-y-1">
+                        <Progress value={uploadProgress.dosis || 0} className="h-2" />
+                        <p className="text-xs text-slate-400">{uploadProgress.dosis || 0}%</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="URL imagen ingredientes"
+                      value={newImageIngredientsUrl}
+                      onChange={(e) => setNewImageIngredientsUrl(e.target.value)}
+                      data-testid="input-product-image-ingredients"
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, "ingredientes", setNewImageIngredientsUrl)}
+                      data-testid="input-product-image-ingredients-file"
+                      className="bg-slate-800/50 border-slate-600/50 text-white file:text-slate-300"
+                    />
+                    {uploadingSlots.ingredientes && (
+                      <div className="space-y-1">
+                        <Progress value={uploadProgress.ingredientes || 0} className="h-2" />
+                        <p className="text-xs text-slate-400">{uploadProgress.ingredientes || 0}%</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               <Button onClick={handleAddProduct} disabled={createProductMutation.isPending} data-testid="button-add-product" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg shadow-emerald-500/30">
                 {createProductMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
@@ -1144,12 +1316,80 @@ export default function AIAgentPage() {
                           rows={2}
                           data-testid={`textarea-edit-description-${product.id}`}
                         />
-                        <Input
-                          placeholder="URL imagen"
-                          value={editImageUrl}
-                          onChange={(e) => setEditImageUrl(e.target.value)}
-                          data-testid={`input-edit-image-${product.id}`}
-                        />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            placeholder="URL imagen principal"
+                            value={editImageUrl}
+                            onChange={(e) => setEditImageUrl(e.target.value)}
+                            data-testid={`input-edit-image-main-${product.id}`}
+                          />
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, `edit-principal-${product.id}`, setEditImageUrl)}
+                            data-testid={`input-edit-image-main-file-${product.id}`}
+                          />
+                          {(uploadingSlots[`edit-principal-${product.id}`] || false) && (
+                            <div className="sm:col-span-2 space-y-1">
+                              <Progress value={uploadProgress[`edit-principal-${product.id}`] || 0} className="h-2" />
+                              <p className="text-xs text-slate-500">{uploadProgress[`edit-principal-${product.id}`] || 0}%</p>
+                            </div>
+                          )}
+                          <Input
+                            placeholder="URL imagen frasco"
+                            value={editImageBottleUrl}
+                            onChange={(e) => setEditImageBottleUrl(e.target.value)}
+                            data-testid={`input-edit-image-bottle-${product.id}`}
+                          />
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, `edit-frasco-${product.id}`, setEditImageBottleUrl)}
+                            data-testid={`input-edit-image-bottle-file-${product.id}`}
+                          />
+                          {(uploadingSlots[`edit-frasco-${product.id}`] || false) && (
+                            <div className="sm:col-span-2 space-y-1">
+                              <Progress value={uploadProgress[`edit-frasco-${product.id}`] || 0} className="h-2" />
+                              <p className="text-xs text-slate-500">{uploadProgress[`edit-frasco-${product.id}`] || 0}%</p>
+                            </div>
+                          )}
+                          <Input
+                            placeholder="URL imagen dosis"
+                            value={editImageDoseUrl}
+                            onChange={(e) => setEditImageDoseUrl(e.target.value)}
+                            data-testid={`input-edit-image-dose-${product.id}`}
+                          />
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, `edit-dosis-${product.id}`, setEditImageDoseUrl)}
+                            data-testid={`input-edit-image-dose-file-${product.id}`}
+                          />
+                          {(uploadingSlots[`edit-dosis-${product.id}`] || false) && (
+                            <div className="sm:col-span-2 space-y-1">
+                              <Progress value={uploadProgress[`edit-dosis-${product.id}`] || 0} className="h-2" />
+                              <p className="text-xs text-slate-500">{uploadProgress[`edit-dosis-${product.id}`] || 0}%</p>
+                            </div>
+                          )}
+                          <Input
+                            placeholder="URL imagen ingredientes"
+                            value={editImageIngredientsUrl}
+                            onChange={(e) => setEditImageIngredientsUrl(e.target.value)}
+                            data-testid={`input-edit-image-ingredients-${product.id}`}
+                          />
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSelectAndUploadProductImage(e.target.files?.[0] || null, `edit-ingredientes-${product.id}`, setEditImageIngredientsUrl)}
+                            data-testid={`input-edit-image-ingredients-file-${product.id}`}
+                          />
+                          {(uploadingSlots[`edit-ingredientes-${product.id}`] || false) && (
+                            <div className="sm:col-span-2 space-y-1">
+                              <Progress value={uploadProgress[`edit-ingredientes-${product.id}`] || 0} className="h-2" />
+                              <p className="text-xs text-slate-500">{uploadProgress[`edit-ingredientes-${product.id}`] || 0}%</p>
+                            </div>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <Button size="sm" onClick={saveEdit} disabled={updateProductMutation.isPending}>
                             {updateProductMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
@@ -1179,6 +1419,16 @@ export default function AIAgentPage() {
                           {product.description && (
                             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                               {product.description}
+                            </p>
+                          )}
+                          {(product.imageUrl || product.imageBottleUrl || product.imageDoseUrl || product.imageIngredientsUrl) && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              ImÃ¡genes: {[
+                                product.imageUrl ? "principal" : null,
+                                product.imageBottleUrl ? "frasco" : null,
+                                product.imageDoseUrl ? "dosis" : null,
+                                product.imageIngredientsUrl ? "ingredientes" : null,
+                              ].filter(Boolean).join(", ")}
                             </p>
                           )}
                         </div>

@@ -90,6 +90,15 @@ function findProductInHistory(recentMessages: Message[], products: Product[]): P
   return null;
 }
 
+function getProductImageContext(product: Product) {
+  const imageLines: string[] = [];
+  if (product.imageUrl) imageLines.push(`Imagen principal: ${product.imageUrl}`);
+  if (product.imageBottleUrl) imageLines.push(`Imagen frasco: ${product.imageBottleUrl}`);
+  if (product.imageDoseUrl) imageLines.push(`Imagen dosis: ${product.imageDoseUrl}`);
+  if (product.imageIngredientsUrl) imageLines.push(`Imagen ingredientes: ${product.imageIngredientsUrl}`);
+  return imageLines.join("\n");
+}
+
 export async function generateAiResponse(
   conversationId: number,
   userMessage: string,
@@ -125,14 +134,14 @@ export async function generateAiResponse(
     if (matchingProducts.length > 0) {
       // User mentioned specific product(s) - include only those
       productContext = matchingProducts.map(p => 
-        `${p.name} - ${p.price || "Consultar precio"}\n${p.description || ""}\n${p.imageUrl ? `Imagen: ${p.imageUrl}` : ""}`
+        `${p.name} - ${p.price || "Consultar precio"}\n${p.description || ""}\n${getProductImageContext(p)}`
       ).join("\n\n");
       productInContext = matchingProducts[0];
     } else {
       // Check if it's a follow-up question about a product mentioned earlier
       const historyProduct = findProductInHistory(recentMessages, allProducts);
       if (historyProduct) {
-        productContext = `${historyProduct.name} - ${historyProduct.price || "Consultar precio"}\n${historyProduct.description || ""}\n${historyProduct.imageUrl ? `Imagen: ${historyProduct.imageUrl}` : ""}`;
+        productContext = `${historyProduct.name} - ${historyProduct.price || "Consultar precio"}\n${historyProduct.description || ""}\n${getProductImageContext(historyProduct)}`;
         productInContext = historyProduct;
       } else if (isCatalogQuery(userMessage)) {
         // General product query without specific product - show list

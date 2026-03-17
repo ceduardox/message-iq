@@ -195,6 +195,9 @@ export const products = pgTable("products", {
   description: text("description"),
   price: varchar("price", { length: 50 }), // e.g., "280 Bs"
   imageUrl: text("image_url"),
+  imageBottleUrl: text("image_bottle_url"),
+  imageDoseUrl: text("image_dose_url"),
+  imageIngredientsUrl: text("image_ingredients_url"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
