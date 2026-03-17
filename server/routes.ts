@@ -8,7 +8,7 @@ import MemoryStore from "memorystore";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
-import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage } from "@shared/schema";
+import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage, type Product as StoredProduct } from "@shared/schema";
 import { db } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
@@ -172,6 +172,7 @@ let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number
 let agentAiColumnEnsured = false;
 let productImageColumnsEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
+const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
 function getRuntimePublicDir() {
   if (process.env.NODE_ENV === "production") {
@@ -246,6 +247,39 @@ function getPushTargetUrl(data?: Record<string, string>) {
     return `https://ryzapp.org/?conversationId=${conversationId}`;
   }
   return "https://ryzapp.org/";
+}
+
+function resolvePublicImageUrl(imageUrl?: string | null) {
+  if (!imageUrl) return "";
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  if (!imageUrl.startsWith("/")) return imageUrl;
+  const baseUrl = (process.env.APP_BASE_URL || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, "");
+  return `${baseUrl}${imageUrl}`;
+}
+
+function findCatalogProductByRouteName(products: StoredProduct[], routeProductName: string) {
+  const routeName = normalizeInboundText(routeProductName);
+  if (!routeName) return null;
+  return (
+    products.find((product) => {
+      const productName = normalizeInboundText(product.name || "");
+      if (productName === routeName) return true;
+      if (productName.includes(routeName) || routeName.includes(productName)) return true;
+      const keywords = normalizeInboundText(product.keywords || "");
+      return Boolean(keywords && (keywords.includes(routeName) || routeName.includes(keywords)));
+    }) || null
+  );
+}
+
+function getPreferredCatalogProductImage(product: StoredProduct | null) {
+  if (!product) return "";
+  return (
+    resolvePublicImageUrl(product.imageUrl) ||
+    resolvePublicImageUrl(product.imageBottleUrl) ||
+    resolvePublicImageUrl(product.imageDoseUrl) ||
+    resolvePublicImageUrl(product.imageIngredientsUrl) ||
+    ""
+  );
 }
 
 function isGenericFirstContactTrigger(text: string): boolean {
@@ -511,14 +545,22 @@ async function processAiResponse(data: BufferedMessage) {
       ? getForcedFirstContactRouteResponse(messageForAi, recentMessages)
       : null;
     if (forcedRouteResponse && !imageBase64ForAi && !wasAudioMessage) {
-      if (shouldSendImageForProduct(recentMessages, forcedRouteResponse.productName, forcedRouteResponse.imageUrl)) {
-        const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: forcedRouteResponse.imageUrl });
+      let imageUrlToSend = resolvePublicImageUrl(forcedRouteResponse.imageUrl);
+      const products = await storage.getProducts();
+      const matchedCatalogProduct = findCatalogProductByRouteName(products, forcedRouteResponse.productName);
+      const catalogImage = getPreferredCatalogProductImage(matchedCatalogProduct);
+      if (catalogImage) {
+        imageUrlToSend = catalogImage;
+      }
+
+      if (imageUrlToSend && shouldSendImageForProduct(recentMessages, forcedRouteResponse.productName, imageUrlToSend)) {
+        const imgResponse = await sendToWhatsApp(from, "image", { imageUrl: imageUrlToSend });
         await storage.createMessage({
           conversationId,
           waMessageId: imgResponse.messages[0].id,
           direction: "out",
           type: "image",
-          text: forcedRouteResponse.imageUrl,
+          text: imageUrlToSend,
           mediaId: null,
           mimeType: null,
           timestamp: Math.floor(Date.now() / 1000).toString(),
