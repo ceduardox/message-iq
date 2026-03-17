@@ -169,9 +169,9 @@ function getConversationPushOptions(conversation?: { assignedAgentId?: number | 
 function getPushTargetUrl(data?: Record<string, string>) {
   const conversationId = data?.conversationId;
   if (conversationId && /^\d+$/.test(conversationId)) {
-    return `https://ryzapp.org/?conversationId=${conversationId}`;
+    return `/?conversationId=${conversationId}`;
   }
-  return "https://ryzapp.org/";
+  return "/";
 }
 
 function isGenericFirstContactTrigger(text: string): boolean {
@@ -1134,7 +1134,9 @@ async function sendPushNotification(
       web_push_topic: uniqueTopic,
       ttl: 60,
     };
-    payload.url = targetUrl;
+    if (!normalizedConversationId) {
+      payload.url = targetUrl;
+    }
 
     if (targetExternalIds.length > 0) {
       payload.include_aliases = { external_id: targetExternalIds };
