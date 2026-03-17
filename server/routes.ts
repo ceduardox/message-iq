@@ -25,9 +25,11 @@ const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileS
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
+const FIRST_CONTACT_TOP_LEVEL_BUTTONS = "[BOTONES: Azucar y peso, Dolor y estres, Dolor articular]";
+const FIRST_CONTACT_AZUCAR_PESO_BUTTONS = "[BOTONES: Solo diabetes, Diabetes + peso]";
 const FIRST_CONTACT_PROBLEM_MENU_RESPONSE = `Hola, soy Isabella de RYZTOR.
 Con gusto le ayudo. Que le interesa mejorar hoy?
-[BOTONES: Diabetes, Diabetes y peso, Dolor muscular]`;
+${FIRST_CONTACT_TOP_LEVEL_BUTTONS}`;
 const PROMPT_PROFILE_PRIMARY_TITLE = "__SYSTEM_PROMPT_PRIMARY__";
 const PROMPT_PROFILE_SECONDARY_TITLE = "__SYSTEM_PROMPT_SECONDARY__";
 const PROMPT_PROFILE_ACTIVE_TITLE = "__SYSTEM_PROMPT_ACTIVE__";
@@ -39,7 +41,19 @@ const HIDDEN_PROMPT_PROFILE_TITLES = new Set([
 const BERBERINA_IMAGE_URL = "https://i.ibb.co/vC27GxKC/BERBERINA-BANNER.jpg";
 const BITTER_IMAGE_URL = "https://i.ibb.co/whdDDLLC/image-Pippit-202602222317.jpg";
 const CITRATO_IMAGE_URL = "https://i.ibb.co/Q7TYCb0F/citrato.jpg";
+const BOSWELLIA_IMAGE_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Boswellia_serrata_kadukas.jpg/640px-Boswellia_serrata_kadukas.jpg";
 const FIRST_CONTACT_ROUTE_RESPONSES = {
+  azucar_y_peso_menu: {
+    productName: "Selector Azucar y peso",
+    imageUrl: "",
+    listText: FIRST_CONTACT_AZUCAR_PESO_BUTTONS,
+    responseText: `Perfecto 👌 Te ayudo a elegir en 1 paso.
+Si deseas enfoque solo para diabetes, elige la primera opcion.
+Si tambien buscas apoyar bajar de peso, elige la segunda opcion.
+${FIRST_CONTACT_AZUCAR_PESO_BUTTONS}`,
+    benefitsText: "",
+    indicationsText: "",
+  },
   diabetes: {
     productName: "Berberina RYZTOR",
     imageUrl: BERBERINA_IMAGE_URL,
@@ -86,7 +100,7 @@ Tomarlas con comida y agua.
 Si preguntan horario, responder: preferiblemente con comida.
 [LISTA: Opciones Berberina + Bitter | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
-  dolor_muscular: {
+  dolor_y_estres: {
     productName: "Citrato de Magnesio RYZTOR",
     imageUrl: CITRATO_IMAGE_URL,
     listText: "[LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]",
@@ -107,6 +121,28 @@ Adultos: 2 capsulas al dia.
 Preferiblemente con comida.
 Si preguntan horario, responder: preferiblemente con una comida del dia.
 [LISTA: Opciones Citrato | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+  },
+  dolor_articular: {
+    productName: "Boswellia Serrata RYZTOR",
+    imageUrl: BOSWELLIA_IMAGE_URL,
+    listText: "[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]",
+    responseText: `🌿 *Boswellia Serrata RYZTOR*
+🌟 Enfocada en dolor articular por artritis y artrosis.
+🦴 Apoya desinflamacion y movilidad de articulaciones.
+💪 Ayuda a reducir rigidez y mejorar confort al caminar.
+🇺🇸 Producto americano de alta calidad.
+*320 Bs* | Envio segun ciudad.
+[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    benefitsText: `✨ *Beneficios Boswellia Serrata*
+🦴 Apoya desinflamacion articular en artritis y artrosis.
+🚶 Puede mejorar movilidad y reducir rigidez articular.
+💪 Ayuda al confort en rodillas, caderas y manos.
+[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
+    indicationsText: `📌 *Indicaciones Boswellia Serrata*
+Adultos: 2 capsulas al dia.
+Tomarlas con comida y agua.
+Constancia diaria recomendada para mejor resultado.
+[LISTA: Opciones Boswellia | Beneficios, Indicaciones, Precio y envio, Hacer pedido, Tengo otra consulta]`,
   },
 } as const;
 interface BufferedMessage {
@@ -234,14 +270,30 @@ function getForcedFirstContactRouteResponse(
   recentMessages: StoredMessage[],
 ) {
   const latestOutbound = [...recentMessages].reverse().find(message => message.direction === "out");
-  if (!latestOutbound?.text || !latestOutbound.text.includes("[BOTONES: Diabetes, Diabetes y peso, Dolor muscular]")) {
+  if (!latestOutbound?.text) {
     return null;
   }
 
   const normalized = normalizeInboundText(messageForAi);
-  if (normalized === "diabetes") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes;
-  if (normalized === "diabetes y peso") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes_y_peso;
-  if (normalized === "dolor muscular") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_muscular;
+  const isTopLevelMenu = latestOutbound.text.includes(FIRST_CONTACT_TOP_LEVEL_BUTTONS);
+  const isAzucarPesoMenu = latestOutbound.text.includes(FIRST_CONTACT_AZUCAR_PESO_BUTTONS);
+
+  if (isTopLevelMenu) {
+    if (normalized === "azucar y peso") return FIRST_CONTACT_ROUTE_RESPONSES.azucar_y_peso_menu;
+    if (normalized === "dolor y estres") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_y_estres;
+    if (normalized === "dolor articular") return FIRST_CONTACT_ROUTE_RESPONSES.dolor_articular;
+  }
+
+  if (isAzucarPesoMenu) {
+    if (normalized === "solo diabetes") return FIRST_CONTACT_ROUTE_RESPONSES.diabetes;
+    if (
+      normalized === "diabetes peso" ||
+      normalized === "diabetes bajar de peso" ||
+      normalized === "diabetes y bajar de peso"
+    ) {
+      return FIRST_CONTACT_ROUTE_RESPONSES.diabetes_y_peso;
+    }
+  }
 
   return null;
 }
