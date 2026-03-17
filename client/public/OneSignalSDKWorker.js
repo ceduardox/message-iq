@@ -54,6 +54,20 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      const debugPayload = {
+        type: "RYZ_PUSH_CLICK_DEBUG",
+        source: "onesignal-notification-click",
+        conversationId,
+        resolvedUrl,
+        clientsCount: windowClients.length,
+      };
+      for (const client of windowClients) {
+        try {
+          client.postMessage(debugPayload);
+        } catch {
+          // Ignore non-window clients or posting restrictions.
+        }
+      }
       const sameOriginClient = windowClients.find((client) => {
         try {
           return new URL(client.url).origin === self.location.origin;

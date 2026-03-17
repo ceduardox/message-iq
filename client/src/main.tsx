@@ -36,7 +36,23 @@ const parseConversationIdFromUrl = (url: string | null | undefined): number | nu
 
 if (typeof navigator !== "undefined" && navigator.serviceWorker) {
   navigator.serviceWorker.addEventListener("message", (event) => {
-    const data = event.data as { type?: string; conversationId?: number | null; url?: string } | undefined;
+    const data = event.data as {
+      type?: string;
+      conversationId?: number | null;
+      url?: string;
+      resolvedUrl?: string;
+      clientsCount?: number;
+      source?: string;
+    } | undefined;
+    if (data?.type === "RYZ_PUSH_CLICK_DEBUG") {
+      console.log("[PWA Push Click Debug]", {
+        source: data.source,
+        conversationId: data.conversationId,
+        resolvedUrl: data.resolvedUrl,
+        clientsCount: data.clientsCount,
+      });
+      return;
+    }
     if (data?.type !== "RYZ_OPEN_CONVERSATION") return;
     const conversationId =
       typeof data.conversationId === "number" ? data.conversationId : parseConversationIdFromUrl(data?.url);
