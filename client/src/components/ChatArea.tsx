@@ -111,6 +111,8 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [ogImageByUrl, setOgImageByUrl] = useState<Record<string, string>>({});
   const [ogImageUnavailableByUrl, setOgImageUnavailableByUrl] = useState<Record<string, true>>({});
   const [longPressActiveMessageId, setLongPressActiveMessageId] = useState<number | null>(null);
+  const [longPressPressingMessageId, setLongPressPressingMessageId] = useState<number | null>(null);
+  const [copyPressedMessageId, setCopyPressedMessageId] = useState<number | null>(null);
   const longPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressMovedRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -907,9 +909,29 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     return null;
   };
 
-  const copyToClipboard = (text: string, description = "Texto copiado al portapapeles") => {
-    navigator.clipboard.writeText(text);
-    toast({ title: "Copiado", description });
+  const copyToClipboard = async (text: string, description = "Texto copiado al portapapeles") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Copiado", description });
+      return;
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        toast({ title: "Copiado", description });
+        return;
+      } catch {
+        toast({ title: "No se pudo copiar", description: "Intenta de nuevo", variant: "destructive" });
+      }
+    }
   };
 
   const clearLongPressTimeout = () => {
@@ -924,6 +946,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     const target = event.target as HTMLElement;
     if (target.closest("button,a,audio,input,textarea")) return;
 
+    setLongPressPressingMessageId(messageId);
     setLongPressActiveMessageId(null);
     clearLongPressTimeout();
     longPressMovedRef.current = false;
@@ -944,12 +967,14 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     const dy = Math.abs(touch.clientY - longPressStartRef.current.y);
     if (dx > 10 || dy > 10) {
       longPressMovedRef.current = true;
+      setLongPressPressingMessageId(null);
       clearLongPressTimeout();
     }
   };
 
   const handleMessageTouchEnd = () => {
     clearLongPressTimeout();
+    setLongPressPressingMessageId(null);
     longPressStartRef.current = null;
   };
 
@@ -1119,7 +1144,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => copyToClipboard(getWaMeLink(), "URL copiada al portapapeles")}
+                onClick={() => void copyToClipboard(getWaMeLink(), "URL copiada al portapapeles")}
                 className="text-xs text-muted-foreground hover:text-emerald-500 transition-colors text-left block"
                 data-testid="button-copy-wa-link"
                 title="Copiar enlace wa.me"
@@ -1601,7 +1626,10 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-2"
-        onTouchStart={() => setLongPressActiveMessageId(null)}
+        onTouchStart={() => {
+          setLongPressActiveMessageId(null);
+          setLongPressPressingMessageId(null);
+        }}
       >
         {messages.map((msg) => {
           const isOut = msg.direction === "out";
@@ -1609,10 +1637,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
             <div key={msg.id} className={cn("flex w-full", isOut ? "justify-end" : "justify-start")}>
               <div
                 className={cn(
-                  "relative max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm",
+                  "relative max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm transition-transform duration-150",
                   isOut 
                     ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-tr-sm" 
-                    : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-sm"
+                    : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-sm",
+                  longPressPressingMessageId === msg.id && "scale-[0.985]"
                 )}
                 style={{
                   WebkitTouchCallout: "none",
@@ -1628,10 +1657,17 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 {longPressActiveMessageId === msg.id && msg.text?.trim() && (
                   <button
                     type="button"
-                    className="absolute -top-3 right-1 z-10 rounded-full bg-slate-900/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-md"
+                    className={cn(
+                      "absolute -top-3 right-1 z-10 rounded-full bg-slate-900/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-md transition-transform duration-100 active:scale-95",
+                      copyPressedMessageId === msg.id && "scale-95"
+                    )}
+                    onTouchStart={() => setCopyPressedMessageId(msg.id)}
+                    onTouchEnd={() => setCopyPressedMessageId(null)}
+                    onTouchCancel={() => setCopyPressedMessageId(null)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      copyToClipboard(msg.text || "");
+                      void copyToClipboard(msg.text || "");
+                      setCopyPressedMessageId(null);
                       setLongPressActiveMessageId(null);
                     }}
                   >
@@ -1731,7 +1767,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                       </div>
                       {raw?.location?.name && <p className="text-xs opacity-70 mb-2">{raw.location.name}</p>}
                       <div className="flex gap-1">
-                        <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => copyToClipboard(locationUrl, "URL copiada al portapapeles")}>
+                        <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => void copyToClipboard(locationUrl, "URL copiada al portapapeles")}>
                           <Copy className="h-3 w-3" />
                         </Button>
                         <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => window.open(locationUrl, '_blank')}>
