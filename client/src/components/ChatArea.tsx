@@ -68,17 +68,12 @@ const LABEL_COLORS = [
 ];
 
 const recordingWaveCss = `
-@keyframes recording-wave {
-  0%, 100% { transform: scaleY(0.35); opacity: 0.6; }
-  50% { transform: scaleY(1); opacity: 1; }
-}
 .recording-wave-bar {
   width: 3px;
-  height: 14px;
+  min-height: 4px;
   border-radius: 9999px;
   background: rgb(239 68 68);
-  transform-origin: bottom;
-  animation: recording-wave 1s ease-in-out infinite;
+  transition: height 90ms ease-out, opacity 90ms ease-out;
 }
 `;
 
@@ -111,6 +106,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingBars, setRecordingBars] = useState<number[]>(() => Array.from({ length: 8 }, () => 0.12));
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>(() => readFailedMediaIdsFromSession());
   const [ogImageByUrl, setOgImageByUrl] = useState<Record<string, string>>({});
   const [ogImageUnavailableByUrl, setOgImageUnavailableByUrl] = useState<Record<string, true>>({});
@@ -121,6 +117,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<BlobPart[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const meterDataRef = useRef<Uint8Array | null>(null);
+  const meterFrameRef = useRef<number | null>(null);
+  const meterLastUpdateRef = useRef<number>(0);
   const ogPreviewInFlightRef = useRef<Set<string>>(new Set());
   const { mutate: sendMessage, isPending } = useSendMessage();
   const { toast } = useToast();
@@ -278,6 +279,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       if (recordingStreamRef.current) {
         recordingStreamRef.current.getTracks().forEach((track) => track.stop());
       }
+      stopAudioMeter();
       if (filePreview) {
         URL.revokeObjectURL(filePreview);
       }
@@ -382,6 +384,21 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     recordingStreamRef.current = null;
   };
 
+  const stopAudioMeter = () => {
+    if (meterFrameRef.current !== null) {
+      window.cancelAnimationFrame(meterFrameRef.current);
+      meterFrameRef.current = null;
+    }
+    analyserNodeRef.current = null;
+    meterDataRef.current = null;
+    meterLastUpdateRef.current = 0;
+    const currentContext = audioContextRef.current;
+    audioContextRef.current = null;
+    if (currentContext && currentContext.state !== "closed") {
+      void currentContext.close().catch(() => {});
+    }
+  };
+
   const startRecording = async () => {
     if (isRecording) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -421,7 +438,55 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       recordingStreamRef.current = stream;
       recordingChunksRef.current = [];
       setRecordingSeconds(0);
+      setRecordingBars(Array.from({ length: 8 }, () => 0.12));
       setIsRecording(true);
+
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          stopAudioMeter();
+          const audioContext: AudioContext = new AudioCtx();
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.85;
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          audioContextRef.current = audioContext;
+          analyserNodeRef.current = analyser;
+          meterDataRef.current = new Uint8Array(analyser.fftSize);
+
+          const updateMeter = (now: number) => {
+            const activeAnalyser = analyserNodeRef.current;
+            const data = meterDataRef.current;
+            if (!activeAnalyser || !data) return;
+
+            activeAnalyser.getByteTimeDomainData(data);
+            let sumSquares = 0;
+            for (let i = 0; i < data.length; i++) {
+              const centered = (data[i] - 128) / 128;
+              sumSquares += centered * centered;
+            }
+            const rms = Math.sqrt(sumSquares / data.length);
+            const normalized = Math.max(0.05, Math.min(1, rms * 3.2));
+
+            if (now - meterLastUpdateRef.current > 70) {
+              meterLastUpdateRef.current = now;
+              setRecordingBars((prev) => {
+                const next = prev.slice(1);
+                next.push(normalized);
+                return next;
+              });
+            }
+
+            meterFrameRef.current = window.requestAnimationFrame(updateMeter);
+          };
+
+          meterFrameRef.current = window.requestAnimationFrame(updateMeter);
+        } catch {
+          // Si falla el medidor, mantenemos la grabacion.
+        }
+      }
 
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
@@ -432,6 +497,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       recorder.onerror = () => {
         setIsRecording(false);
         stopRecordingStream();
+        stopAudioMeter();
         toast({ title: "Error", description: "No se pudo grabar el audio", variant: "destructive" });
       };
 
@@ -441,6 +507,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         recordingChunksRef.current = [];
         setIsRecording(false);
         stopRecordingStream();
+        stopAudioMeter();
 
         if (!blob.size) {
           toast({ title: "Audio vacio", description: "No se detecto audio en la grabacion", variant: "destructive" });
@@ -468,6 +535,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     } catch (error: any) {
       setIsRecording(false);
       stopRecordingStream();
+      stopAudioMeter();
       const denied = String(error?.message || "").toLowerCase().includes("denied");
       toast({
         title: denied ? "Permiso denegado" : "Error al grabar",
@@ -482,6 +550,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     if (!recorder || recorder.state === "inactive") {
       setIsRecording(false);
       stopRecordingStream();
+      stopAudioMeter();
       return;
     }
     recorder.stop();
@@ -1731,11 +1800,14 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
           <div className="mb-2 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 flex items-center justify-between">
             <span className="flex items-center gap-2">
               <span className="flex items-end gap-0.5 h-4">
-                {Array.from({ length: 8 }).map((_, index) => (
+                {recordingBars.map((level, index) => (
                   <span
                     key={index}
                     className="recording-wave-bar"
-                    style={{ animationDelay: `${index * 90}ms` }}
+                    style={{
+                      height: `${Math.round(4 + level * 14)}px`,
+                      opacity: Math.max(0.45, Math.min(1, 0.35 + level)),
+                    }}
                   />
                 ))}
               </span>
