@@ -1614,6 +1614,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                     ? "bg-[#d9fdd3] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-tr-sm" 
                     : "bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-sm"
                 )}
+                style={{
+                  WebkitTouchCallout: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
+                }}
+                onContextMenu={(e) => e.preventDefault()}
                 onTouchStart={(e) => handleMessageTouchStart(e, msg.id, msg.text)}
                 onTouchMove={handleMessageTouchMove}
                 onTouchEnd={handleMessageTouchEnd}
