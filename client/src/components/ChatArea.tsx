@@ -946,6 +946,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     const target = event.target as HTMLElement;
     if (target.closest("button,a,audio,input,textarea")) return;
 
+    event.stopPropagation();
     setLongPressPressingMessageId(messageId);
     setLongPressActiveMessageId(null);
     clearLongPressTimeout();
@@ -1626,7 +1627,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-2"
-        onTouchStart={() => {
+        onClick={() => {
           setLongPressActiveMessageId(null);
           setLongPressPressingMessageId(null);
         }}
@@ -1653,6 +1654,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 onTouchMove={handleMessageTouchMove}
                 onTouchEnd={handleMessageTouchEnd}
                 onTouchCancel={handleMessageTouchEnd}
+                onClick={(e) => e.stopPropagation()}
               >
                 {longPressActiveMessageId === msg.id && msg.text?.trim() && (
                   <button
@@ -1661,9 +1663,18 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                       "absolute -top-3 right-1 z-10 rounded-full bg-slate-900/95 px-2.5 py-1 text-[11px] font-medium text-white shadow-md transition-transform duration-100 active:scale-95",
                       copyPressedMessageId === msg.id && "scale-95"
                     )}
-                    onTouchStart={() => setCopyPressedMessageId(msg.id)}
-                    onTouchEnd={() => setCopyPressedMessageId(null)}
-                    onTouchCancel={() => setCopyPressedMessageId(null)}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      setCopyPressedMessageId(msg.id);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      setCopyPressedMessageId(null);
+                    }}
+                    onTouchCancel={(e) => {
+                      e.stopPropagation();
+                      setCopyPressedMessageId(null);
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       void copyToClipboard(msg.text || "");
