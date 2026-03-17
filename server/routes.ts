@@ -4,12 +4,12 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
 import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
@@ -1498,15 +1498,24 @@ export async function registerRoutes(
   await ensureProductImageColumnsExist();
 
   // === SESSION SETUP ===
-  const SessionStore = MemoryStore(session);
+  const PgSessionStore = connectPgSimple(session);
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "default_secret",
       resave: false,
       saveUninitialized: false,
-      cookie: { maxAge: 2592000000 }, // 30 days
-      store: new SessionStore({
-        checkPeriod: 86400000,
+      cookie: {
+        maxAge: 2592000000, // 30 days
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      },
+      store: new PgSessionStore({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
+        pruneSessionInterval: 60 * 15,
+        errorLog: (error) => console.error("Session store error:", error),
       }),
     })
   );
