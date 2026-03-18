@@ -103,7 +103,8 @@ export async function generateAiResponse(
   conversationId: number,
   userMessage: string,
   recentMessages: Message[],
-  imageBase64?: string // Optional: base64 encoded image for vision analysis
+  imageBase64?: string, // Optional: base64 encoded image for vision analysis
+  advisorName?: string,
 ): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean } | null> {
   try {
     const [settings, allProducts, learnedRules] = await Promise.all([
@@ -164,14 +165,21 @@ export async function generateAiResponse(
         content: m.text || `[${m.type}]`,
       }));
 
-    const instructions = settings.systemPrompt || "Eres un asistente de ventas amigable.";
+    const resolvedAdvisorName = (advisorName || "").trim() || "Isabella";
+    const promptTemplate = settings.systemPrompt || "Eres un asistente de ventas amigable.";
+    const instructions = promptTemplate
+      .replace(/\{\{\s*AGENT_NAME\s*\}\}/gi, resolvedAdvisorName)
+      .replace(/\{\{\s*NOMBRE_AGENTE\s*\}\}/gi, resolvedAdvisorName);
     
     const learnedRulesContext = learnedRules.length > 0 
       ? "\n=== REGLAS APRENDIDAS ===\n" + learnedRules.map(r => `- ${r.rule}`).join("\n")
       : "";
     
     // Build system prompt
-    const systemPrompt = `${instructions}
+    const systemPrompt = `NOMBRE DE ASESORA PARA ESTA CONVERSACION: ${resolvedAdvisorName}
+Si te presentas, usa exactamente ese nombre.
+
+${instructions}
 
 === REGLAS ===
 - Responde en 2-5 líneas máximo

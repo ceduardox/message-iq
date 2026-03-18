@@ -28,9 +28,12 @@ const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
 const FIRST_CONTACT_TOP_LEVEL_BUTTONS = "[BOTONES: Azucar y peso, Dolor y estres, Dolor articular]";
 const FIRST_CONTACT_AZUCAR_PESO_BUTTONS = "[BOTONES: Solo diabetes, Diabetes + peso]";
-const FIRST_CONTACT_PROBLEM_MENU_RESPONSE = `Hola, soy Isabella de RYZTOR.
+const DEFAULT_ADVISOR_NAME = "Isabella";
+function getFirstContactProblemMenuResponse(advisorName: string) {
+  return `Hola, soy ${advisorName} de RYZTOR.
 Con gusto le ayudo. Que le interesa mejorar hoy?
 ${FIRST_CONTACT_TOP_LEVEL_BUTTONS}`;
+}
 const PROMPT_PROFILE_PRIMARY_TITLE = "__SYSTEM_PROMPT_PRIMARY__";
 const PROMPT_PROFILE_SECONDARY_TITLE = "__SYSTEM_PROMPT_SECONDARY__";
 const PROMPT_PROFILE_ACTIVE_TITLE = "__SYSTEM_PROMPT_ACTIVE__";
@@ -257,6 +260,11 @@ function getPushTargetUrl(data?: Record<string, string>) {
     return `https://ryzapp.org/?conversationId=${conversationId}`;
   }
   return "https://ryzapp.org/";
+}
+
+function getConversationAdvisorName(assignedAgentName?: string | null) {
+  const normalized = (assignedAgentName || "").trim();
+  return normalized || DEFAULT_ADVISOR_NAME;
 }
 
 function resolvePublicImageUrl(imageUrl?: string | null) {
@@ -517,10 +525,13 @@ async function processAiResponse(data: BufferedMessage) {
   const { conversationId, messageForAi, from, name, imageBase64ForAi, wasAudioMessage } = data;
   const conversation = await storage.getConversation(conversationId);
   if (!conversation || conversation.aiDisabled) return;
+  let assignedAgentName: string | null = null;
   if (conversation.assignedAgentId) {
     const assignedAgent = await storage.getAgent(conversation.assignedAgentId);
+    assignedAgentName = assignedAgent?.name || null;
     if (assignedAgent && assignedAgent.isAiAutoReplyEnabled === false) return;
   }
+  const advisorName = getConversationAdvisorName(assignedAgentName);
 
   try {
     const aiSettings = await storage.getAiSettings();
@@ -528,7 +539,8 @@ async function processAiResponse(data: BufferedMessage) {
     const recentMessages = await storage.getMessages(conversationId);
 
     if (fixedCommerceFlowEnabled && shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
-      const waResponse = await sendAiResponseToWhatsApp(from, FIRST_CONTACT_PROBLEM_MENU_RESPONSE);
+      const firstContactResponseText = getFirstContactProblemMenuResponse(advisorName);
+      const waResponse = await sendAiResponseToWhatsApp(from, firstContactResponseText);
       const waMessageId = waResponse.messages[0].id;
 
       await storage.createMessage({
@@ -536,7 +548,7 @@ async function processAiResponse(data: BufferedMessage) {
         waMessageId,
         direction: "out",
         type: "text",
-        text: FIRST_CONTACT_PROBLEM_MENU_RESPONSE,
+        text: firstContactResponseText,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent",
         rawJson: waResponse,
@@ -544,7 +556,7 @@ async function processAiResponse(data: BufferedMessage) {
 
       await storage.updateConversation(conversationId, {
         needsHumanAttention: false,
-        lastMessage: FIRST_CONTACT_PROBLEM_MENU_RESPONSE,
+        lastMessage: firstContactResponseText,
         lastMessageTimestamp: new Date(),
       });
 
@@ -637,7 +649,7 @@ async function processAiResponse(data: BufferedMessage) {
       }
     }
 
-    const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi);
+    const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi, advisorName);
 
     if (aiResult && aiResult.needsHuman) {
       await storage.updateConversation(conversationId, { needsHumanAttention: true });
