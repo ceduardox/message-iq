@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, BellOff, BellRing, Check } from "lucide-react";
+import { Bell, BellOff, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -32,19 +32,25 @@ export function NotificationBell() {
   const [showDialog, setShowDialog] = useState(false);
   const { toast } = useToast();
 
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isMac = /Macintosh|Mac OS X/.test(userAgent);
+  const isSafari = /Safari/.test(userAgent) && !/Chrome|Chromium|Edg\//.test(userAgent);
+  const isChrome = /Chrome|Chromium/.test(userAgent) && !/Edg\//.test(userAgent);
+
   const checkStatus = () => {
     if (window.getNotificationStatus) {
       const result = window.getNotificationStatus();
       console.log("[NotificationBell] Status check:", result);
-      
+
       if (!result.ready) {
         setStatus("loading");
         return;
       }
-      
+
       if (result.subscribed) {
         setStatus("subscribed");
-      } else if (Notification.permission === "denied") {
+      } else if (typeof Notification !== "undefined" && Notification.permission === "denied") {
         setStatus("denied");
       } else {
         setStatus("unsubscribed");
@@ -61,7 +67,7 @@ export function NotificationBell() {
         clearInterval(timer);
       }
     }, 1000);
-    
+
     checkStatus();
     return () => clearInterval(timer);
   }, []);
@@ -72,27 +78,27 @@ export function NotificationBell() {
       if (!window.subscribeToNotifications) {
         toast({
           title: "Cargando...",
-          description: "El sistema de notificaciones se está inicializando",
+          description: "El sistema de notificaciones se esta inicializando",
         });
         return;
       }
-      
+
       const result = await window.subscribeToNotifications();
       console.log("[NotificationBell] Subscribe result:", result);
-      
+
       if (result.success) {
         setStatus("subscribed");
         setShowDialog(false);
         toast({
           title: "Notificaciones activadas",
-          description: "Recibirás alertas cuando lleguen mensajes nuevos",
+          description: "Recibiras alertas cuando lleguen mensajes nuevos",
         });
       } else {
-        if (result.reason?.includes("denied")) {
+        if (result.reason?.toLowerCase().includes("denied")) {
           setStatus("denied");
           toast({
             title: "Permiso denegado",
-            description: "Ve a la configuración de tu navegador para habilitar notificaciones",
+            description: "Revise permisos del navegador para habilitar notificaciones",
             variant: "destructive",
           });
         } else {
@@ -120,7 +126,7 @@ export function NotificationBell() {
     if (status === "subscribed") {
       toast({
         title: "Notificaciones activas",
-        description: "Ya estás recibiendo notificaciones push",
+        description: "Ya estas recibiendo notificaciones push",
       });
       return;
     }
@@ -130,27 +136,7 @@ export function NotificationBell() {
       return;
     }
 
-    if (status === "loading") {
-      handleSubscribe();
-      return;
-    }
-
-    // For unsubscribed, directly try to subscribe (triggers browser popup)
     handleSubscribe();
-  };
-
-  const getIcon = () => {
-    if (loading || status === "loading") {
-      return <BellRing className="h-4 w-4 animate-pulse" />;
-    }
-    switch (status) {
-      case "subscribed":
-        return <Bell className="h-4 w-4 text-green-500" />;
-      case "denied":
-        return <BellOff className="h-4 w-4 text-destructive" />;
-      default:
-        return <BellOff className="h-4 w-4" />;
-    }
   };
 
   const getTooltipText = () => {
@@ -158,12 +144,47 @@ export function NotificationBell() {
       case "subscribed":
         return "Notificaciones activas";
       case "denied":
-        return "Notificaciones bloqueadas - Click para más info";
+        return "Notificaciones bloqueadas - click para mas info";
       case "loading":
         return "Cargando...";
       default:
         return "Activar notificaciones";
     }
+  };
+
+  const getDeniedTitle = () => {
+    if (isMac && isSafari) return "Notificaciones bloqueadas en Safari (Mac)";
+    if (isMac && isChrome) return "Notificaciones bloqueadas en Chrome (Mac)";
+    return "Notificaciones bloqueadas";
+  };
+
+  const getDeniedSteps = () => {
+    if (isMac && isSafari) {
+      return [
+        "Safari > Configuracion > Sitios web > Notificaciones.",
+        `Busque este dominio exacto: ${hostname}.`,
+        "Marque el sitio en Permitir.",
+        "macOS > Configuracion del sistema > Notificaciones > Safari.",
+        "Recargue la pagina y pulse Intentar de nuevo.",
+      ];
+    }
+
+    if (isMac && isChrome) {
+      return [
+        "Chrome > Configuracion > Privacidad y seguridad > Configuracion de sitios > Notificaciones.",
+        `Busque este dominio exacto: ${hostname}.`,
+        "Si aparece en Bloqueado, paselo a Permitido.",
+        "macOS > Configuracion del sistema > Notificaciones > Google Chrome.",
+        "Recargue la pagina y pulse Intentar de nuevo.",
+      ];
+    }
+
+    return [
+      "Haga clic en el icono de candado/info en la barra de direcciones.",
+      "Busque Notificaciones en permisos del sitio.",
+      "Cambielo a Permitir.",
+      "Recargue la pagina y pulse Intentar de nuevo.",
+    ];
   };
 
   return (
@@ -175,8 +196,8 @@ export function NotificationBell() {
             disabled={loading}
             data-testid="button-notification-bell"
             className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${
-              status === "subscribed" 
-                ? "text-emerald-400 bg-emerald-500/20" 
+              status === "subscribed"
+                ? "text-emerald-400 bg-emerald-500/20"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
@@ -200,28 +221,34 @@ export function NotificationBell() {
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Notificaciones bloqueadas</DialogTitle>
+            <DialogTitle>{getDeniedTitle()}</DialogTitle>
             <DialogDescription className="space-y-3 pt-2">
-              <p>Las notificaciones están bloqueadas en tu navegador. Para habilitarlas:</p>
-              <ol className="list-decimal list-inside space-y-2 text-sm">
-                <li>Haz clic en el icono de candado/info en la barra de direcciones</li>
-                <li>Busca "Notificaciones" en los permisos</li>
-                <li>Cámbialo a "Permitir"</li>
-                <li>Recarga la página</li>
-              </ol>
-              <p className="text-xs text-muted-foreground pt-2">
-                En móvil/PWA: Ve a Configuración del navegador → Sitios → Este sitio → Notificaciones → Permitir
+              <p>Las notificaciones estan bloqueadas en este navegador.</p>
+              <p className="text-xs text-muted-foreground">
+                Dominio detectado: <strong>{hostname || "desconocido"}</strong>
               </p>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                {getDeniedSteps().map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ol>
+              {isMac && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  Si el sitio no aparece en la lista, abra en pestana normal (no privada), recargue y vuelva a pulsar Notif.
+                </p>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>
               Entendido
             </Button>
-            <Button onClick={() => {
-              setShowDialog(false);
-              handleSubscribe();
-            }}>
+            <Button
+              onClick={() => {
+                setShowDialog(false);
+                handleSubscribe();
+              }}
+            >
               Intentar de nuevo
             </Button>
           </DialogFooter>
