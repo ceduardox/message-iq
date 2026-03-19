@@ -1001,6 +1001,8 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     longPressStartRef.current = null;
   };
 
+  const isTouchDevice = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+
   useEffect(() => {
     return () => clearLongPressTimeout();
   }, []);
@@ -1675,11 +1677,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                   longPressPressingMessageId === msg.id && "scale-[0.985]"
                 )}
                 style={{
-                  WebkitTouchCallout: "none",
-                  WebkitUserSelect: "none",
-                  userSelect: "none",
+                  WebkitTouchCallout: isTouchDevice ? "none" : "default",
+                  WebkitUserSelect: isTouchDevice ? "none" : "text",
+                  userSelect: isTouchDevice ? "none" : "text",
                 }}
-                onContextMenu={(e) => e.preventDefault()}
+                onContextMenu={isTouchDevice ? (e) => e.preventDefault() : undefined}
                 onTouchStart={(e) => handleMessageTouchStart(e, msg.id, msg.text)}
                 onTouchMove={handleMessageTouchMove}
                 onTouchEnd={handleMessageTouchEnd}
