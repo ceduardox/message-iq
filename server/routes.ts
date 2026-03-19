@@ -180,7 +180,18 @@ const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
 function getRuntimePublicDir() {
   if (process.env.NODE_ENV === "production") {
-    return path.resolve(process.cwd(), "dist", "public");
+    let distPath = path.resolve(process.cwd(), "dist", "public");
+    if (!fs.existsSync(distPath)) {
+      try {
+        const altPath = path.resolve(__dirname, "public");
+        if (fs.existsSync(altPath)) {
+          distPath = altPath;
+        }
+      } catch (_error) {
+        // Keep cwd fallback
+      }
+    }
+    return distPath;
   }
   return path.resolve(process.cwd(), "client", "public");
 }
