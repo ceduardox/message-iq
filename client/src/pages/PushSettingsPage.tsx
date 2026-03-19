@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowLeft, BellRing } from "lucide-react";
@@ -16,6 +17,46 @@ export default function PushSettingsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const [diagPermission, setDiagPermission] = useState("desconocido");
+  const [diagBrowser, setDiagBrowser] = useState("desconocido");
+  const [diagOs, setDiagOs] = useState("desconocido");
+  const [diagHost, setDiagHost] = useState("desconocido");
+  const [diagSecure, setDiagSecure] = useState("No");
+
+  const refreshDiagnostics = () => {
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const browser = /Edg\//.test(ua)
+      ? "Edge"
+      : /Chrome|Chromium/.test(ua)
+        ? "Chrome"
+        : /Safari/.test(ua) && !/Chrome|Chromium|Edg\//.test(ua)
+          ? "Safari"
+          : /Firefox/.test(ua)
+            ? "Firefox"
+            : "desconocido";
+    const os = /Macintosh|Mac OS X/.test(ua)
+      ? "macOS"
+      : /Windows NT/.test(ua)
+        ? "Windows"
+        : /Android/.test(ua)
+          ? "Android"
+          : /iPhone|iPad|iPod/.test(ua)
+            ? "iOS"
+            : "desconocido";
+    const permission = typeof Notification !== "undefined" ? Notification.permission : "no-soportado";
+    const host = typeof window !== "undefined" ? window.location.hostname : "desconocido";
+    const secure = typeof window !== "undefined" && window.isSecureContext ? "Si" : "No";
+
+    setDiagBrowser(browser);
+    setDiagOs(os);
+    setDiagPermission(permission);
+    setDiagHost(host || "desconocido");
+    setDiagSecure(secure);
+  };
+
+  useEffect(() => {
+    refreshDiagnostics();
+  }, []);
 
   const { data: pushSettings, isLoading } = useQuery<PushSettings>({
     queryKey: ["/api/push-settings"],
@@ -68,6 +109,31 @@ export default function PushSettingsPage() {
             <NotificationBell />
           </div>
 
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2" data-testid="push-diagnostics">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-amber-100">Diagnostico rapido (este dispositivo)</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 border-amber-400/40 text-amber-100 hover:bg-amber-500/20"
+                onClick={refreshDiagnostics}
+                data-testid="button-refresh-push-diagnostics"
+              >
+                Refrescar
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 gap-1 text-xs text-amber-50/90">
+              <p>Permiso: <span className="font-semibold">{diagPermission}</span></p>
+              <p>Navegador: <span className="font-semibold">{diagBrowser}</span></p>
+              <p>Sistema: <span className="font-semibold">{diagOs}</span></p>
+              <p>Dominio: <span className="font-semibold">{diagHost}</span></p>
+              <p>Contexto seguro (HTTPS): <span className="font-semibold">{diagSecure}</span></p>
+            </div>
+            <p className="text-[11px] text-amber-100/80">
+              Si Permiso = denied, debe habilitarse manualmente en el navegador/SO para este dominio.
+            </p>
+          </div>
+
           <div className="flex items-center justify-between rounded-lg border border-slate-700/50 bg-slate-800/50 p-3">
             <div>
               <p className="text-sm font-medium text-white">Nuevos</p>
@@ -107,4 +173,3 @@ export default function PushSettingsPage() {
     </div>
   );
 }
-
