@@ -5,6 +5,7 @@ import type { Message, Product } from "@shared/schema";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
 // Order status type
 export type OrderStatus = 'pending' | 'ready' | 'delivered' | null;
@@ -90,12 +91,25 @@ function findProductInHistory(recentMessages: Message[], products: Product[]): P
   return null;
 }
 
+function resolvePublicImageUrl(imageUrl?: string | null): string {
+  const value = (imageUrl || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!value.startsWith("/")) return value;
+  const baseUrl = (process.env.APP_BASE_URL || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, "");
+  return `${baseUrl}${value}`;
+}
+
 function getProductImageContext(product: Product) {
   const imageLines: string[] = [];
-  if (product.imageUrl) imageLines.push(`Imagen principal: ${product.imageUrl}`);
-  if (product.imageBottleUrl) imageLines.push(`Imagen frasco: ${product.imageBottleUrl}`);
-  if (product.imageDoseUrl) imageLines.push(`Imagen dosis: ${product.imageDoseUrl}`);
-  if (product.imageIngredientsUrl) imageLines.push(`Imagen ingredientes: ${product.imageIngredientsUrl}`);
+  const mainImage = resolvePublicImageUrl(product.imageUrl);
+  const bottleImage = resolvePublicImageUrl(product.imageBottleUrl);
+  const doseImage = resolvePublicImageUrl(product.imageDoseUrl);
+  const ingredientsImage = resolvePublicImageUrl(product.imageIngredientsUrl);
+  if (mainImage) imageLines.push(`Imagen principal: ${mainImage}`);
+  if (bottleImage) imageLines.push(`Imagen frasco: ${bottleImage}`);
+  if (doseImage) imageLines.push(`Imagen dosis: ${doseImage}`);
+  if (ingredientsImage) imageLines.push(`Imagen ingredientes: ${ingredientsImage}`);
   return imageLines.join("\n");
 }
 
@@ -242,12 +256,12 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
     const tokensUsed = completion.usage?.total_tokens || 0;
 
     // Extract image URL if present
-    const imageMatch = responseText.match(/\[IMAGEN:\s*(https?:\/\/[^\]]+)\]/i);
+    const imageMatch = responseText.match(/\[IMAGEN:\s*([^\]]+)\]/i);
     let imageUrl: string | undefined;
     let cleanResponse = responseText;
     
     if (imageMatch) {
-      imageUrl = imageMatch[1];
+      imageUrl = resolvePublicImageUrl(imageMatch[1]);
       cleanResponse = cleanResponse.replace(imageMatch[0], "").trim();
     }
 
