@@ -1850,6 +1850,17 @@ export async function registerRoutes(
 ): Promise<Server> {
   await ensureProductImageColumnsExist();
   await ensureConversationLabelColumnsExist();
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      sid varchar NOT NULL COLLATE "default" PRIMARY KEY,
+      sess json NOT NULL,
+      expire timestamp(6) NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS user_sessions_expire_idx
+    ON user_sessions (expire)
+  `);
 
   // === SESSION SETUP ===
   const SessionStore = MemoryStore(session);
@@ -1866,10 +1877,11 @@ export async function registerRoutes(
 
   if (sessionStoreMode === "postgres") {
     try {
+      await pool.query("SELECT 1");
       sessionStore = new PgSessionStore({
         pool,
         tableName: "user_sessions",
-        createTableIfMissing: true,
+        createTableIfMissing: false,
       });
       console.log("[Session] Using Postgres session store (table: user_sessions)");
     } catch (error) {
