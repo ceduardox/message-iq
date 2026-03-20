@@ -172,15 +172,24 @@ interface PushNotificationPreferences {
   notifyPending: boolean;
   reminderLeadMinutes: number[];
 }
+interface AdLeadRoutingRule {
+  id: number;
+  adId: string;
+  agentIds: number[];
+  isActive: boolean;
+  updatedAt?: string | Date | null;
+}
 const DEFAULT_REMINDER_LEAD_MINUTES = [30, 15];
 const REMINDER_PUSH_CHECK_INTERVAL_MS = 60 * 1000;
 const REMINDER_PUSH_WINDOW_MS = 70 * 1000;
 const sentReminderPushKeys = new Map<string, number>();
+const adRoutingCursorByAdId = new Map<string, number>();
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
 let agentAiColumnEnsured = false;
 let productImageColumnsEnsured = false;
 let productImageStorageTableEnsured = false;
 let conversationLabelColumnsEnsured = false;
+let adLeadRoutingTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
@@ -252,6 +261,136 @@ async function ensureConversationLabelColumnsExist() {
     ADD COLUMN IF NOT EXISTS label_id_2 INTEGER REFERENCES labels(id)
   `);
   conversationLabelColumnsEnsured = true;
+}
+
+async function ensureAdLeadRoutingTableExists() {
+  if (adLeadRoutingTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ad_lead_routing_rules (
+      id SERIAL PRIMARY KEY,
+      ad_id TEXT NOT NULL UNIQUE,
+      agent_ids TEXT NOT NULL DEFAULT '',
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  adLeadRoutingTableEnsured = true;
+}
+
+function parseAgentIds(raw: unknown): number[] {
+  const source = Array.isArray(raw)
+    ? raw.map((v) => Number(v))
+    : String(raw ?? "")
+        .split(",")
+        .map((v) => Number(v.trim()));
+  return Array.from(
+    new Set(source.filter((v) => Number.isInteger(v) && v > 0)),
+  );
+}
+
+function normalizeAdId(raw: unknown): string {
+  return String(raw ?? "")
+    .trim()
+    .replace(/\s+/g, "");
+}
+
+function mapAdLeadRoutingRow(row: any): AdLeadRoutingRule {
+  return {
+    id: Number(row.id),
+    adId: String(row.ad_id || ""),
+    agentIds: parseAgentIds(row.agent_ids),
+    isActive: Boolean(row.is_active),
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+async function getAdLeadRoutingRules(): Promise<AdLeadRoutingRule[]> {
+  await ensureAdLeadRoutingTableExists();
+  const result: any = await db.execute(sql`
+    SELECT id, ad_id, agent_ids, is_active, updated_at
+    FROM ad_lead_routing_rules
+    ORDER BY updated_at DESC, id DESC
+  `);
+  return (result?.rows ?? []).map((row: any) => mapAdLeadRoutingRow(row));
+}
+
+async function getAdLeadRoutingRuleByAdId(adIdRaw: string): Promise<AdLeadRoutingRule | null> {
+  await ensureAdLeadRoutingTableExists();
+  const adId = normalizeAdId(adIdRaw);
+  if (!adId) return null;
+  const result: any = await db.execute(sql`
+    SELECT id, ad_id, agent_ids, is_active, updated_at
+    FROM ad_lead_routing_rules
+    WHERE ad_id = ${adId}
+    LIMIT 1
+  `);
+  const row = result?.rows?.[0];
+  return row ? mapAdLeadRoutingRow(row) : null;
+}
+
+async function upsertAdLeadRoutingRule(input: { adId: string; agentIds: number[]; isActive?: boolean }): Promise<AdLeadRoutingRule> {
+  await ensureAdLeadRoutingTableExists();
+  const adId = normalizeAdId(input.adId);
+  const agentIds = parseAgentIds(input.agentIds);
+  const isActive = typeof input.isActive === "boolean" ? input.isActive : true;
+  const result: any = await db.execute(sql`
+    INSERT INTO ad_lead_routing_rules (ad_id, agent_ids, is_active)
+    VALUES (${adId}, ${agentIds.join(",")}, ${isActive})
+    ON CONFLICT (ad_id)
+    DO UPDATE SET
+      agent_ids = EXCLUDED.agent_ids,
+      is_active = EXCLUDED.is_active,
+      updated_at = NOW()
+    RETURNING id, ad_id, agent_ids, is_active, updated_at
+  `);
+  return mapAdLeadRoutingRow(result.rows[0]);
+}
+
+async function deleteAdLeadRoutingRule(id: number): Promise<void> {
+  await ensureAdLeadRoutingTableExists();
+  await db.execute(sql`DELETE FROM ad_lead_routing_rules WHERE id = ${id}`);
+}
+
+function extractAdIdFromIncomingMessage(msg: any): string | null {
+  const directCandidates = [
+    msg?.referral?.source_id,
+    msg?.referral?.ad_id,
+    msg?.context?.referral?.source_id,
+    msg?.context?.referral?.ad_id,
+    msg?.ad_id,
+  ];
+  for (const candidate of directCandidates) {
+    const normalized = normalizeAdId(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+async function getNextAgentForAdIdRouting(adIdRaw: string): Promise<{ agent?: { id: number; name: string; weight?: number | null }; rule?: AdLeadRoutingRule }> {
+  const adId = normalizeAdId(adIdRaw);
+  if (!adId) return {};
+  const rule = (await getAdLeadRoutingRuleByAdId(adId)) || undefined;
+  if (!rule || !rule.isActive || rule.agentIds.length === 0) return { rule };
+
+  const activeAgents = await storage.getActiveAgents();
+  const targetAgents = activeAgents.filter((agent) => rule.agentIds.includes(agent.id));
+  if (targetAgents.length === 0) return { rule };
+
+  const weightedSlots: number[] = [];
+  for (const agent of targetAgents) {
+    const weight = Math.max(1, Math.floor(Number(agent.weight ?? 1)));
+    for (let i = 0; i < weight; i++) {
+      weightedSlots.push(agent.id);
+    }
+  }
+  if (weightedSlots.length === 0) return { rule, agent: targetAgents[0] };
+
+  const prevCursor = adRoutingCursorByAdId.get(adId) ?? -1;
+  const nextCursor = ((prevCursor + 1) % weightedSlots.length + weightedSlots.length) % weightedSlots.length;
+  adRoutingCursorByAdId.set(adId, nextCursor);
+  const nextAgentId = weightedSlots[nextCursor];
+  const agent = targetAgents.find((item) => item.id === nextAgentId) || targetAgents[0];
+  return { rule, agent };
 }
 
 function normalizeInboundText(text: string): string {
@@ -1940,7 +2079,9 @@ export async function registerRoutes(
               // 2. Ensure Conversation Exists (now using correct messageText)
               let conversation = await storage.getConversationByWaId(from);
               if (!conversation) {
-                const nextAgent = await storage.getNextAgentForAssignment();
+                const incomingAdId = extractAdIdFromIncomingMessage(msg);
+                const adRouting = incomingAdId ? await getNextAgentForAdIdRouting(incomingAdId) : {};
+                const nextAgent = adRouting.agent || await storage.getNextAgentForAssignment();
                 conversation = await storage.createConversation({
                   waId: from,
                   contactName: name,
@@ -1949,7 +2090,17 @@ export async function registerRoutes(
                   assignedAgentId: nextAgent?.id || null,
                 });
                 if (nextAgent) {
-                  console.log(`[Auto-Assign] New conversation assigned to agent: ${nextAgent.name} (id: ${nextAgent.id})`);
+                  if (incomingAdId && adRouting.agent) {
+                    console.log(
+                      `[Auto-Assign][AdRule] ad_id=${incomingAdId} -> agent=${nextAgent.name} (id: ${nextAgent.id})`,
+                    );
+                  } else if (incomingAdId && adRouting.rule && !adRouting.agent) {
+                    console.log(
+                      `[Auto-Assign][AdRule-Fallback] ad_id=${incomingAdId} no active mapped agents, fallback -> ${nextAgent.name} (id: ${nextAgent.id})`,
+                    );
+                  } else {
+                    console.log(`[Auto-Assign] New conversation assigned to agent: ${nextAgent.name} (id: ${nextAgent.id})`);
+                  }
                 }
               } else {
                 await storage.updateConversation(conversation.id, {
@@ -3788,6 +3939,60 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
   });
 
   // === AGENT MANAGEMENT (Admin only) ===
+  app.get("/api/ad-routing-rules", requireAdmin, async (_req, res) => {
+    try {
+      const rules = await getAdLeadRoutingRules();
+      res.json(rules);
+    } catch (error) {
+      console.error("Error fetching ad routing rules:", error);
+      res.status(500).json({ message: "Error fetching ad routing rules" });
+    }
+  });
+
+  app.put("/api/ad-routing-rules", requireAdmin, async (req, res) => {
+    try {
+      const parsed = z.object({
+        adId: z.string().min(1).max(120),
+        agentIds: z.array(z.number().int().positive()).min(1).max(50),
+        isActive: z.boolean().optional(),
+      }).parse(req.body);
+
+      const activeAgents = await storage.getActiveAgents();
+      const activeAgentIds = new Set(activeAgents.map((a) => a.id));
+      const validAgentIds = parsed.agentIds.filter((id) => activeAgentIds.has(id));
+      if (validAgentIds.length === 0) {
+        return res.status(400).json({ message: "Debe seleccionar al menos un agente activo" });
+      }
+
+      const saved = await upsertAdLeadRoutingRule({
+        adId: parsed.adId,
+        agentIds: validAgentIds,
+        isActive: parsed.isActive,
+      });
+      res.json(saved);
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid ad routing rule data", errors: error.errors });
+      }
+      console.error("Error upserting ad routing rule:", error);
+      res.status(500).json({ message: "Error saving ad routing rule" });
+    }
+  });
+
+  app.delete("/api/ad-routing-rules/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid rule id" });
+      }
+      await deleteAdLeadRoutingRule(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting ad routing rule:", error);
+      res.status(500).json({ message: "Error deleting ad routing rule" });
+    }
+  });
+
   app.get("/api/agents/ai-column-status", requireAdmin, async (_req, res) => {
     try {
       await ensureAgentAiColumnExists();

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
@@ -51,6 +52,14 @@ interface AgentAiColumnStatus {
   exists: boolean;
 }
 
+interface AdRoutingRule {
+  id: number;
+  adId: string;
+  agentIds: number[];
+  isActive: boolean;
+  updatedAt?: string | null;
+}
+
 const glowAnimation = `
 @keyframes glow-line {
   0% { background-position: -200% 0; }
@@ -75,6 +84,9 @@ export default function AgentsPage() {
   const [showPasswords, setShowPasswords] = useState<Record<number, boolean>>({});
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [routingAdId, setRoutingAdId] = useState("");
+  const [routingIsActive, setRoutingIsActive] = useState(true);
+  const [routingAgentIds, setRoutingAgentIds] = useState<number[]>([]);
 
   const { data: agents = [], isLoading } = useQuery<AgentWithStats[]>({
     queryKey: ["/api/agents", dateFrom, dateTo],
@@ -98,6 +110,15 @@ export default function AgentsPage() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("No se pudo verificar la columna de IA por agente");
+      return res.json();
+    },
+  });
+
+  const { data: adRoutingRules = [] } = useQuery<AdRoutingRule[]>({
+    queryKey: ["/api/ad-routing-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/ad-routing-rules", { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo cargar reglas por anuncio");
       return res.json();
     },
   });
@@ -137,6 +158,35 @@ export default function AgentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
       toast({ title: "Agente eliminado" });
+    },
+  });
+
+  const upsertAdRoutingMutation = useMutation({
+    mutationFn: async (data: { adId: string; agentIds: number[]; isActive: boolean }) => {
+      return apiRequest("PUT", "/api/ad-routing-rules", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ad-routing-rules"] });
+      setRoutingAdId("");
+      setRoutingAgentIds([]);
+      setRoutingIsActive(true);
+      toast({ title: "Regla de anuncio guardada" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteAdRoutingMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/ad-routing-rules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ad-routing-rules"] });
+      toast({ title: "Regla eliminada" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -187,6 +237,15 @@ export default function AgentsPage() {
   const totalAssignedConversations = agents.reduce((acc, agent) => acc + (agent.assignedConversations || 0), 0);
   const totalInboundMessages = agents.reduce((acc, agent) => acc + (agent.inboundMessages || 0), 0);
   const totalShouldCall = agents.reduce((acc, agent) => acc + (agent.shouldCallCount || 0), 0);
+  const activeAgentIdSet = new Set(activeAgents.map((a) => a.id));
+
+  const toggleRoutingAgent = (agentId: number) => {
+    setRoutingAgentIds((prev) =>
+      prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId],
+    );
+  };
+
+  const getAgentName = (id: number) => agents.find((a) => a.id === id)?.name || `Agente ${id}`;
 
   const performanceData = agents
     .map((agent) => ({
@@ -322,6 +381,115 @@ export default function AgentsPage() {
               ? `Mostrando metricas del rango ${dateFrom || "..."} a ${dateTo || "..."}`
               : "Mostrando metricas acumuladas (sin filtro de fechas)"}
           </p>
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-white">Asignacion por anuncio (ad_id)</h3>
+            <p className="text-xs text-slate-400">
+              Opcional: si no hay regla o agentes activos en esa regla, el sistema usa la asignacion normal actual.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 mb-3">
+            <Input
+              value={routingAdId}
+              onChange={(e) => setRoutingAdId(e.target.value)}
+              placeholder="ad_id del anuncio (ej: 120221998877665)"
+              className="bg-slate-800/60 border-slate-700/50 text-white"
+              data-testid="input-ad-routing-ad-id"
+            />
+            <div className="flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2">
+              <span className="text-xs text-slate-300">Activo</span>
+              <Switch
+                checked={routingIsActive}
+                onCheckedChange={setRoutingIsActive}
+                data-testid="switch-ad-routing-active"
+              />
+            </div>
+          </div>
+          <div className="mb-3">
+            <p className="text-xs text-slate-400 mb-2">Agentes destino</p>
+            <div className="flex flex-wrap gap-2">
+              {activeAgents.map((agent) => {
+                const selected = routingAgentIds.includes(agent.id);
+                return (
+                  <Button
+                    key={`routing-agent-${agent.id}`}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "default" : "outline"}
+                    className={selected ? "bg-emerald-600 hover:bg-emerald-500" : "border-slate-600 text-slate-300"}
+                    onClick={() => toggleRoutingAgent(agent.id)}
+                    data-testid={`button-ad-routing-agent-${agent.id}`}
+                  >
+                    {agent.name}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => {
+                const cleanAdId = routingAdId.trim();
+                const selectedActiveAgents = routingAgentIds.filter((id) => activeAgentIdSet.has(id));
+                if (!cleanAdId) {
+                  toast({ title: "Ingrese ad_id", variant: "destructive" });
+                  return;
+                }
+                if (selectedActiveAgents.length === 0) {
+                  toast({ title: "Seleccione al menos un agente activo", variant: "destructive" });
+                  return;
+                }
+                upsertAdRoutingMutation.mutate({
+                  adId: cleanAdId,
+                  agentIds: selectedActiveAgents,
+                  isActive: routingIsActive,
+                });
+              }}
+              disabled={upsertAdRoutingMutation.isPending}
+              className="bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
+              data-testid="button-save-ad-routing-rule"
+            >
+              {upsertAdRoutingMutation.isPending ? "Guardando..." : "Guardar regla"}
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {adRoutingRules.length === 0 ? (
+              <p className="text-xs text-slate-500">Sin reglas por anuncio. Todo sigue con asignacion normal.</p>
+            ) : (
+              adRoutingRules.map((rule) => (
+                <div
+                  key={`ad-rule-${rule.id}`}
+                  className="rounded-lg border border-slate-700/50 bg-slate-900/40 px-3 py-2 flex flex-wrap items-center gap-2 justify-between"
+                  data-testid={`card-ad-routing-rule-${rule.id}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm text-white font-medium break-all">ad_id: {rule.adId}</p>
+                    <p className="text-xs text-slate-400">
+                      {rule.isActive ? "Activo" : "Inactivo"} · {rule.agentIds.map(getAgentName).join(", ")}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500/50 text-red-300 hover:bg-red-500/10"
+                    onClick={() => {
+                      if (confirm(`Eliminar regla ad_id ${rule.adId}?`)) {
+                        deleteAdRoutingMutation.mutate(rule.id);
+                      }
+                    }}
+                    disabled={deleteAdRoutingMutation.isPending}
+                    data-testid={`button-delete-ad-routing-rule-${rule.id}`}
+                  >
+                    Eliminar
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
