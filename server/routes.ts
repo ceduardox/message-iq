@@ -171,6 +171,10 @@ interface PushNotificationPreferences {
   notifyNewMessages: boolean;
   notifyPending: boolean;
 }
+const REMINDER_PUSH_OFFSETS_MINUTES = [30, 15] as const;
+const REMINDER_PUSH_CHECK_INTERVAL_MS = 60 * 1000;
+const REMINDER_PUSH_WINDOW_MS = 70 * 1000;
+const sentReminderPushKeys = new Map<string, number>();
 let pushSettingsCache: { settings: PushNotificationPreferences; loadedAt: number } | null = null;
 let agentAiColumnEnsured = false;
 let productImageColumnsEnsured = false;
@@ -1473,6 +1477,60 @@ async function queueIncomingMessagePush(
       void flushIncomingPushSummary(conversationId);
     }, delay);
   }
+}
+
+function reminderPushKey(conversationId: number, reminderAt: Date, minutesBefore: number) {
+  return `${conversationId}:${reminderAt.toISOString()}:${minutesBefore}`;
+}
+
+async function checkAndSendReminderPushes() {
+  const now = Date.now();
+  const conversationsList = await storage.getConversations();
+  const activeKeys = new Set<string>();
+
+  for (const conv of conversationsList) {
+    if (!conv.reminderAt || conv.reminderDone) continue;
+
+    const reminderAt = new Date(conv.reminderAt as Date | string);
+    if (Number.isNaN(reminderAt.getTime())) continue;
+
+    const diffMs = reminderAt.getTime() - now;
+    if (diffMs <= 0) continue;
+
+    for (const minutesBefore of REMINDER_PUSH_OFFSETS_MINUTES) {
+      const key = reminderPushKey(conv.id, reminderAt, minutesBefore);
+      activeKeys.add(key);
+      if (sentReminderPushKeys.has(key)) continue;
+
+      const targetMs = minutesBefore * 60 * 1000;
+      const lowerBound = targetMs - REMINDER_PUSH_WINDOW_MS;
+      const upperBound = targetMs + REMINDER_PUSH_WINDOW_MS;
+      if (diffMs < lowerBound || diffMs > upperBound) continue;
+
+      const note = (conv.reminderNote || "").trim();
+      const summary = note ? note.replace(/\s+/g, " ").slice(0, 90) : "Tiene un recordatorio pendiente";
+      const contact = conv.contactName || conv.waId;
+
+      await sendPushNotification(
+        `Recordatorio en ${minutesBefore} min`,
+        `${contact}: ${summary}`,
+        {
+          conversationId: conv.id.toString(),
+          waId: conv.waId,
+          event: `reminder_${minutesBefore}m`,
+        },
+        getConversationPushOptions(conv),
+      );
+
+      sentReminderPushKeys.set(key, now);
+    }
+  }
+
+  sentReminderPushKeys.forEach((sentAt, key) => {
+    if (!activeKeys.has(key) && now - sentAt > 6 * 60 * 60 * 1000) {
+      sentReminderPushKeys.delete(key);
+    }
+  });
 }
 
 // Endpoint to get push logs
@@ -3912,6 +3970,14 @@ MÃ¡ximo 2 lÃ­neas. SÃ© especÃ­fico y prÃ¡ctico.`;
   });
 
   initFollowUp(sendToWhatsApp, sendAiResponseToWhatsApp);
+  setInterval(async () => {
+    try {
+      await checkAndSendReminderPushes();
+    } catch (error) {
+      console.error("[ReminderPush] Error:", error);
+    }
+  }, REMINDER_PUSH_CHECK_INTERVAL_MS);
+  console.log("[ReminderPush] Scheduler started (every 1 min)");
 
   return httpServer;
 }
