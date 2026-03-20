@@ -1854,7 +1854,7 @@ export async function registerRoutes(
   // === SESSION SETUP ===
   const SessionStore = MemoryStore(session);
   const PgSessionStore = connectPgSimple(session);
-  const sessionStoreMode = String(process.env.SESSION_STORE || "postgres").trim().toLowerCase();
+  const sessionStoreMode = String(process.env.SESSION_STORE || "memory").trim().toLowerCase();
   const sessionSecret = process.env.SESSION_SECRET || "default_secret";
   let sessionStore: session.Store = new SessionStore({
     checkPeriod: 86400000,
