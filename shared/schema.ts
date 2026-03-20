@@ -43,6 +43,7 @@ export const conversations = pgTable("conversations", {
   shouldCall: boolean("should_call").default(false),
   reminderAt: timestamp("reminder_at"),
   reminderNote: text("reminder_note"),
+  reminderColor: varchar("reminder_color", { length: 20 }),
   reminderUpdatedAt: timestamp("reminder_updated_at"),
   lastFollowUpAt: timestamp("last_follow_up_at"),
   assignedAgentId: integer("assigned_agent_id").references(() => agents.id),

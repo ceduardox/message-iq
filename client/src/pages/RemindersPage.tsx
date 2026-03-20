@@ -45,6 +45,7 @@ type AgendaItem = {
 
 const HOUR_ROW_HEIGHT = 56;
 const DEFAULT_EVENT_MINUTES = 45;
+const DEFAULT_REMINDER_COLOR = "#06b6d4";
 
 function dayKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -72,6 +73,12 @@ function formatHour(hour: number) {
 
 function getReminderMinutes(date: Date) {
   return date.getHours() * 60 + date.getMinutes();
+}
+
+function normalizeReminderColor(color?: string | null) {
+  const value = (color || "").trim();
+  if (/^#([0-9a-fA-F]{6})$/.test(value)) return value;
+  return DEFAULT_REMINDER_COLOR;
 }
 
 function buildAgendaLayout(reminders: ReminderConversation[]): AgendaItem[] {
@@ -132,6 +139,7 @@ export default function RemindersPage() {
   const [editingReminder, setEditingReminder] = useState<ReminderConversation | null>(null);
   const [editReminderAtInput, setEditReminderAtInput] = useState("");
   const [editReminderNoteInput, setEditReminderNoteInput] = useState("");
+  const [editReminderColorInput, setEditReminderColorInput] = useState(DEFAULT_REMINDER_COLOR);
 
   const { data: conversations = [], isLoading, refetch } = useQuery<Conversation[]>({
     queryKey: ["/api/conversations", "reminders-page"],
@@ -161,7 +169,17 @@ export default function RemindersPage() {
   });
 
   const updateReminderMutation = useMutation({
-    mutationFn: async ({ conversationId, reminderAt, reminderNote }: { conversationId: number; reminderAt: string; reminderNote?: string }) => {
+    mutationFn: async ({
+      conversationId,
+      reminderAt,
+      reminderNote,
+      reminderColor,
+    }: {
+      conversationId: number;
+      reminderAt: string;
+      reminderNote?: string;
+      reminderColor?: string;
+    }) => {
       const reminderDate = new Date(reminderAt);
       if (Number.isNaN(reminderDate.getTime())) {
         throw new Error("Fecha de recordatorio invalida");
@@ -172,6 +190,7 @@ export default function RemindersPage() {
         body: JSON.stringify({
           reminderAt: reminderDate.toISOString(),
           reminderNote: reminderNote?.trim() || null,
+          reminderColor: normalizeReminderColor(reminderColor),
         }),
       });
       if (!res.ok) {
@@ -287,6 +306,7 @@ export default function RemindersPage() {
     setEditingReminder(conv);
     setEditReminderAtInput(toDateTimeLocalValue(conv.reminderAt));
     setEditReminderNoteInput(conv.reminderNote || "");
+    setEditReminderColorInput(normalizeReminderColor(conv.reminderColor));
   };
 
   const dayHeight = 24 * HOUR_ROW_HEIGHT;
@@ -351,23 +371,26 @@ export default function RemindersPage() {
     const height = Math.max(((item.endMin - item.startMin) / 60) * HOUR_ROW_HEIGHT, 34);
     const leftPercent = (item.lane / item.laneCount) * 100;
     const widthPercent = 100 / item.laneCount;
+    const reminderColor = normalizeReminderColor(item.conv.reminderColor);
 
     return (
       <button
         key={item.conv.id}
         type="button"
         onClick={() => openEditReminder(item.conv)}
-        className="absolute overflow-hidden rounded-md border border-cyan-300/30 bg-cyan-500/25 px-2 py-1 text-left shadow-sm hover:bg-cyan-500/35 focus:outline-none"
+        className="absolute overflow-hidden rounded-md border px-2 py-1 text-left shadow-sm focus:outline-none"
         style={{
           top,
           height,
           left: `calc(${leftPercent}% + ${item.lane * 2}px)`,
           width: `calc(${widthPercent}% - 4px)`,
+          borderColor: `${reminderColor}AA`,
+          backgroundColor: `${reminderColor}3D`,
         }}
         data-testid={`agenda-event-${item.conv.id}`}
       >
-        <p className="truncate text-[11px] font-semibold text-cyan-100">{item.conv.contactName || item.conv.waId}</p>
-        <p className="truncate text-[10px] text-cyan-50/90">{formatTimeOnly(item.conv.reminderAt)}</p>
+        <p className="truncate text-[11px] font-semibold text-white">{item.conv.contactName || item.conv.waId}</p>
+        <p className="truncate text-[10px] text-white/90">{formatTimeOnly(item.conv.reminderAt)}</p>
       </button>
     );
   };
@@ -718,6 +741,25 @@ export default function RemindersPage() {
                 data-testid="textarea-edit-reminder-note"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-reminder-color">Color</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="edit-reminder-color"
+                  type="color"
+                  value={editReminderColorInput}
+                  onChange={(e) => setEditReminderColorInput(normalizeReminderColor(e.target.value))}
+                  className="h-10 w-16 p-1 bg-slate-800/70 border-slate-600/70"
+                  data-testid="input-edit-reminder-color"
+                />
+                <div
+                  className="h-8 w-8 rounded-md border border-slate-500/70"
+                  style={{ backgroundColor: editReminderColorInput }}
+                  aria-hidden
+                />
+                <span className="text-xs text-slate-300">{editReminderColorInput}</span>
+              </div>
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
@@ -737,6 +779,7 @@ export default function RemindersPage() {
                     conversationId: editingReminder.id,
                     reminderAt: editReminderAtInput,
                     reminderNote: editReminderNoteInput,
+                    reminderColor: editReminderColorInput,
                   });
                 }}
                 disabled={updateReminderMutation.isPending}

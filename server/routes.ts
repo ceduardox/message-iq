@@ -2622,6 +2622,7 @@ export async function registerRoutes(
     const parsed = z.object({
       reminderAt: z.string().datetime().nullable(),
       reminderNote: z.string().max(300).optional().nullable(),
+      reminderColor: z.string().regex(/^#([0-9a-fA-F]{6})$/).optional().nullable(),
     }).safeParse(req.body);
 
     if (!parsed.success) {
@@ -2630,6 +2631,7 @@ export async function registerRoutes(
 
     const reminderAt = parsed.data.reminderAt ? new Date(parsed.data.reminderAt) : null;
     const reminderNote = parsed.data.reminderNote?.trim() || null;
+    const reminderColor = parsed.data.reminderColor || null;
 
     if (reminderAt && Number.isNaN(reminderAt.getTime())) {
       return res.status(400).json({ message: "Invalid reminder date" });
@@ -2638,6 +2640,7 @@ export async function registerRoutes(
     const updated = await storage.updateConversation(id, {
       reminderAt,
       reminderNote,
+      reminderColor,
       reminderUpdatedAt: reminderAt ? new Date() : null,
     });
     res.json(updated);
@@ -2649,6 +2652,7 @@ export async function registerRoutes(
     const updated = await storage.updateConversation(id, {
       reminderAt: null,
       reminderNote: null,
+      reminderColor: null,
       reminderUpdatedAt: null,
     });
     res.json(updated);
