@@ -5,11 +5,12 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 import axios from "axios";
 import { generateAiResponse } from "./ai-service";
 import { initFollowUp } from "./follow-up";
 import { insertProductSchema, updateOrderStatusSchema, type Message as StoredMessage, type Product as StoredProduct } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
@@ -1852,15 +1853,42 @@ export async function registerRoutes(
 
   // === SESSION SETUP ===
   const SessionStore = MemoryStore(session);
+  const PgSessionStore = connectPgSimple(session);
+  const sessionStoreMode = String(process.env.SESSION_STORE || "postgres").trim().toLowerCase();
+  const sessionSecret = process.env.SESSION_SECRET || "default_secret";
+  let sessionStore: session.Store = new SessionStore({
+    checkPeriod: 86400000,
+  });
+
+  if (sessionSecret === "default_secret") {
+    console.warn("[Session] SESSION_SECRET not set. Using default secret is not recommended for production.");
+  }
+
+  if (sessionStoreMode === "postgres") {
+    try {
+      sessionStore = new PgSessionStore({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
+      });
+      console.log("[Session] Using Postgres session store (table: user_sessions)");
+    } catch (error) {
+      console.error("[Session] Failed to initialize Postgres store. Falling back to MemoryStore.", error);
+      sessionStore = new SessionStore({
+        checkPeriod: 86400000,
+      });
+    }
+  } else {
+    console.log("[Session] Using MemoryStore (SESSION_STORE=memory)");
+  }
+
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "default_secret",
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
       cookie: { maxAge: 2592000000 }, // 30 days
-      store: new SessionStore({
-        checkPeriod: 86400000,
-      }),
+      store: sessionStore,
     })
   );
 
