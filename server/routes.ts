@@ -2620,18 +2620,28 @@ export async function registerRoutes(
   app.patch("/api/conversations/:id/reminder", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
     const parsed = z.object({
-      reminderAt: z.string().datetime().nullable(),
+      reminderAt: z.string().datetime().nullable().optional(),
       reminderNote: z.string().max(300).optional().nullable(),
       reminderColor: z.string().regex(/^#([0-9a-fA-F]{6})$/).optional().nullable(),
+      reminderDone: z.boolean().optional(),
     }).safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({ message: "Invalid reminder payload", details: parsed.error.errors });
     }
 
-    const reminderAt = parsed.data.reminderAt ? new Date(parsed.data.reminderAt) : null;
-    const reminderNote = parsed.data.reminderNote?.trim() || null;
-    const reminderColor = parsed.data.reminderColor || null;
+    const current = await storage.getConversation(id);
+    if (!current) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    let reminderAt = current.reminderAt ?? null;
+    if (parsed.data.reminderAt !== undefined) {
+      reminderAt = parsed.data.reminderAt ? new Date(parsed.data.reminderAt) : null;
+    }
+    const reminderNote = parsed.data.reminderNote === undefined ? (current.reminderNote ?? null) : (parsed.data.reminderNote?.trim() || null);
+    const reminderColor = parsed.data.reminderColor === undefined ? (current.reminderColor ?? null) : (parsed.data.reminderColor || null);
+    const reminderDone = parsed.data.reminderDone === undefined ? Boolean(current.reminderDone) : parsed.data.reminderDone;
 
     if (reminderAt && Number.isNaN(reminderAt.getTime())) {
       return res.status(400).json({ message: "Invalid reminder date" });
@@ -2641,6 +2651,7 @@ export async function registerRoutes(
       reminderAt,
       reminderNote,
       reminderColor,
+      reminderDone,
       reminderUpdatedAt: reminderAt ? new Date() : null,
     });
     res.json(updated);
@@ -2653,6 +2664,7 @@ export async function registerRoutes(
       reminderAt: null,
       reminderNote: null,
       reminderColor: null,
+      reminderDone: false,
       reminderUpdatedAt: null,
     });
     res.json(updated);

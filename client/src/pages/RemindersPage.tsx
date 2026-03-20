@@ -19,6 +19,7 @@ import {
   Clock,
   AlertCircle,
   CheckCircle2,
+  Check,
   Trash2,
   Pencil,
   Loader2,
@@ -163,6 +164,28 @@ export default function RemindersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", "reminders-page"] });
       toast({ title: "Recordatorio eliminado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleReminderDoneMutation = useMutation({
+    mutationFn: async ({ conversationId, reminderDone }: { conversationId: number; reminderDone: boolean }) => {
+      const res = await fetch(`/api/conversations/${conversationId}/reminder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reminderDone }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.message || "Error actualizando estado");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", "reminders-page"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -323,14 +346,21 @@ export default function RemindersPage() {
     >
       <CardHeader className={compact ? "pb-2 pt-4" : "pb-2"}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <CardTitle className="text-base text-slate-100">{conv.contactName || conv.waId}</CardTitle>
+          <CardTitle className={cn("text-base text-slate-100", conv.reminderDone && "line-through opacity-70")}>
+            {conv.contactName || conv.waId}
+          </CardTitle>
           <Badge variant="outline" className="border-amber-400/70 bg-amber-500/10 text-amber-300 font-semibold">
             {compact ? formatTimeOnly(conv.reminderAt) : formatReminder(conv.reminderAt)}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <p className="text-sm text-slate-300 break-words">{conv.reminderNote?.trim() || "Sin nota"}</p>
+        <p className={cn("text-sm text-slate-300 break-words", conv.reminderDone && "line-through opacity-70")}>
+          {conv.reminderNote?.trim() || "Sin nota"}
+        </p>
+        {conv.reminderDone && (
+          <Badge className="mt-2 bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">Completado</Badge>
+        )}
         <div className="mt-3 flex gap-2">
           <Link href={`/?conversationId=${conv.id}`}>
             <Button
@@ -342,6 +372,19 @@ export default function RemindersPage() {
               Ver chat
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              "border-emerald-500/50 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
+              conv.reminderDone && "bg-emerald-500/25",
+            )}
+            onClick={() => toggleReminderDoneMutation.mutate({ conversationId: conv.id, reminderDone: !Boolean(conv.reminderDone) })}
+            data-testid={`button-toggle-reminder-done-${conv.id}`}
+          >
+            <Check className="h-4 w-4 mr-1" />
+            {conv.reminderDone ? "Reabrir" : "Completar"}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -384,7 +427,7 @@ export default function RemindersPage() {
           left: `calc(${leftPercent}% + ${item.lane * 2}px)`,
           width: `calc(${widthPercent}% - 4px)`,
           borderColor: `${reminderColor}AA`,
-          backgroundColor: `${reminderColor}3D`,
+          backgroundColor: item.conv.reminderDone ? `${reminderColor}1F` : `${reminderColor}3D`,
         }}
         data-testid={`agenda-event-${item.conv.id}`}
       >
@@ -396,9 +439,28 @@ export default function RemindersPage() {
             data-testid={`agenda-event-edit-${item.conv.id}`}
             title="Editar recordatorio"
           >
-            <p className="truncate text-[11px] font-semibold text-white">{item.conv.contactName || item.conv.waId}</p>
-            <p className="truncate text-[10px] text-white/90">{formatTimeOnly(item.conv.reminderAt)}</p>
+            <p className={cn("truncate text-[11px] font-semibold text-white", item.conv.reminderDone && "line-through opacity-70")}>
+              {item.conv.contactName || item.conv.waId}
+            </p>
+            <p className={cn("truncate text-[10px] text-white/90", item.conv.reminderDone && "line-through opacity-70")}>
+              {formatTimeOnly(item.conv.reminderAt)}
+            </p>
           </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-6 w-6 rounded bg-black/25 text-white hover:bg-black/40", item.conv.reminderDone && "bg-emerald-600/40")}
+            onClick={() =>
+              toggleReminderDoneMutation.mutate({
+                conversationId: item.conv.id,
+                reminderDone: !Boolean(item.conv.reminderDone),
+              })
+            }
+            data-testid={`agenda-event-toggle-done-${item.conv.id}`}
+            title={item.conv.reminderDone ? "Reabrir" : "Completar"}
+          >
+            <Check className="h-3.5 w-3.5" />
+          </Button>
           <Link href={`/?conversationId=${item.conv.id}`}>
             <Button
               variant="ghost"
