@@ -183,11 +183,43 @@ export default function RemindersPage() {
       }
       return res.json();
     },
+    onMutate: async ({ conversationId, reminderDone }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/conversations"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/conversations", "reminders-page"] });
+
+      const previousConversations = queryClient.getQueryData<Conversation[]>(["/api/conversations"]);
+      const previousReminderPage = queryClient.getQueryData<Conversation[]>(["/api/conversations", "reminders-page"]);
+
+      const patchList = (list?: Conversation[]) =>
+        list?.map((conv) =>
+          conv.id === conversationId
+            ? {
+                ...conv,
+                reminderDone,
+              }
+            : conv,
+        ) ?? [];
+
+      if (previousConversations) {
+        queryClient.setQueryData(["/api/conversations"], patchList(previousConversations));
+      }
+      if (previousReminderPage) {
+        queryClient.setQueryData(["/api/conversations", "reminders-page"], patchList(previousReminderPage));
+      }
+
+      return { previousConversations, previousReminderPage };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", "reminders-page"] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _vars, context) => {
+      if (context?.previousConversations) {
+        queryClient.setQueryData(["/api/conversations"], context.previousConversations);
+      }
+      if (context?.previousReminderPage) {
+        queryClient.setQueryData(["/api/conversations", "reminders-page"], context.previousReminderPage);
+      }
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -346,7 +378,7 @@ export default function RemindersPage() {
     >
       <CardHeader className={compact ? "pb-2 pt-4" : "pb-2"}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <CardTitle className={cn("text-base text-slate-100", conv.reminderDone && "line-through opacity-70")}>
+          <CardTitle className={cn("text-base text-slate-100", conv.reminderDone && "line-through decoration-2 decoration-red-400 opacity-75")}>
             {conv.contactName || conv.waId}
           </CardTitle>
           <Badge variant="outline" className="border-amber-400/70 bg-amber-500/10 text-amber-300 font-semibold">
@@ -355,7 +387,7 @@ export default function RemindersPage() {
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <p className={cn("text-sm text-slate-300 break-words", conv.reminderDone && "line-through opacity-70")}>
+        <p className={cn("text-sm text-slate-300 break-words", conv.reminderDone && "line-through decoration-2 decoration-red-400 opacity-75")}>
           {conv.reminderNote?.trim() || "Sin nota"}
         </p>
         {conv.reminderDone && (
@@ -439,10 +471,10 @@ export default function RemindersPage() {
             data-testid={`agenda-event-edit-${item.conv.id}`}
             title="Editar recordatorio"
           >
-            <p className={cn("truncate text-[11px] font-semibold text-white", item.conv.reminderDone && "line-through opacity-70")}>
+            <p className={cn("truncate text-[11px] font-semibold text-white", item.conv.reminderDone && "line-through decoration-2 decoration-red-300 opacity-75")}>
               {item.conv.contactName || item.conv.waId}
             </p>
-            <p className={cn("truncate text-[10px] text-white/90", item.conv.reminderDone && "line-through opacity-70")}>
+            <p className={cn("truncate text-[10px] text-white/90", item.conv.reminderDone && "line-through decoration-2 decoration-red-300 opacity-75")}>
               {formatTimeOnly(item.conv.reminderAt)}
             </p>
           </button>
