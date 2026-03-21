@@ -34,7 +34,14 @@ export default function InboxPage() {
   const maxDays = 30;
   const iaHref = isAdmin ? "/ai-agent" : "/agent-ai";
   const serverLimit = useMemo(
-    () => (searchQuery.trim() ? Math.max(visibleConversations, 200) : visibleConversations),
+    () => {
+      const query = searchQuery.trim();
+      if (query) {
+        return Math.min(Math.max(visibleConversations, 200), 600);
+      }
+      // Keep enough backlog so operational columns can show their own 50 (+20) cards.
+      return Math.min(Math.max(visibleConversations * 6, 120), 600);
+    },
     [searchQuery, visibleConversations],
   );
   
@@ -61,11 +68,6 @@ export default function InboxPage() {
       return new Date(c.lastMessageTimestamp) >= cutoff;
     });
   }, [conversations, daysToShow, searchQuery]);
-
-  const filteredConversations = useMemo(
-    () => filteredByRangeAndSearch.slice(0, visibleConversations),
-    [filteredByRangeAndSearch, visibleConversations],
-  );
 
   const hasMoreConversations = conversations.length >= serverLimit;
 
@@ -174,13 +176,14 @@ export default function InboxPage() {
       {/* Kanban View - responsive para movil y desktop */}
       <div className="flex flex-1 min-h-0 pb-14 md:pb-0">
         <KanbanView
-          conversations={filteredConversations}
+          conversations={filteredByRangeAndSearch}
           isLoading={loadingList}
           daysToShow={daysToShow}
           onDaysChange={setDaysToShow}
           onLoadMore={handleLoadMore}
           hasMoreConversations={hasMoreConversations}
           maxDays={maxDays}
+          columnVisibleLimit={visibleConversations}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onClearSearch={() => setSearchQuery("")}

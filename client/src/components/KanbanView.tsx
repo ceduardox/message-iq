@@ -54,6 +54,7 @@ interface KanbanViewProps {
   onLoadMore: () => void;
   hasMoreConversations: boolean;
   maxDays: number;
+  columnVisibleLimit: number;
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onClearSearch: () => void;
@@ -474,7 +475,7 @@ const tabConfig: { key: TabType; label: string; shortLabel: string; icon: typeof
   { key: "entregado", label: "Enviados y Entregados", shortLabel: "Enviado", icon: Truck },
 ];
 
-export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
+export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, columnVisibleLimit, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
   const { isAdmin, isAgent, user } = useAuth();
   const canDragKanban = isAdmin || isAgent;
   const { toast } = useToast();
@@ -628,9 +629,15 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const sortByRecent = (items: Conversation[]) =>
     [...items].sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
 
+  const operationalLimit = Math.max(1, columnVisibleLimit);
+
   const humano = sortByRecent(filtered.filter((c) => c.needsHumanAttention));
-  const entregados = sortByRecent(filtered.filter((c) => c.orderStatus === "delivered" && !c.needsHumanAttention));
-  const listos = sortByRecent(filtered.filter((c) => c.orderStatus === "ready" && !c.needsHumanAttention));
+  const entregados = sortByRecent(
+    filtered.filter((c) => c.orderStatus === "delivered" && !c.needsHumanAttention),
+  ).slice(0, operationalLimit);
+  const listos = sortByRecent(
+    filtered.filter((c) => c.orderStatus === "ready" && !c.needsHumanAttention),
+  ).slice(0, operationalLimit);
   const llamar = sortByRecent(
     filtered.filter(
       (c) =>
@@ -641,7 +648,9 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
         c.orderStatus !== "delivered",
     ),
   );
-  const enProceso = sortByRecent(filtered.filter((c) => c.orderStatus === "pending" && !c.needsHumanAttention));
+  const enProceso = sortByRecent(
+    filtered.filter((c) => c.orderStatus === "pending" && !c.needsHumanAttention),
+  ).slice(0, operationalLimit);
   const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention));
 
   const columnData: Record<TabType, { items: Conversation[]; title: string }> = {
