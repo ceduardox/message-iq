@@ -485,7 +485,7 @@ export default function AIAgentPage() {
           setUploadProgress((prev) => ({ ...prev, [slotKey]: 100 }));
           resolve(parsed.url);
         } catch {
-          reject(new Error("Respuesta invÃ¡lida del servidor al subir imagen"));
+          reject(new Error("Respuesta invalida del servidor al subir imagen"));
         }
       };
 
@@ -1216,7 +1216,7 @@ export default function AIAgentPage() {
                 />
               </div>
               <div className="space-y-3">
-                <Label className="text-slate-300">ImÃ¡genes del producto (con % de carga)</Label>
+                <Label className="text-slate-300">Imagenes del producto (con % de carga)</Label>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Input
@@ -1478,7 +1478,7 @@ export default function AIAgentPage() {
                           )}
                           {(product.imageUrl || product.imageBottleUrl || product.imageDoseUrl || product.imageIngredientsUrl) && (
                             <p className="text-xs text-muted-foreground mt-1">
-                              ImÃ¡genes: {[
+                              Imagenes: {[
                                 product.imageUrl ? "principal" : null,
                                 product.imageBottleUrl ? "frasco" : null,
                                 product.imageDoseUrl ? "dosis" : null,
@@ -1788,6 +1788,5 @@ export default function AIAgentPage() {
     </div>
   );
 }
-
 
 

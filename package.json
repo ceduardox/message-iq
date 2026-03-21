@@ -7,7 +7,8 @@
     "dev": "tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "check": "tsc",
+    "check:mojibake": "node script/check-mojibake.cjs",
+    "check": "npm run check:mojibake && tsc",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
