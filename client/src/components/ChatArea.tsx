@@ -998,6 +998,45 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     return null;
   };
 
+  const isImageLikeSource = (value?: string | null) => {
+    if (!value) return false;
+    const normalized = value.trim();
+    if (!normalized) return false;
+    return /^(https?:\/\/|data:image\/|\/uploads\/|uploads\/)/i.test(normalized);
+  };
+
+  const normalizeImageSource = (value?: string | null) => {
+    if (!value) return "";
+    const normalized = value.trim();
+    if (!normalized) return "";
+    if (/^(https?:\/\/|data:image\/)/i.test(normalized) || normalized.startsWith("/")) {
+      return normalized;
+    }
+    if (/^uploads\//i.test(normalized)) {
+      return `/${normalized}`;
+    }
+    return normalized;
+  };
+
+  const getInlineImageSource = (msg: Message) => {
+    if (msg.type !== "image") return "";
+    const raw = msg.rawJson as any;
+    const rawCandidates = [
+      raw?._outboundImageUrl,
+      raw?.outboundImageUrl,
+      raw?.imageUrl,
+      raw?.payload?.image?.link,
+    ];
+    const rawImageSource = rawCandidates.find((candidate) => typeof candidate === "string" && isImageLikeSource(candidate));
+    if (typeof rawImageSource === "string") {
+      return normalizeImageSource(rawImageSource);
+    }
+    if (isImageLikeSource(msg.text)) {
+      return normalizeImageSource(msg.text);
+    }
+    return "";
+  };
+
   const copyToClipboard = async (text: string, description = "Texto copiado al portapapeles") => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1206,10 +1245,13 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   };
 
   const handleQuickMessage = (qm: QuickMessage) => {
-    if (qm.text) setComposerText(qm.text);
+    setComposerText(qm.text || "");
     if (qm.imageUrl) {
       setImageUrl(qm.imageUrl);
       setShowImageInput(true);
+    } else {
+      setImageUrl("");
+      setShowImageInput(false);
     }
   };
 
@@ -1809,8 +1851,16 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                         loading="lazy"
                         onError={() => markMediaAsFailed(msg.mediaId)}
                       />
-                    ) : msg.direction === "out" && msg.text?.startsWith("http") ? (
-                      <img src={msg.text} alt="Sent image" className="max-w-full h-auto" />
+                    ) : getInlineImageSource(msg) ? (
+                      <img
+                        src={getInlineImageSource(msg)}
+                        alt="Sent image"
+                        className="max-w-full h-auto"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
                     ) : msg.mediaId && failedMediaIds[msg.mediaId] ? (
                       <div className="rounded bg-black/5 dark:bg-white/5 px-2 py-1 text-xs text-slate-500">
                         Media no disponible
@@ -1935,7 +1985,12 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                 })()}
                 
                 {msg.text && msg.type !== "document" && !(msg.type === "sticker" && msg.text.startsWith("[Sticker")) && (
-                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                  !(
+                    msg.type === "image" &&
+                    isImageLikeSource(msg.text)
+                  ) && (
+                    <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                  )
                 )}
 
                 <div className={cn("flex items-center justify-end gap-1 mt-1 text-[10px] opacity-60")}>

@@ -2397,40 +2397,65 @@ export async function registerRoutes(
   app.post(api.messages.send.path, requireAuth, async (req, res) => {
     try {
       const { to, type, text, imageUrl, caption } = api.messages.send.input.parse(req.body);
+      const normalizedText = typeof text === "string" ? text.trim() : "";
+      const normalizedImageUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
+      const normalizedCaption = typeof caption === "string" ? caption.trim() : "";
+      const effectiveImageCaption = type === "image" ? (normalizedCaption || normalizedText || undefined) : undefined;
+
+      if (type === "text" && !normalizedText) {
+        return res.status(400).json({ message: "Text is required for text messages" });
+      }
+      if (type === "image" && !normalizedImageUrl) {
+        return res.status(400).json({ message: "imageUrl is required for image messages" });
+      }
       
       // 1. Send to WhatsApp
-      const waResponse = await sendToWhatsApp(to, type, { text, imageUrl, caption });
+      const waResponse = await sendToWhatsApp(
+        to,
+        type,
+        type === "image"
+          ? { imageUrl: normalizedImageUrl, caption: effectiveImageCaption }
+          : { text: normalizedText }
+      );
       const waMessageId = waResponse.messages[0].id;
 
       // 2. Find conversation
       let conversation = await storage.getConversationByWaId(to);
       if (!conversation) {
         // Should ideally exist if we are replying, but create if new outbound
-        conversation = await storage.createConversation({
+          conversation = await storage.createConversation({
           waId: to,
           contactName: to, // No name known yet
-          lastMessage: type === 'text' ? text : '[image]',
+          lastMessage: type === 'text' ? normalizedText : '[image]',
           lastMessageTimestamp: new Date(),
         });
       } else {
          await storage.updateConversation(conversation.id, {
-            lastMessage: type === 'text' ? text : '[image]',
+            lastMessage: type === 'text' ? normalizedText : '[image]',
             lastMessageTimestamp: new Date(),
          });
       }
 
       // 3. Save Message
+      const outboundRawJson = type === "image"
+        ? {
+            ...waResponse,
+            _outboundImageUrl: normalizedImageUrl,
+            _outboundImageCaption: effectiveImageCaption || null,
+          }
+        : waResponse;
+
       await storage.createMessage({
         conversationId: conversation.id,
         waMessageId: waMessageId,
         direction: "out",
         type: type,
-        text: type === 'image' ? imageUrl : text,
+        text: type === "image" ? (effectiveImageCaption || null) : normalizedText,
         mediaId: null, // We sent a URL, no media ID usually unless uploaded
         mimeType: null,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent",
-        rawJson: waResponse,
+        rawJson: outboundRawJson,
       });
 
       res.json({ success: true, messageId: waMessageId });
