@@ -22,8 +22,10 @@ import ffmpegStatic from "ffmpeg-static";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+const uploadVideo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 * 1024 } });
 const uploadDocument = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const uploadProductImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+const WHATSAPP_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
 
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
@@ -1097,6 +1099,106 @@ function inferAudioMimeType(rawMimeType: string, filename: string): string {
   return normalized;
 }
 
+function isSupportedVideoInput(file: Express.Multer.File): boolean {
+  const normalizedMime = String(file.mimetype || "").toLowerCase().split(";")[0].trim();
+  const normalizedExt = path.extname(String(file.originalname || "")).toLowerCase();
+  if (normalizedMime.startsWith("video/")) return true;
+  if (normalizedMime === "application/octet-stream") {
+    return [".mp4", ".mov", ".m4v", ".3gp", ".3gpp"].includes(normalizedExt);
+  }
+  return false;
+}
+
+async function transcodeToWhatsAppVideo(input: Buffer): Promise<Buffer> {
+  const ffmpegPath = ffmpegStatic || process.env.FFMPEG_PATH || "ffmpeg";
+  const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const inputPath = path.join(os.tmpdir(), `wa_video_in_${nonce}`);
+  const outputPath = path.join(os.tmpdir(), `wa_video_out_${nonce}.mp4`);
+
+  const runPass = (options: { crf: string; maxrate: string; bufsize: string; audioBitrate: string; maxEdge: string }) =>
+    new Promise<void>((resolve, reject) => {
+      const args = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        inputPath,
+        "-map_metadata",
+        "-1",
+        "-vf",
+        `scale='min(${options.maxEdge},iw)':'min(${options.maxEdge},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+        "-r",
+        "30",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-profile:v",
+        "main",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        options.crf,
+        "-maxrate",
+        options.maxrate,
+        "-bufsize",
+        options.bufsize,
+        "-c:a",
+        "aac",
+        "-b:a",
+        options.audioBitrate,
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ];
+
+      const ffmpeg = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+      const errChunks: Buffer[] = [];
+
+      ffmpeg.stderr.on("data", (chunk: Buffer) => errChunks.push(chunk));
+      ffmpeg.on("error", (err) => reject(new Error(`FFmpeg spawn error: ${err.message}`)));
+      ffmpeg.on("close", (code) => {
+        if (code !== 0) {
+          const stderr = Buffer.concat(errChunks).toString("utf8").trim();
+          return reject(new Error(stderr || `FFmpeg exited with code ${code}`));
+        }
+        resolve();
+      });
+    });
+
+  try {
+    await fs.promises.writeFile(inputPath, input);
+
+    await runPass({
+      crf: "30",
+      maxrate: "1200k",
+      bufsize: "2400k",
+      audioBitrate: "96k",
+      maxEdge: "960",
+    });
+    let output = await fs.promises.readFile(outputPath);
+    if (output.length <= WHATSAPP_VIDEO_MAX_BYTES) return output;
+
+    await runPass({
+      crf: "34",
+      maxrate: "700k",
+      bufsize: "1400k",
+      audioBitrate: "64k",
+      maxEdge: "720",
+    });
+    output = await fs.promises.readFile(outputPath);
+    return output;
+  } finally {
+    await fs.promises.unlink(inputPath).catch(() => {});
+    await fs.promises.unlink(outputPath).catch(() => {});
+  }
+}
+
 async function transcodeToWhatsAppAudio(input: Buffer): Promise<Buffer> {
   const ffmpegPath = ffmpegStatic || process.env.FFMPEG_PATH || "ffmpeg";
 
@@ -2136,6 +2238,10 @@ export async function registerRoutes(
                   messageText = '[Audio]';
                   messageForAi = '[El cliente envio un audio]';
                 }
+              } else if (msg.type === 'video') {
+                const videoCaption = String(msg.video?.caption || "").trim();
+                messageText = videoCaption || "[Video]";
+                messageForAi = videoCaption || "[El cliente envio un video]";
               } else if (msg.type === 'interactive') {
                 // Handle button or list replies
                 const interactiveReply = msg.interactive;
@@ -2194,9 +2300,9 @@ export async function registerRoutes(
               const existing = await storage.getMessageByWaId(msg.id);
               if (existing) continue;
 
-              // 4. Save Message (include mediaId for images, stickers and audio)
-              const mediaId = msg.image?.id || msg.sticker?.id || msg.audio?.id || null;
-              const mimeType = msg.image?.mime_type || msg.sticker?.mime_type || msg.audio?.mime_type || null;
+              // 4. Save Message (include mediaId for media types)
+              const mediaId = msg.image?.id || msg.sticker?.id || msg.audio?.id || msg.video?.id || null;
+              const mimeType = msg.image?.mime_type || msg.sticker?.mime_type || msg.audio?.mime_type || msg.video?.mime_type || null;
               
               await storage.createMessage({
                 conversationId: conversation.id,
@@ -2550,6 +2656,113 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Image upload error:", error.response?.data || error.message);
       res.status(500).json({ message: "Failed to send image", error: error.message });
+    }
+  });
+
+  app.post("/api/send-video", requireAuth, uploadVideo.single("video"), async (req, res) => {
+    try {
+      const file = req.file;
+      const to = req.body.to;
+      const caption = typeof req.body.caption === "string" ? req.body.caption.trim() : "";
+
+      if (!file || !to) {
+        return res.status(400).json({ message: "Missing video or recipient" });
+      }
+
+      if (!isSupportedVideoInput(file)) {
+        return res.status(400).json({ message: "Formato no soportado. Usa MP4, MOV o 3GP." });
+      }
+
+      const token = process.env.META_ACCESS_TOKEN;
+      const phoneId = process.env.WA_PHONE_NUMBER_ID;
+      if (!token || !phoneId) {
+        return res.status(500).json({ message: "Missing Meta configuration" });
+      }
+
+      const transcodedVideo = await transcodeToWhatsAppVideo(file.buffer);
+      if (transcodedVideo.length > WHATSAPP_VIDEO_MAX_BYTES) {
+        return res.status(400).json({
+          message: "El video sigue siendo muy pesado tras comprimir. Recortalo o envialo mas corto.",
+        });
+      }
+
+      const FormData = (await import("form-data")).default;
+      const formData = new FormData();
+      const uploadFilename = `video-${Date.now()}.mp4`;
+      formData.append("file", transcodedVideo, { filename: uploadFilename, contentType: "video/mp4" });
+      formData.append("messaging_product", "whatsapp");
+      formData.append("type", "video/mp4");
+
+      const uploadRes = await axios.post(
+        `https://graph.facebook.com/v24.0/${phoneId}/media`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, ...formData.getHeaders() } }
+      );
+      const mediaId = uploadRes.data.id;
+
+      const formattedTo = to.startsWith('+') ? to : `+${to}`;
+      const payload: any = {
+        messaging_product: "whatsapp",
+        to: formattedTo,
+        type: "video",
+        video: { id: mediaId },
+      };
+      if (caption) payload.video.caption = caption;
+
+      const waResponse = await axios.post(
+        `https://graph.facebook.com/v24.0/${phoneId}/messages`,
+        payload,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+      );
+      const waMessageId = waResponse.data.messages[0].id;
+      const waMessageStatus = waResponse.data.messages[0]?.message_status || null;
+
+      const normalizedTo = to.replace(/^\+/, "");
+      let conversation = await storage.getConversationByWaId(normalizedTo);
+      if (!conversation) {
+        conversation = await storage.createConversation({
+          waId: normalizedTo,
+          contactName: normalizedTo,
+          lastMessage: caption || "[video]",
+          lastMessageTimestamp: new Date(),
+        });
+      } else {
+        await storage.updateConversation(conversation.id, {
+          lastMessage: caption || "[video]",
+          lastMessageTimestamp: new Date(),
+        });
+      }
+
+      await storage.createMessage({
+        conversationId: conversation.id,
+        waMessageId,
+        direction: "out",
+        type: "video",
+        text: caption || null,
+        mediaId,
+        mimeType: "video/mp4",
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+        rawJson: {
+          ...waResponse.data,
+          _transcodedToMp4: true,
+          _originalMimeType: file.mimetype,
+          _originalSizeBytes: file.size,
+          _transcodedSizeBytes: transcodedVideo.length,
+        },
+      });
+
+      res.json({
+        success: true,
+        messageId: waMessageId,
+        messageStatus: waMessageStatus,
+        transcoded: true,
+        finalSizeBytes: transcodedVideo.length,
+      });
+    } catch (error: any) {
+      const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
+      console.error("Video upload error:", error.response?.data || error.message);
+      res.status(500).json({ message: "Failed to send video", error: details });
     }
   });
 

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -102,7 +102,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const [learnMessageCount, setLearnMessageCount] = useState(10);
   const [suggestedRule, setSuggestedRule] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedFileType, setSelectedFileType] = useState<"image" | "audio" | "document" | null>(null);
+  const [selectedFileType, setSelectedFileType] = useState<"image" | "audio" | "video" | "document" | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -120,6 +120,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const quickMessageImageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -155,6 +156,32 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     },
     onError: (err: any) => {
       toast({ title: "Error al enviar imagen", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const uploadVideoMutation = useMutation({
+    mutationFn: async ({ file, to, caption }: { file: File; to: string; caption?: string }) => {
+      const formData = new FormData();
+      formData.append("video", file);
+      formData.append("to", to);
+      if (caption) formData.append("caption", caption);
+      const res = await fetch("/api/send-video", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || err?.error || "Error");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setComposerText("");
+      setSelectedFile(null);
+      setSelectedFileType(null);
+      setFilePreview(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Video enviado" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error al enviar video", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1131,6 +1158,8 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     if (selectedFile) {
       if (selectedFileType === "audio") {
         uploadAudioMutation.mutate({ file: selectedFile, to: conversation.waId });
+      } else if (selectedFileType === "video") {
+        uploadVideoMutation.mutate({ file: selectedFile, to: conversation.waId, caption: composerText || undefined });
       } else if (selectedFileType === "document") {
         uploadDocumentMutation.mutate({ file: selectedFile, to: conversation.waId, caption: composerText || undefined });
       } else {
@@ -1204,6 +1233,30 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
     }
     setSelectedFile(file);
     setSelectedFileType("audio");
+    setFilePreview(URL.createObjectURL(file));
+    setShowImageInput(false);
+    setImageUrl("");
+  };
+
+  const handleVideoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const normalizedMime = (file.type || "").toLowerCase();
+    const normalizedName = (file.name || "").toLowerCase();
+    const validMime =
+      normalizedMime.startsWith("video/") ||
+      normalizedMime === "application/octet-stream";
+    const validExt = [".mp4", ".mov", ".3gp", ".3gpp", ".m4v"].some((ext) => normalizedName.endsWith(ext));
+    if (!validMime && !validExt) {
+      toast({ title: "Formato no soportado", description: "Selecciona un video MP4, MOV o 3GP", variant: "destructive" });
+      return;
+    }
+    if (file.size > 64 * 1024 * 1024) {
+      toast({ title: "Archivo muy grande", description: "Max 64MB para convertir", variant: "destructive" });
+      return;
+    }
+    setSelectedFile(file);
+    setSelectedFileType("video");
     setFilePreview(URL.createObjectURL(file));
     setShowImageInput(false);
     setImageUrl("");
@@ -1869,6 +1922,30 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
                   </div>
                 )}
 
+                {msg.type === "video" && (
+                  <div className="mb-2 rounded overflow-hidden">
+                    {msg.mediaId && !failedMediaIds[msg.mediaId] ? (
+                      <video
+                        controls
+                        preload="metadata"
+                        className="max-w-full h-auto max-h-[320px]"
+                        onError={() => markMediaAsFailed(msg.mediaId)}
+                      >
+                        <source src={`/api/media/${msg.mediaId}`} type={msg.mimeType || "video/mp4"} />
+                        Tu navegador no soporta video
+                      </video>
+                    ) : msg.mediaId && failedMediaIds[msg.mediaId] ? (
+                      <div className="rounded bg-black/5 dark:bg-white/5 px-2 py-1 text-xs text-slate-500">
+                        Video no disponible
+                      </div>
+                    ) : (
+                      <div className="rounded bg-black/5 dark:bg-white/5 px-2 py-1 text-xs text-slate-500">
+                        Video
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {msg.type === "sticker" && (
                   <div className="mb-2 rounded overflow-hidden">
                     {msg.mediaId && !failedMediaIds[msg.mediaId] ? (
@@ -2038,6 +2115,8 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         <div className="px-4 py-2 bg-muted/50 border-t flex items-center gap-3">
           {selectedFileType === "audio" ? (
             <audio controls src={filePreview || undefined} className="h-10 max-w-[180px]" />
+          ) : selectedFileType === "video" ? (
+            <video controls src={filePreview || undefined} className="h-16 w-24 rounded bg-black/70 object-cover" />
           ) : selectedFileType === "document" ? (
             <div className="h-10 w-10 rounded bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
               <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
@@ -2071,6 +2150,14 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
         className="hidden"
         onChange={handleAudioFileSelect}
         data-testid="input-file-audio"
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*,.mp4,.mov,.3gp,.3gpp,.m4v"
+        className="hidden"
+        onChange={handleVideoFileSelect}
+        data-testid="input-file-video"
       />
       <input
         ref={documentInputRef}
@@ -2123,6 +2210,9 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => audioInputRef.current?.click()} data-testid="menu-audio-file">
                 <Mic className="h-4 w-4 mr-2 text-emerald-500" /> Audio
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => videoInputRef.current?.click()} data-testid="menu-video-file">
+                <Video className="h-4 w-4 mr-2 text-sky-500" /> Video (Galería)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => documentInputRef.current?.click()} data-testid="menu-document-pdf">
                 <FileText className="h-4 w-4 mr-2 text-red-500" /> Documento (PDF)
@@ -2230,7 +2320,7 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
 
           <Button
             onClick={() => (isRecording ? stopRecording() : startRecording())}
-            disabled={uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadDocumentMutation.isPending}
+            disabled={uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadVideoMutation.isPending || uploadDocumentMutation.isPending}
             size="icon"
             variant={isRecording ? "destructive" : "ghost"}
             className={cn("rounded-full h-9 w-9 md:h-10 md:w-10 flex-shrink-0", isRecording && "animate-pulse")}
@@ -2242,11 +2332,11 @@ export function ChatArea({ conversation, messages }: ChatAreaProps) {
 
           <Button
             onClick={() => handleSend()}
-            disabled={(!hasTextDraft && !imageUrl && !selectedFile) || isPending || uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadDocumentMutation.isPending || isRecording}
+            disabled={(!hasTextDraft && !imageUrl && !selectedFile) || isPending || uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadVideoMutation.isPending || uploadDocumentMutation.isPending || isRecording}
             size="icon"
             className="rounded-full h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
           >
-            {(uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadDocumentMutation.isPending) ? <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> : <Send className="h-4 w-4 md:h-5 md:w-5" />}
+            {(uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadVideoMutation.isPending || uploadDocumentMutation.isPending) ? <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> : <Send className="h-4 w-4 md:h-5 md:w-5" />}
           </Button>
         </div>
       </div>
