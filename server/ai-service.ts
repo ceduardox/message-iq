@@ -200,6 +200,10 @@ export async function generateAiResponse(
     const systemPrompt = `NOMBRE DE ASESORA PARA ESTA CONVERSACION: ${resolvedAdvisorName}
 REGLA INMUTABLE: Si te presentas o mencionas nombre de asesora, usa SIEMPRE "${resolvedAdvisorName}".
 Solo usa "Isabella" cuando el nombre asignado sea exactamente Isabella.
+REGLA LOGISTICA INMUTABLE:
+- Nunca niegues envio por ciudad o provincia.
+- Si la ciudad NO esta habilitada para pago al recibir, SI confirmas envio por transportadora/flota/trufi.
+- "No habilitada para pago al recibir" NO significa "sin envio".
 
 ${instructions}
 
