@@ -43,6 +43,7 @@ import {
 interface AgentWithStats extends Agent {
   assignedConversations?: number;
   inboundMessages?: number;
+  inboundChats?: number;
   newLeads?: number;
   shouldCallCount?: number;
   lastActivityAt?: string | null;
@@ -107,7 +108,7 @@ export default function AgentsPage() {
   const [routingAdId, setRoutingAdId] = useState("");
   const [routingIsActive, setRoutingIsActive] = useState(true);
   const [routingAgentIds, setRoutingAgentIds] = useState<number[]>([]);
-  const [costPerClientMessageBs, setCostPerClientMessageBs] = useState("1.23");
+  const [costPerInboundChatBs, setCostPerInboundChatBs] = useState("1.23");
   const [officialRateBs, setOfficialRateBs] = useState("6.6");
   const [parallelRateBs, setParallelRateBs] = useState("9.23");
 
@@ -258,12 +259,13 @@ export default function AgentsPage() {
   const activeAgents = agents.filter(a => a.isActive);
   const inactiveAgents = agents.filter(a => !a.isActive);
   const totalInboundMessages = agents.reduce((acc, agent) => acc + (agent.inboundMessages || 0), 0);
+  const totalInboundChats = agents.reduce((acc, agent) => acc + (agent.inboundChats || 0), 0);
   const totalShouldCall = agents.reduce((acc, agent) => acc + (agent.shouldCallCount || 0), 0);
   const activeAgentIdSet = new Set(activeAgents.map((a) => a.id));
-  const unitCostBs = parsePositiveNumber(costPerClientMessageBs, 0);
+  const unitCostBs = parsePositiveNumber(costPerInboundChatBs, 0);
   const officialRate = parsePositiveNumber(officialRateBs, 0);
   const parallelRate = parsePositiveNumber(parallelRateBs, 0);
-  const totalBaseCostBs = totalInboundMessages * unitCostBs;
+  const totalBaseCostBs = totalInboundChats * unitCostBs;
   const totalCostUsd = officialRate > 0 ? totalBaseCostBs / officialRate : 0;
   const totalParallelCostBs = totalCostUsd * parallelRate;
 
@@ -405,19 +407,19 @@ export default function AgentsPage() {
 
         <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
           <div className="mb-3">
-            <h3 className="text-sm font-semibold text-white">Costo por agente (base: Mensajes cliente)</h3>
+            <h3 className="text-sm font-semibold text-white">Costo por agente (base: Chats con inbound)</h3>
             <p className="text-xs text-slate-400">
-              Formula: (Mensajes cliente * costo unitario Bs) / TC oficial * TC paralelo
+              Formula: (Chats con inbound * costo unitario Bs) / TC oficial * TC paralelo
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-slate-500 mb-1 block">Costo por mensaje cliente (Bs)</label>
+              <label className="text-xs text-slate-500 mb-1 block">Costo por chat con inbound (Bs)</label>
               <Input
-                value={costPerClientMessageBs}
-                onChange={(e) => setCostPerClientMessageBs(e.target.value)}
+                value={costPerInboundChatBs}
+                onChange={(e) => setCostPerInboundChatBs(e.target.value)}
                 className="h-9 bg-slate-800/60 border-slate-700/50 text-white"
-                data-testid="input-cost-per-client-message-bs"
+                data-testid="input-cost-per-inbound-chat-bs"
               />
             </div>
             <div>
@@ -570,8 +572,8 @@ export default function AgentsPage() {
             <p className="text-2xl font-bold text-white mt-1">{activeAgents.length}</p>
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-sky-300">Mensajes cliente</p>
-            <p className="text-2xl font-bold text-white mt-1">{totalInboundMessages}</p>
+            <p className="text-[11px] uppercase tracking-wide text-sky-300">Chats con inbound</p>
+            <p className="text-2xl font-bold text-white mt-1">{totalInboundChats}</p>
           </div>
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-amber-300">Pendientes llamar</p>
@@ -865,8 +867,8 @@ function AgentCard({
   const [editWeight, setEditWeight] = useState(agent.weight || 1);
   const [editPassword, setEditPassword] = useState(agent.password);
   const [showMobileStats, setShowMobileStats] = useState(false);
-  const inboundMessages = agent.inboundMessages || 0;
-  const baseCostBs = inboundMessages * unitCostBs;
+  const inboundChats = agent.inboundChats || 0;
+  const baseCostBs = inboundChats * unitCostBs;
   const equivalentUsd = officialRate > 0 ? baseCostBs / officialRate : 0;
   const parallelCostBs = equivalentUsd * parallelRate;
   const formatLastActivity = (value?: string | null) => {
@@ -1012,10 +1014,10 @@ function AgentCard({
                     <div className="absolute left-0 top-0 h-0.5 w-full bg-emerald-400/80" />
                     <p className="text-[10px] uppercase tracking-[0.14em] text-slate-400 flex items-center gap-1">
                       <MessageSquare className="h-3 w-3 text-emerald-300" />
-                      Mensajes cliente
+                      Chats con inbound
                     </p>
-                    <p className="mt-1 text-xl font-black text-white tabular-nums">{inboundMessages}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">entrantes recibidos</p>
+                    <p className="mt-1 text-xl font-black text-white tabular-nums">{inboundChats}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">chats unicos con inbound</p>
                   </div>
 
                   <div className="group relative overflow-hidden rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2.5">

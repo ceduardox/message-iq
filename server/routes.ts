@@ -4354,6 +4354,30 @@ Maximo 2 lineas. Se especifico y practico.`;
         ${dateFrom ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') >= ${dateFrom}` : sql``}
         ${dateTo ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') <= ${dateTo}` : sql``}
       `;
+      const inboundChatDateFilterSql = sql`
+        ${dateFrom
+          ? sql`AND DATE(
+              COALESCE(
+                CASE
+                  WHEN m_in.timestamp ~ '^[0-9]+$' THEN to_timestamp(m_in.timestamp::double precision)
+                  ELSE NULL
+                END,
+                m_in.created_at
+              ) AT TIME ZONE 'America/La_Paz'
+            ) >= ${dateFrom}`
+          : sql``}
+        ${dateTo
+          ? sql`AND DATE(
+              COALESCE(
+                CASE
+                  WHEN m_in.timestamp ~ '^[0-9]+$' THEN to_timestamp(m_in.timestamp::double precision)
+                  ELSE NULL
+                END,
+                m_in.created_at
+              ) AT TIME ZONE 'America/La_Paz'
+            ) <= ${dateTo}`
+          : sql``}
+      `;
 
       let statsResult;
       try {
@@ -4369,6 +4393,7 @@ Maximo 2 lineas. Se especifico y practico.`;
           a.created_at AS "createdAt",
           COALESCE(s.assigned_conversations, 0) AS "assignedConversations",
           COALESCE(s.inbound_messages, 0) AS "inboundMessages",
+          COALESCE(ic.inbound_chats, 0) AS "inboundChats",
           COALESCE(s.new_leads, 0) AS "newLeads",
           COALESCE(s.should_call_count, 0) AS "shouldCallCount",
           s.last_activity_at AS "lastActivityAt"
@@ -4396,6 +4421,21 @@ Maximo 2 lineas. Se especifico y practico.`;
             ${dateFilterSql}
           GROUP BY c.assigned_agent_id
         ) s ON s.agent_id = a.id
+        LEFT JOIN (
+          SELECT
+            c.assigned_agent_id AS agent_id,
+            COUNT(DISTINCT c.id) AS inbound_chats
+          FROM conversations c
+          WHERE c.assigned_agent_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM messages m_in
+              WHERE m_in.conversation_id = c.id
+                AND m_in.direction = 'in'
+                ${inboundChatDateFilterSql}
+            )
+          GROUP BY c.assigned_agent_id
+        ) ic ON ic.agent_id = a.id
         ORDER BY a.name ASC
       `);
       } catch (error: any) {
@@ -4413,6 +4453,7 @@ Maximo 2 lineas. Se especifico y practico.`;
               a.created_at AS "createdAt",
               COALESCE(s.assigned_conversations, 0) AS "assignedConversations",
               COALESCE(s.inbound_messages, 0) AS "inboundMessages",
+              COALESCE(ic.inbound_chats, 0) AS "inboundChats",
               COALESCE(s.new_leads, 0) AS "newLeads",
               COALESCE(s.should_call_count, 0) AS "shouldCallCount",
               s.last_activity_at AS "lastActivityAt"
@@ -4440,6 +4481,21 @@ Maximo 2 lineas. Se especifico y practico.`;
                 ${dateFilterSql}
               GROUP BY c.assigned_agent_id
             ) s ON s.agent_id = a.id
+            LEFT JOIN (
+              SELECT
+                c.assigned_agent_id AS agent_id,
+                COUNT(DISTINCT c.id) AS inbound_chats
+              FROM conversations c
+              WHERE c.assigned_agent_id IS NOT NULL
+                AND EXISTS (
+                  SELECT 1
+                  FROM messages m_in
+                  WHERE m_in.conversation_id = c.id
+                    AND m_in.direction = 'in'
+                    ${inboundChatDateFilterSql}
+                )
+              GROUP BY c.assigned_agent_id
+            ) ic ON ic.agent_id = a.id
             ORDER BY a.name ASC
           `);
         } else {
@@ -4451,6 +4507,7 @@ Maximo 2 lineas. Se especifico y practico.`;
         ...row,
         assignedConversations: Number(row.assignedConversations || 0),
         inboundMessages: Number(row.inboundMessages || 0),
+        inboundChats: Number(row.inboundChats || 0),
         newLeads: Number(row.newLeads || 0),
         shouldCallCount: Number(row.shouldCallCount || 0),
       }));
