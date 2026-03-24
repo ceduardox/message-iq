@@ -198,6 +198,7 @@ export default function AnalyticsPage() {
         agentId: number;
         agentName: string;
         inboundChats: number;
+        unitCostBs: number | null;
         baseCostBs: number;
         usdCost: number;
         parallelCostBs: number;
@@ -211,12 +212,16 @@ export default function AnalyticsPage() {
         agentId: key,
         agentName: String(row.agent_name || `Agente ${key}`),
         inboundChats: 0,
+        unitCostBs: null,
         baseCostBs: 0,
         usdCost: 0,
         parallelCostBs: 0,
         hasCost: false,
       };
       current.inboundChats += Number(row.inbound_chats || 0);
+      if (row.unit_cost_bs != null) {
+        current.unitCostBs = Number(row.unit_cost_bs);
+      }
       if (row.base_cost_bs != null && row.usd_cost != null && row.parallel_cost_bs != null) {
         current.baseCostBs += Number(row.base_cost_bs);
         current.usdCost += Number(row.usd_cost);
@@ -488,7 +493,7 @@ export default function AnalyticsPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center shadow-lg">
               <Users className="h-4 w-4 text-white" />
             </div>
-            Chats con inbound y costo estimado por agente
+            Chats con inbound y costo Meta Ads por agente
           </h3>
           {agentSummaryCards.length > 0 ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -506,9 +511,12 @@ export default function AnalyticsPage() {
                       <p className="text-[11px] text-slate-500">chats unicos con inbound</p>
                     </div>
                     <div className="rounded-lg border border-violet-500/30 bg-slate-950/60 p-2.5">
-                      <p className="text-[11px] uppercase tracking-wide text-violet-300">Costo estimado</p>
+                      <p className="text-[11px] uppercase tracking-wide text-violet-300">COSTO META ADS</p>
                       {item.hasCost ? (
                         <div className="text-sm leading-6">
+                          <p className="text-slate-300">
+                            Costo por mensaje: <span className="font-semibold text-white">{item.unitCostBs == null ? "—" : formatBs(item.unitCostBs)}</span>
+                          </p>
                           <p className="text-slate-300">
                             Base: <span className="font-semibold text-white">{formatBs(item.baseCostBs)}</span>
                           </p>
