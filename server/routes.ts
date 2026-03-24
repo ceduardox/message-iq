@@ -182,6 +182,13 @@ interface AdLeadRoutingRule {
   isActive: boolean;
   updatedAt?: string | Date | null;
 }
+interface DailyCostSetting {
+  date: string;
+  unitCostBs: number;
+  officialRateBs: number;
+  parallelRateBs: number;
+  updatedAt?: string | Date | null;
+}
 const DEFAULT_REMINDER_LEAD_MINUTES = [30, 15];
 const REMINDER_PUSH_CHECK_INTERVAL_MS = 60 * 1000;
 const REMINDER_PUSH_WINDOW_MS = 70 * 1000;
@@ -193,6 +200,7 @@ let productImageColumnsEnsured = false;
 let productImageStorageTableEnsured = false;
 let conversationLabelColumnsEnsured = false;
 let adLeadRoutingTableEnsured = false;
+let dailyCostSettingsTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
@@ -278,6 +286,30 @@ async function ensureAdLeadRoutingTableExists() {
     )
   `);
   adLeadRoutingTableEnsured = true;
+}
+
+async function ensureDailyCostSettingsTableExists() {
+  if (dailyCostSettingsTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS daily_cost_settings (
+      date DATE PRIMARY KEY,
+      unit_cost_bs NUMERIC(12, 4) NOT NULL,
+      official_rate_bs NUMERIC(12, 4) NOT NULL,
+      parallel_rate_bs NUMERIC(12, 4) NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  dailyCostSettingsTableEnsured = true;
+}
+
+function mapDailyCostSettingRow(row: any): DailyCostSetting {
+  return {
+    date: String(row.date),
+    unitCostBs: Number(row.unit_cost_bs),
+    officialRateBs: Number(row.official_rate_bs),
+    parallelRateBs: Number(row.parallel_rate_bs),
+    updatedAt: row.updated_at ?? null,
+  };
 }
 
 function parseAgentIds(raw: unknown): number[] {
@@ -1991,6 +2023,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   await ensureProductImageColumnsExist();
   await ensureConversationLabelColumnsExist();
+  await ensureDailyCostSettingsTableExists();
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS user_sessions (
       sid varchar NOT NULL COLLATE "default" PRIMARY KEY,
@@ -2877,30 +2910,172 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Agent message stats
+  const dailyCostSettingsUpdateSchema = z.object({
+    unitCostBs: z.coerce.number().positive(),
+    officialRateBs: z.coerce.number().positive(),
+    parallelRateBs: z.coerce.number().positive(),
+  });
+
+  app.get("/api/daily-cost-settings", requireAuth, async (req, res) => {
+    try {
+      await ensureDailyCostSettingsTableExists();
+      const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
+      const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateFrom && !dateRegex.test(dateFrom)) {
+        return res.status(400).json({ message: "Invalid dateFrom format. Use YYYY-MM-DD" });
+      }
+      if (dateTo && !dateRegex.test(dateTo)) {
+        return res.status(400).json({ message: "Invalid dateTo format. Use YYYY-MM-DD" });
+      }
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        return res.status(400).json({ message: "dateFrom must be before or equal to dateTo" });
+      }
+
+      const rows: any = await db.execute(sql`
+        SELECT date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, updated_at
+        FROM daily_cost_settings
+        WHERE 1 = 1
+          ${!dateFrom && !dateTo ? sql`AND date >= (CURRENT_DATE - INTERVAL '29 days')::date` : sql``}
+          ${dateFrom ? sql`AND date >= ${dateFrom}::date` : sql``}
+          ${dateTo ? sql`AND date <= ${dateTo}::date` : sql``}
+        ORDER BY date DESC
+      `);
+
+      const result = (rows?.rows ?? []).map((row: any) => mapDailyCostSettingRow(row));
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching daily cost settings:", error);
+      res.status(500).json({ message: "Error fetching daily cost settings" });
+    }
+  });
+
+  app.put("/api/daily-cost-settings/:date", requireAdmin, async (req, res) => {
+    try {
+      await ensureDailyCostSettingsTableExists();
+      const date = String(req.params.date || "").trim();
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD" });
+      }
+
+      const parsed = dailyCostSettingsUpdateSchema.parse(req.body);
+      const updated: any = await db.execute(sql`
+        INSERT INTO daily_cost_settings (date, unit_cost_bs, official_rate_bs, parallel_rate_bs)
+        VALUES (${date}::date, ${parsed.unitCostBs}, ${parsed.officialRateBs}, ${parsed.parallelRateBs})
+        ON CONFLICT (date)
+        DO UPDATE SET
+          unit_cost_bs = EXCLUDED.unit_cost_bs,
+          official_rate_bs = EXCLUDED.official_rate_bs,
+          parallel_rate_bs = EXCLUDED.parallel_rate_bs,
+          updated_at = NOW()
+        RETURNING date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, updated_at
+      `);
+      res.json(mapDailyCostSettingRow(updated.rows[0]));
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid daily cost settings data", errors: error.errors });
+      }
+      console.error("Error updating daily cost settings:", error);
+      res.status(500).json({ message: "Error updating daily cost settings" });
+    }
+  });
+
+  // Agent message stats + inbound chats + estimated cost by daily settings
   app.get("/api/agent-stats", requireAuth, async (req, res) => {
     try {
-      const { sql } = await import("drizzle-orm");
-      const rows = await db.execute(sql`
-        SELECT 
-          a.id as agent_id, a.name as agent_name,
-          DATE(m.created_at) as date,
-          COUNT(*) FILTER (WHERE m.direction IN ('in', 'incoming')) as incoming,
-          COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing')) as outgoing
-        FROM messages m
-        JOIN conversations c ON m.conversation_id = c.id
-        JOIN agents a ON c.assigned_agent_id = a.id
-        WHERE m.created_at >= NOW() - INTERVAL '30 days'
-        GROUP BY a.id, a.name, DATE(m.created_at)
-        ORDER BY DATE(m.created_at) DESC, a.name
+      await ensureDailyCostSettingsTableExists();
+
+      const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom.trim() : "";
+      const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo.trim() : "";
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateFrom && !dateRegex.test(dateFrom)) {
+        return res.status(400).json({ message: "Invalid dateFrom format. Use YYYY-MM-DD" });
+      }
+      if (dateTo && !dateRegex.test(dateTo)) {
+        return res.status(400).json({ message: "Invalid dateTo format. Use YYYY-MM-DD" });
+      }
+      if (dateFrom && dateTo && dateFrom > dateTo) {
+        return res.status(400).json({ message: "dateFrom must be before or equal to dateTo" });
+      }
+
+      const dayExpression = sql`
+        DATE(
+          COALESCE(
+            CASE
+              WHEN m.timestamp ~ '^[0-9]+$' THEN to_timestamp(m.timestamp::double precision)
+              ELSE NULL
+            END,
+            m.created_at
+          ) AT TIME ZONE 'America/La_Paz'
+        )
+      `;
+
+      const rows: any = await db.execute(sql`
+        WITH stats AS (
+          SELECT
+            a.id AS agent_id,
+            a.name AS agent_name,
+            ${dayExpression} AS date,
+            COUNT(*) FILTER (WHERE m.direction IN ('in', 'incoming')) AS incoming,
+            COUNT(*) FILTER (WHERE m.direction IN ('out', 'outgoing')) AS outgoing,
+            COUNT(DISTINCT m.conversation_id) FILTER (WHERE m.direction IN ('in', 'incoming')) AS inbound_chats
+          FROM messages m
+          JOIN conversations c ON m.conversation_id = c.id
+          JOIN agents a ON c.assigned_agent_id = a.id
+          WHERE 1 = 1
+            ${!dateFrom && !dateTo ? sql`AND ${dayExpression} >= (CURRENT_DATE - INTERVAL '29 days')::date` : sql``}
+            ${dateFrom ? sql`AND ${dayExpression} >= ${dateFrom}::date` : sql``}
+            ${dateTo ? sql`AND ${dayExpression} <= ${dateTo}::date` : sql``}
+          GROUP BY a.id, a.name, ${dayExpression}
+        )
+        SELECT
+          s.agent_id,
+          s.agent_name,
+          s.date::text AS date,
+          s.incoming,
+          s.outgoing,
+          s.inbound_chats,
+          dcs.unit_cost_bs,
+          dcs.official_rate_bs,
+          dcs.parallel_rate_bs,
+          CASE
+            WHEN dcs.unit_cost_bs IS NULL THEN NULL
+            ELSE s.inbound_chats * dcs.unit_cost_bs
+          END AS base_cost_bs,
+          CASE
+            WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 THEN NULL
+            ELSE (s.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs
+          END AS usd_cost,
+          CASE
+            WHEN dcs.unit_cost_bs IS NULL OR dcs.official_rate_bs <= 0 OR dcs.parallel_rate_bs <= 0 THEN NULL
+            ELSE ((s.inbound_chats * dcs.unit_cost_bs) / dcs.official_rate_bs) * dcs.parallel_rate_bs
+          END AS parallel_cost_bs
+        FROM stats s
+        LEFT JOIN daily_cost_settings dcs ON dcs.date = s.date
+        ORDER BY s.date DESC, s.agent_name
       `);
-      const result = (rows as unknown as any[]);
+
+      const mapped = (rows?.rows ?? []).map((row: any) => ({
+        agent_id: Number(row.agent_id),
+        agent_name: String(row.agent_name || ""),
+        date: String(row.date),
+        incoming: Number(row.incoming || 0),
+        outgoing: Number(row.outgoing || 0),
+        inbound_chats: Number(row.inbound_chats || 0),
+        unit_cost_bs: row.unit_cost_bs == null ? null : Number(row.unit_cost_bs),
+        official_rate_bs: row.official_rate_bs == null ? null : Number(row.official_rate_bs),
+        parallel_rate_bs: row.parallel_rate_bs == null ? null : Number(row.parallel_rate_bs),
+        base_cost_bs: row.base_cost_bs == null ? null : Number(row.base_cost_bs),
+        usd_cost: row.usd_cost == null ? null : Number(row.usd_cost),
+        parallel_cost_bs: row.parallel_cost_bs == null ? null : Number(row.parallel_cost_bs),
+      }));
+
       const agentId = (req.session as any).agentId;
       if (agentId) {
-        res.json(result.filter((r: any) => r.agent_id === agentId));
-      } else {
-        res.json(result);
+        return res.json(mapped.filter((r: any) => r.agent_id === agentId));
       }
+      res.json(mapped);
     } catch (error) {
       console.error("Agent stats error:", error);
       // Safe fallback: avoid breaking user UI due analytics errors
