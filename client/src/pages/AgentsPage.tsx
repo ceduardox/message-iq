@@ -69,6 +69,12 @@ interface DailyCostSetting {
   updatedAt?: string | null;
 }
 
+interface AnalyticsViewPermission {
+  viewerAgentId: number;
+  visibleAgentIds: number[];
+  updatedAt?: string | null;
+}
+
 const glowAnimation = `
 @keyframes glow-line {
   0% { background-position: -200% 0; }
@@ -126,6 +132,7 @@ export default function AgentsPage() {
   const [costPerInboundChatBs, setCostPerInboundChatBs] = useState("");
   const [officialRateBs, setOfficialRateBs] = useState("");
   const [parallelRateBs, setParallelRateBs] = useState("");
+  const [analyticsPermissionsDraft, setAnalyticsPermissionsDraft] = useState<Record<number, number[]>>({});
 
   const { data: agents = [], isLoading } = useQuery<AgentWithStats[]>({
     queryKey: ["/api/agents", dateFrom, dateTo],
@@ -162,6 +169,15 @@ export default function AgentsPage() {
     },
   });
 
+  const { data: analyticsViewPermissions = [] } = useQuery<AnalyticsViewPermission[]>({
+    queryKey: ["/api/analytics-view-permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/analytics-view-permissions", { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo cargar permisos de analytics");
+      return res.json();
+    },
+  });
+
   const { data: costSettingsForDate = [] } = useQuery<DailyCostSetting[]>({
     queryKey: ["/api/daily-cost-settings", costDate],
     queryFn: async () => {
@@ -189,6 +205,17 @@ export default function AgentsPage() {
     setOfficialRateBs(String(row.officialRateBs));
     setParallelRateBs(String(row.parallelRateBs));
   }, [costSettingsForDate]);
+
+  useEffect(() => {
+    const next: Record<number, number[]> = {};
+    const fromServer = new Map<number, number[]>(
+      analyticsViewPermissions.map((row) => [Number(row.viewerAgentId), Array.isArray(row.visibleAgentIds) ? row.visibleAgentIds : []]),
+    );
+    for (const agent of agents) {
+      next[agent.id] = fromServer.get(agent.id) ?? [];
+    }
+    setAnalyticsPermissionsDraft(next);
+  }, [agents, analyticsViewPermissions]);
 
   const saveDailyCostMutation = useMutation({
     mutationFn: async () => {
@@ -303,6 +330,25 @@ export default function AgentsPage() {
     },
   });
 
+  const saveAnalyticsPermissionMutation = useMutation({
+    mutationFn: async (data: { viewerAgentId: number; visibleAgentIds: number[] }) => {
+      const res = await apiRequest(
+        "PUT",
+        `/api/analytics-view-permissions/${data.viewerAgentId}`,
+        { visibleAgentIds: data.visibleAgentIds },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics-view-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent-stats"] });
+      toast({ title: "Permiso de analytics guardado" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setShowForm(false);
     setName("");
@@ -364,6 +410,16 @@ export default function AgentsPage() {
     setRoutingAgentIds((prev) =>
       prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId],
     );
+  };
+
+  const toggleAnalyticsVisibleAgent = (viewerAgentId: number, visibleAgentId: number) => {
+    setAnalyticsPermissionsDraft((prev) => {
+      const current = Array.isArray(prev[viewerAgentId]) ? prev[viewerAgentId] : [];
+      const next = current.includes(visibleAgentId)
+        ? current.filter((id) => id !== visibleAgentId)
+        : [...current, visibleAgentId];
+      return { ...prev, [viewerAgentId]: next };
+    });
   };
 
   const getAgentName = (id: number) => agents.find((a) => a.id === id)?.name || `Agente ${id}`;
@@ -685,6 +741,82 @@ export default function AgentsPage() {
                   </Button>
                 </div>
               ))
+            )}
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-white">Permisos de Analytics entre agentes</h3>
+            <p className="text-xs text-slate-400">
+              Defina que agentes puede ver cada agente en la pagina de Analytics. Cada agente siempre mantiene acceso a sus propios datos.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {agents.length === 0 ? (
+              <p className="text-xs text-slate-500">No hay agentes para configurar.</p>
+            ) : (
+              agents.map((viewerAgent) => {
+                const selectedVisibleIds = (analyticsPermissionsDraft[viewerAgent.id] || []).filter((id) => id !== viewerAgent.id);
+                const selectedSummary = selectedVisibleIds.length > 0
+                  ? selectedVisibleIds.map(getAgentName).join(", ")
+                  : "Solo sus propias metricas";
+                const savingThisAgent =
+                  saveAnalyticsPermissionMutation.isPending &&
+                  saveAnalyticsPermissionMutation.variables?.viewerAgentId === viewerAgent.id;
+
+                return (
+                  <div
+                    key={`analytics-permission-${viewerAgent.id}`}
+                    className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3"
+                    data-testid={`card-analytics-permissions-${viewerAgent.id}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">{viewerAgent.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 break-words">
+                          Puede ver: {selectedSummary}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
+                        disabled={saveAnalyticsPermissionMutation.isPending}
+                        onClick={() => {
+                          saveAnalyticsPermissionMutation.mutate({
+                            viewerAgentId: viewerAgent.id,
+                            visibleAgentIds: selectedVisibleIds,
+                          });
+                        }}
+                        data-testid={`button-save-analytics-permissions-${viewerAgent.id}`}
+                      >
+                        {savingThisAgent ? "Guardando..." : "Guardar"}
+                      </Button>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {agents
+                        .filter((targetAgent) => targetAgent.id !== viewerAgent.id)
+                        .map((targetAgent) => {
+                          const selected = selectedVisibleIds.includes(targetAgent.id);
+                          return (
+                            <Button
+                              key={`analytics-permission-target-${viewerAgent.id}-${targetAgent.id}`}
+                              type="button"
+                              size="sm"
+                              variant={selected ? "default" : "outline"}
+                              className={selected ? "bg-emerald-600 hover:bg-emerald-500" : "border-slate-600 text-slate-300"}
+                              onClick={() => toggleAnalyticsVisibleAgent(viewerAgent.id, targetAgent.id)}
+                              data-testid={`button-analytics-permission-target-${viewerAgent.id}-${targetAgent.id}`}
+                            >
+                              {targetAgent.name}
+                            </Button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

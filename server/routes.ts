@@ -189,6 +189,11 @@ interface DailyCostSetting {
   parallelRateBs: number;
   updatedAt?: string | Date | null;
 }
+interface AnalyticsViewPermission {
+  viewerAgentId: number;
+  visibleAgentIds: number[];
+  updatedAt?: string | Date | null;
+}
 const DEFAULT_REMINDER_LEAD_MINUTES = [30, 15];
 const REMINDER_PUSH_CHECK_INTERVAL_MS = 60 * 1000;
 const REMINDER_PUSH_WINDOW_MS = 70 * 1000;
@@ -201,6 +206,7 @@ let productImageStorageTableEnsured = false;
 let conversationLabelColumnsEnsured = false;
 let adLeadRoutingTableEnsured = false;
 let dailyCostSettingsTableEnsured = false;
+let analyticsViewPermissionsTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 
@@ -302,12 +308,32 @@ async function ensureDailyCostSettingsTableExists() {
   dailyCostSettingsTableEnsured = true;
 }
 
+async function ensureAnalyticsViewPermissionsTableExists() {
+  if (analyticsViewPermissionsTableEnsured) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS analytics_view_permissions (
+      viewer_agent_id INTEGER PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+      visible_agent_ids TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  analyticsViewPermissionsTableEnsured = true;
+}
+
 function mapDailyCostSettingRow(row: any): DailyCostSetting {
   return {
     date: String(row.date),
     unitCostBs: Number(row.unit_cost_bs),
     officialRateBs: Number(row.official_rate_bs),
     parallelRateBs: Number(row.parallel_rate_bs),
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+function mapAnalyticsViewPermissionRow(row: any): AnalyticsViewPermission {
+  return {
+    viewerAgentId: Number(row.viewer_agent_id),
+    visibleAgentIds: parseAgentIds(row.visible_agent_ids),
     updatedAt: row.updated_at ?? null,
   };
 }
@@ -384,6 +410,53 @@ async function upsertAdLeadRoutingRule(input: { adId: string; agentIds: number[]
 async function deleteAdLeadRoutingRule(id: number): Promise<void> {
   await ensureAdLeadRoutingTableExists();
   await db.execute(sql`DELETE FROM ad_lead_routing_rules WHERE id = ${id}`);
+}
+
+async function getAnalyticsViewPermissions(): Promise<AnalyticsViewPermission[]> {
+  await ensureAnalyticsViewPermissionsTableExists();
+  const result: any = await db.execute(sql`
+    SELECT viewer_agent_id, visible_agent_ids, updated_at
+    FROM analytics_view_permissions
+    ORDER BY viewer_agent_id ASC
+  `);
+  return (result?.rows ?? []).map((row: any) => mapAnalyticsViewPermissionRow(row));
+}
+
+async function getAnalyticsViewPermissionByViewerAgentId(viewerAgentId: number): Promise<AnalyticsViewPermission | null> {
+  await ensureAnalyticsViewPermissionsTableExists();
+  const result: any = await db.execute(sql`
+    SELECT viewer_agent_id, visible_agent_ids, updated_at
+    FROM analytics_view_permissions
+    WHERE viewer_agent_id = ${viewerAgentId}
+    LIMIT 1
+  `);
+  const row = result?.rows?.[0];
+  return row ? mapAnalyticsViewPermissionRow(row) : null;
+}
+
+async function upsertAnalyticsViewPermission(input: { viewerAgentId: number; visibleAgentIds: number[] }): Promise<AnalyticsViewPermission> {
+  await ensureAnalyticsViewPermissionsTableExists();
+  const viewerAgentId = Number(input.viewerAgentId);
+  const visibleAgentIds = parseAgentIds(input.visibleAgentIds).filter((id) => id !== viewerAgentId);
+  const result: any = await db.execute(sql`
+    INSERT INTO analytics_view_permissions (viewer_agent_id, visible_agent_ids)
+    VALUES (${viewerAgentId}, ${visibleAgentIds.join(",")})
+    ON CONFLICT (viewer_agent_id)
+    DO UPDATE SET
+      visible_agent_ids = EXCLUDED.visible_agent_ids,
+      updated_at = NOW()
+    RETURNING viewer_agent_id, visible_agent_ids, updated_at
+  `);
+  return mapAnalyticsViewPermissionRow(result.rows[0]);
+}
+
+async function getAllowedAnalyticsAgentIdsForViewer(viewerAgentId: number): Promise<Set<number>> {
+  const allowed = new Set<number>([viewerAgentId]);
+  const permission = await getAnalyticsViewPermissionByViewerAgentId(viewerAgentId);
+  for (const id of permission?.visibleAgentIds ?? []) {
+    allowed.add(Number(id));
+  }
+  return allowed;
 }
 
 function extractAdIdFromIncomingMessage(msg: any): string | null {
@@ -3071,9 +3144,13 @@ export async function registerRoutes(
         parallel_cost_bs: row.parallel_cost_bs == null ? null : Number(row.parallel_cost_bs),
       }));
 
-      const agentId = (req.session as any).agentId;
-      if (agentId) {
-        return res.json(mapped.filter((r: any) => r.agent_id === agentId));
+      const session = req.session as any;
+      if (session?.role === "agent") {
+        const viewerAgentId = Number(session.agentId);
+        if (Number.isInteger(viewerAgentId) && viewerAgentId > 0) {
+          const allowedAgentIds = await getAllowedAnalyticsAgentIdsForViewer(viewerAgentId);
+          return res.json(mapped.filter((r: any) => allowedAgentIds.has(Number(r.agent_id))));
+        }
       }
       res.json(mapped);
     } catch (error) {
@@ -4482,6 +4559,50 @@ Maximo 2 lineas. Se especifico y practico.`;
     } catch (error) {
       console.error("Error deleting ad routing rule:", error);
       res.status(500).json({ message: "Error deleting ad routing rule" });
+    }
+  });
+
+  app.get("/api/analytics-view-permissions", requireAdmin, async (_req, res) => {
+    try {
+      const permissions = await getAnalyticsViewPermissions();
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching analytics view permissions:", error);
+      res.status(500).json({ message: "Error fetching analytics view permissions" });
+    }
+  });
+
+  app.put("/api/analytics-view-permissions/:viewerAgentId", requireAdmin, async (req, res) => {
+    try {
+      const viewerAgentId = Number(req.params.viewerAgentId);
+      if (!Number.isInteger(viewerAgentId) || viewerAgentId <= 0) {
+        return res.status(400).json({ message: "Invalid viewerAgentId" });
+      }
+
+      const parsed = z.object({
+        visibleAgentIds: z.array(z.number().int().positive()).max(200).default([]),
+      }).parse(req.body ?? {});
+
+      const allAgents = await storage.getAgents();
+      const allAgentIds = new Set(allAgents.map((a) => Number(a.id)));
+      if (!allAgentIds.has(viewerAgentId)) {
+        return res.status(404).json({ message: "Viewer agent not found" });
+      }
+
+      const validVisibleIds = parseAgentIds(parsed.visibleAgentIds)
+        .filter((id) => allAgentIds.has(id) && id !== viewerAgentId);
+
+      const saved = await upsertAnalyticsViewPermission({
+        viewerAgentId,
+        visibleAgentIds: validVisibleIds,
+      });
+      res.json(saved);
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid analytics permissions data", errors: error.errors });
+      }
+      console.error("Error saving analytics view permissions:", error);
+      res.status(500).json({ message: "Error saving analytics view permissions" });
     }
   });
 
