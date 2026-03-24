@@ -553,40 +553,83 @@ export default function AnalyticsPage() {
             Mensajes por Agente
           </h3>
           {agentStats.length > 0 ? (
-            <div className="overflow-auto max-h-[460px] rounded-xl border border-slate-700/40">
-              <table className="min-w-[980px] w-full text-sm table-fixed" data-testid="table-agent-stats">
-                <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
-                  <tr className="border-b border-slate-700/50">
-                    <th className="text-left py-2 px-2 text-slate-400 font-medium">Agente</th>
-                    <th className="text-left py-2 px-2 text-slate-400 font-medium">Fecha</th>
-                    <th className="text-center py-2 px-2 text-slate-400 font-medium">
-                      <span className="flex items-center justify-center gap-1"><Inbox className="h-3 w-3" /> Recibidos</span>
-                    </th>
-                    <th className="text-center py-2 px-2 text-slate-400 font-medium">
-                      <span className="flex items-center justify-center gap-1"><SendIcon className="h-3 w-3" /> Enviados</span>
-                    </th>
-                    <th className="text-center py-2 px-2 text-slate-400 font-medium">Chats inbound</th>
-                    <th className="text-center py-2 px-2 text-slate-400 font-medium">Total</th>
-                    <th className="text-center py-2 px-2 text-slate-400 font-medium">Monto paralelo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {agentStats.map((row, i) => (
-                    <tr key={i} className="border-b border-slate-800/50">
-                      <td className="py-2 px-2 font-medium text-white whitespace-nowrap truncate">{row.agent_name}</td>
-                      <td className="py-2 px-2 text-slate-300 whitespace-nowrap">{new Date(row.date).toLocaleDateString("es-BO", { day: "2-digit", month: "short" })}</td>
-                      <td className="py-2 px-2 text-center text-emerald-400 font-semibold whitespace-nowrap">{row.incoming}</td>
-                      <td className="py-2 px-2 text-center text-cyan-400 font-semibold whitespace-nowrap">{row.outgoing}</td>
-                      <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
-                      <td className="py-2 px-2 text-center text-amber-400 font-bold whitespace-nowrap">{Number(row.incoming) + Number(row.outgoing)}</td>
-                      <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
-                        {row.parallel_cost_bs == null ? "—" : formatBs(Number(row.parallel_cost_bs))}
-                      </td>
+            <>
+              <div className="md:hidden space-y-2 max-h-[460px] overflow-auto pr-1">
+                {agentStats.map((row, i) => (
+                  <div
+                    key={`agent-mobile-${i}`}
+                    className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-3"
+                    data-testid={`card-agent-stats-mobile-${i}`}
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-2 mb-2">
+                      <p className="font-semibold text-white">{row.agent_name}</p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(row.date).toLocaleDateString("es-BO", { day: "2-digit", month: "short" })}
+                      </p>
+                    </div>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Recibidos</span>
+                        <span className="text-emerald-400 font-semibold">{row.incoming}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Enviados</span>
+                        <span className="text-cyan-400 font-semibold">{row.outgoing}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Chats inbound</span>
+                        <span className="text-sky-300 font-semibold">{row.inbound_chats}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Total</span>
+                        <span className="text-amber-400 font-bold">{Number(row.incoming) + Number(row.outgoing)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Monto paralelo</span>
+                        <span className="text-violet-300 font-semibold">
+                          {row.parallel_cost_bs == null ? "—" : formatBs(Number(row.parallel_cost_bs))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden md:block overflow-auto max-h-[460px] rounded-xl border border-slate-700/40">
+                <table className="min-w-[980px] w-full text-sm table-fixed" data-testid="table-agent-stats">
+                  <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm z-10">
+                    <tr className="border-b border-slate-700/50">
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Agente</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Fecha</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">
+                        <span className="flex items-center justify-center gap-1"><Inbox className="h-3 w-3" /> Recibidos</span>
+                      </th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">
+                        <span className="flex items-center justify-center gap-1"><SendIcon className="h-3 w-3" /> Enviados</span>
+                      </th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Chats inbound</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Total</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Monto paralelo</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {agentStats.map((row, i) => (
+                      <tr key={i} className="border-b border-slate-800/50">
+                        <td className="py-2 px-2 font-medium text-white whitespace-nowrap truncate">{row.agent_name}</td>
+                        <td className="py-2 px-2 text-slate-300 whitespace-nowrap">{new Date(row.date).toLocaleDateString("es-BO", { day: "2-digit", month: "short" })}</td>
+                        <td className="py-2 px-2 text-center text-emerald-400 font-semibold whitespace-nowrap">{row.incoming}</td>
+                        <td className="py-2 px-2 text-center text-cyan-400 font-semibold whitespace-nowrap">{row.outgoing}</td>
+                        <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
+                        <td className="py-2 px-2 text-center text-amber-400 font-bold whitespace-nowrap">{Number(row.incoming) + Number(row.outgoing)}</td>
+                        <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
+                          {row.parallel_cost_bs == null ? "—" : formatBs(Number(row.parallel_cost_bs))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <div className="h-20 flex items-center justify-center text-slate-500">
               Sin datos de mensajes
