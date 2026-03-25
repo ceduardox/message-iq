@@ -38,12 +38,21 @@ function toInputDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 export default function AnalyticsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === "admin";
   const { data: conversations = [] } = useConversations();
+  const [filterMode, setFilterMode] = useState<"day" | "range">("day");
   const [reportDate, setReportDate] = useState(() => toInputDate(new Date()));
+  const [reportDateFrom, setReportDateFrom] = useState(() => toInputDate(new Date()));
+  const [reportDateTo, setReportDateTo] = useState(() => toInputDate(new Date()));
   const [costDate, setCostDate] = useState(() => {
     return toInputDate(new Date());
   });
@@ -57,17 +66,38 @@ export default function AnalyticsPage() {
   const formatUsd = (value: number) =>
     `USD ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const selectedDate = useMemo(() => {
+  const appliedRange = useMemo(() => {
     const today = toInputDate(new Date());
-    return reportDate || today;
-  }, [reportDate]);
+    if (filterMode === "day") {
+      const date = reportDate || today;
+      return {
+        dateFrom: date,
+        dateTo: date,
+        isSingleDay: true,
+      };
+    }
+
+    let from = reportDateFrom || reportDateTo || today;
+    let to = reportDateTo || reportDateFrom || today;
+    if (from > to) {
+      const temp = from;
+      from = to;
+      to = temp;
+    }
+
+    return {
+      dateFrom: from,
+      dateTo: to,
+      isSingleDay: from === to,
+    };
+  }, [filterMode, reportDate, reportDateFrom, reportDateTo]);
 
   const { data: agentStats = [] } = useQuery<AgentStat[]>({
-    queryKey: ["/api/agent-stats", selectedDate],
+    queryKey: ["/api/agent-stats", appliedRange.dateFrom, appliedRange.dateTo],
     queryFn: async () => {
       const params = new URLSearchParams();
-      params.set("dateFrom", selectedDate);
-      params.set("dateTo", selectedDate);
+      params.set("dateFrom", appliedRange.dateFrom);
+      params.set("dateTo", appliedRange.dateTo);
       const res = await fetch(`/api/agent-stats?${params.toString()}`, {
         credentials: "include",
       });
@@ -143,9 +173,31 @@ export default function AnalyticsPage() {
     return conversations.filter(c => {
       if (!c.lastMessageTimestamp) return false;
       const msgDate = toInputDate(new Date(c.lastMessageTimestamp));
-      return msgDate === selectedDate;
+      return msgDate >= appliedRange.dateFrom && msgDate <= appliedRange.dateTo;
     });
-  }, [conversations, selectedDate]);
+  }, [conversations, appliedRange.dateFrom, appliedRange.dateTo]);
+
+  const applyQuickDay = (offsetDays = 0) => {
+    const date = toInputDate(addDays(new Date(), offsetDays));
+    setFilterMode("day");
+    setReportDate(date);
+  };
+
+  const applyQuickRangeDays = (days: number) => {
+    const end = new Date();
+    const start = addDays(end, -(days - 1));
+    setFilterMode("range");
+    setReportDateFrom(toInputDate(start));
+    setReportDateTo(toInputDate(end));
+  };
+
+  const applyQuickCurrentMonth = () => {
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth(), 1);
+    setFilterMode("range");
+    setReportDateFrom(toInputDate(start));
+    setReportDateTo(toInputDate(end));
+  };
 
   const stats = useMemo(() => {
     const humano = filteredConversations.filter(c => c.needsHumanAttention).length;
@@ -268,7 +320,7 @@ export default function AnalyticsPage() {
               <h1 className="font-bold text-lg flex items-center gap-2">
                 Analytics <Zap className="h-4 w-4 text-yellow-400" />
               </h1>
-              <p className="text-xs text-slate-400">Panel de estadísticas</p>
+              <p className="text-xs text-slate-400">Panel de estadisticas</p>
             </div>
           </div>
         </div>
@@ -276,31 +328,95 @@ export default function AnalyticsPage() {
 
       <div className="p-4 space-y-6 pb-20">
         <div className="rounded-2xl border border-slate-700/40 bg-slate-800/60 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Filtro por día</h3>
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block">Día</label>
-              <Input
-                type="date"
-                value={reportDate}
-                onChange={(e) => setReportDate(e.target.value)}
-                className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                data-testid="input-analytics-date"
-              />
-            </div>
+          <h3 className="text-sm font-semibold text-white mb-3">Filtro por fecha</h3>
+
+          <div className="flex flex-wrap gap-2 mb-3">
             <Button
-              onClick={() => {
-                const today = toInputDate(new Date());
-                setReportDate(today);
-              }}
-              className="h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
-              data-testid="button-analytics-date-today"
+              type="button"
+              variant={filterMode === "day" ? "default" : "outline"}
+              className={filterMode === "day" ? "h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0" : "h-9 border-slate-600 text-slate-200"}
+              onClick={() => setFilterMode("day")}
+              data-testid="button-analytics-filter-mode-day"
             >
-              Hoy
+              Un dia
+            </Button>
+            <Button
+              type="button"
+              variant={filterMode === "range" ? "default" : "outline"}
+              className={filterMode === "range" ? "h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0" : "h-9 border-slate-600 text-slate-200"}
+              onClick={() => setFilterMode("range")}
+              data-testid="button-analytics-filter-mode-range"
+            >
+              Rango
             </Button>
           </div>
+
+          {filterMode === "day" ? (
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Dia</label>
+                <Input
+                  type="date"
+                  value={reportDate}
+                  onChange={(e) => setReportDate(e.target.value)}
+                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
+                  data-testid="input-analytics-date"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => applyQuickDay(0)}
+                className="h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
+                data-testid="button-analytics-date-today"
+              >
+                Hoy
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Desde</label>
+                <Input
+                  type="date"
+                  value={reportDateFrom}
+                  onChange={(e) => setReportDateFrom(e.target.value)}
+                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
+                  data-testid="input-analytics-date-from"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Hasta</label>
+                <Input
+                  type="date"
+                  value={reportDateTo}
+                  onChange={(e) => setReportDateTo(e.target.value)}
+                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
+                  data-testid="input-analytics-date-to"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button type="button" variant="outline" className="h-8 border-slate-600 text-slate-200" onClick={() => applyQuickDay(0)} data-testid="button-analytics-quick-today">
+              Hoy
+            </Button>
+            <Button type="button" variant="outline" className="h-8 border-slate-600 text-slate-200" onClick={() => applyQuickDay(-1)} data-testid="button-analytics-quick-yesterday">
+              Ayer
+            </Button>
+            <Button type="button" variant="outline" className="h-8 border-slate-600 text-slate-200" onClick={() => applyQuickRangeDays(7)} data-testid="button-analytics-quick-7d">
+              7 dias
+            </Button>
+            <Button type="button" variant="outline" className="h-8 border-slate-600 text-slate-200" onClick={() => applyQuickRangeDays(30)} data-testid="button-analytics-quick-30d">
+              30 dias
+            </Button>
+            <Button type="button" variant="outline" className="h-8 border-slate-600 text-slate-200" onClick={applyQuickCurrentMonth} data-testid="button-analytics-quick-month">
+              Este mes
+            </Button>
+          </div>
+
           <p className="text-xs text-slate-500 mt-2">
-            Día aplicado: {selectedDate}
+            Periodo aplicado: {appliedRange.isSingleDay ? appliedRange.dateFrom : `${appliedRange.dateFrom} a ${appliedRange.dateTo}`}
           </p>
         </div>
 
@@ -353,7 +469,7 @@ export default function AnalyticsPage() {
               </Button>
             </div>
             <p className="text-xs text-slate-500 mt-2">
-              Si un dia no tiene precio guardado, el monto se muestra como `—`.
+              Si un dia no tiene precio guardado, el monto se muestra como `N/D`.
             </p>
           </div>
         )}
@@ -389,7 +505,7 @@ export default function AnalyticsPage() {
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
                 <MessageSquare className="h-4 w-4 text-white" />
               </div>
-              Distribución por estado
+              Distribucion por estado
             </h3>
             {pieData.length > 0 ? (
               <div className="h-48">
@@ -515,7 +631,7 @@ export default function AnalyticsPage() {
                       {item.hasCost ? (
                         <div className="text-sm leading-6">
                           <p className="text-slate-300">
-                            Costo por mensaje: <span className="font-semibold text-white">{item.unitCostBs == null ? "—" : formatBs(item.unitCostBs)}</span>
+                            Costo por mensaje: <span className="font-semibold text-white">{item.unitCostBs == null ? "N/D" : formatBs(item.unitCostBs)}</span>
                           </p>
                           <p className="text-slate-300">
                             Base: <span className="font-semibold text-white">{formatBs(item.baseCostBs)}</span>
@@ -528,7 +644,7 @@ export default function AnalyticsPage() {
                           </p>
                         </div>
                       ) : (
-                        <p className="text-sm text-slate-500 mt-2">Sin precio diario (monto `—`)</p>
+                        <p className="text-sm text-slate-500 mt-2">Sin precio diario (monto `N/D`)</p>
                       )}
                     </div>
                   </div>
@@ -537,7 +653,7 @@ export default function AnalyticsPage() {
             </div>
           ) : (
             <div className="h-20 flex items-center justify-center text-slate-500">
-              Sin datos por agente en el rango
+              Sin datos por agente en el periodo
             </div>
           )}
         </div>
@@ -587,7 +703,7 @@ export default function AnalyticsPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400">Monto paralelo</span>
                         <span className="text-violet-300 font-semibold">
-                          {row.parallel_cost_bs == null ? "—" : formatBs(Number(row.parallel_cost_bs))}
+                          {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
                         </span>
                       </div>
                     </div>
@@ -622,7 +738,7 @@ export default function AnalyticsPage() {
                         <td className="py-2 px-2 text-center text-sky-300 font-semibold whitespace-nowrap">{row.inbound_chats}</td>
                         <td className="py-2 px-2 text-center text-amber-400 font-bold whitespace-nowrap">{Number(row.incoming) + Number(row.outgoing)}</td>
                         <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
-                          {row.parallel_cost_bs == null ? "—" : formatBs(Number(row.parallel_cost_bs))}
+                          {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
                         </td>
                       </tr>
                     ))}
