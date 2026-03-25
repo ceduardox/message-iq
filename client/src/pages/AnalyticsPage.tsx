@@ -59,6 +59,7 @@ export default function AnalyticsPage() {
   const [unitCostBsInput, setUnitCostBsInput] = useState("");
   const [officialRateInput, setOfficialRateInput] = useState("");
   const [parallelRateInput, setParallelRateInput] = useState("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
 
   const normalizeDecimalInput = (value: string) => value.replace(",", ".").trim();
   const formatBs = (value: number) =>
@@ -243,6 +244,83 @@ export default function AnalyticsPage() {
     }));
   }, [filteredConversations]);
 
+  const availableAgents = useMemo(() => {
+    const grouped = new Map<number, string>();
+    for (const row of agentStats) {
+      const id = Number(row.agent_id);
+      const name = String(row.agent_name || `Agente ${id}`);
+      if (!grouped.has(id)) grouped.set(id, name);
+    }
+    return Array.from(grouped.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [agentStats]);
+
+  useEffect(() => {
+    const availableIds = availableAgents.map((item) => item.id);
+    setSelectedAgentIds((prev) => {
+      if (availableIds.length === 0) return [];
+      if (prev.length === 0) return availableIds;
+      const kept = prev.filter((id) => availableIds.includes(id));
+      return kept.length > 0 ? kept : availableIds;
+    });
+  }, [availableAgents]);
+
+  const isAllAgentsSelected =
+    availableAgents.length > 0 && selectedAgentIds.length === availableAgents.length;
+
+  const agentStatsFiltered = useMemo(() => {
+    if (availableAgents.length === 0) return [];
+    if (isAllAgentsSelected) return agentStats;
+    const selected = new Set(selectedAgentIds);
+    return agentStats.filter((row) => selected.has(Number(row.agent_id)));
+  }, [agentStats, selectedAgentIds, isAllAgentsSelected, availableAgents.length]);
+
+  const toggleAllAgents = (checked: boolean) => {
+    if (checked) {
+      setSelectedAgentIds(availableAgents.map((item) => item.id));
+      return;
+    }
+    setSelectedAgentIds([]);
+  };
+
+  const toggleSingleAgent = (agentId: number, checked: boolean) => {
+    setSelectedAgentIds((prev) => {
+      if (checked) {
+        if (prev.includes(agentId)) return prev;
+        return [...prev, agentId];
+      }
+      return prev.filter((id) => id !== agentId);
+    });
+  };
+
+  const selectedTotals = useMemo(() => {
+    let incoming = 0;
+    let outgoing = 0;
+    let inboundChats = 0;
+    let parallelCostTotal = 0;
+    let hasParallelCost = false;
+
+    for (const row of agentStatsFiltered) {
+      incoming += Number(row.incoming || 0);
+      outgoing += Number(row.outgoing || 0);
+      inboundChats += Number(row.inbound_chats || 0);
+      if (row.parallel_cost_bs != null) {
+        parallelCostTotal += Number(row.parallel_cost_bs);
+        hasParallelCost = true;
+      }
+    }
+
+    return {
+      incoming,
+      outgoing,
+      inboundChats,
+      totalMessages: incoming + outgoing,
+      parallelCostTotal,
+      hasParallelCost,
+    };
+  }, [agentStatsFiltered]);
+
   const agentSummaryCards = useMemo(() => {
     const grouped = new Map<
       number,
@@ -258,7 +336,7 @@ export default function AnalyticsPage() {
       }
     >();
 
-    for (const row of agentStats) {
+    for (const row of agentStatsFiltered) {
       const key = Number(row.agent_id);
       const current = grouped.get(key) || {
         agentId: key,
@@ -284,7 +362,7 @@ export default function AnalyticsPage() {
     }
 
     return Array.from(grouped.values()).sort((a, b) => b.inboundChats - a.inboundChats);
-  }, [agentStats]);
+  }, [agentStatsFiltered]);
 
   const StatCard = ({ icon: Icon, label, value, color, gradient }: { 
     icon: typeof AlertCircle; 
@@ -603,6 +681,71 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent rounded-2xl" />
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl" />
+          <h3 className="font-semibold mb-3 flex items-center gap-2 relative">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg">
+              <Users className="h-4 w-4 text-white" />
+            </div>
+            Filtro de agentes
+          </h3>
+          <p className="text-xs text-slate-400 mb-3">
+            Seleccione que agentes incluir en el reporte y en los totales.
+          </p>
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-1.5 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-emerald-500"
+                checked={isAllAgentsSelected}
+                onChange={(e) => toggleAllAgents(e.target.checked)}
+              />
+              Todos
+            </label>
+            {availableAgents.map((agent) => (
+              <label
+                key={`filter-agent-${agent.id}`}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-1.5 text-sm text-slate-200"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-cyan-500"
+                  checked={selectedAgentIds.includes(agent.id)}
+                  onChange={(e) => toggleSingleAgent(agent.id, e.target.checked)}
+                />
+                {agent.name}
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-300">Recibidos</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.incoming}</p>
+            </div>
+            <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-cyan-300">Enviados</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.outgoing}</p>
+            </div>
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-sky-300">Chats inbound</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.inboundChats}</p>
+            </div>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-amber-300">Total</p>
+              <p className="text-lg font-semibold text-white">{selectedTotals.totalMessages}</p>
+            </div>
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-2">
+              <p className="text-[11px] uppercase tracking-wide text-violet-300">Monto paralelo</p>
+              <p className="text-lg font-semibold text-white">
+                {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-sky-500/5 to-transparent rounded-2xl" />
           <div className="absolute -top-10 -left-10 w-40 h-40 bg-sky-500/10 rounded-full blur-3xl" />
           <h3 className="font-semibold mb-4 flex items-center gap-2 relative">
@@ -668,10 +811,10 @@ export default function AnalyticsPage() {
             </div>
             Mensajes por Agente
           </h3>
-          {agentStats.length > 0 ? (
+          {agentStatsFiltered.length > 0 ? (
             <>
-              <div className="md:hidden space-y-2 max-h-[460px] overflow-auto pr-1">
-                {agentStats.map((row, i) => (
+              <div className="md:hidden space-y-2">
+                {agentStatsFiltered.map((row, i) => (
                   <div
                     key={`agent-mobile-${i}`}
                     className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-3"
@@ -729,7 +872,7 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {agentStats.map((row, i) => (
+                    {agentStatsFiltered.map((row, i) => (
                       <tr key={i} className="border-b border-slate-800/50">
                         <td className="py-2 px-2 font-medium text-white whitespace-nowrap truncate">{row.agent_name}</td>
                         <td className="py-2 px-2 text-slate-300 whitespace-nowrap">{new Date(row.date).toLocaleDateString("es-BO", { day: "2-digit", month: "short" })}</td>
