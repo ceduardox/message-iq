@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversations } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ export default function AnalyticsPage() {
   const [officialRateInput, setOfficialRateInput] = useState("");
   const [parallelRateInput, setParallelRateInput] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
+  const agentsFilterInitializedRef = useRef(false);
 
   const normalizeDecimalInput = (value: string) => value.replace(",", ".").trim();
   const formatBs = (value: number) =>
@@ -260,9 +261,11 @@ export default function AnalyticsPage() {
     const availableIds = availableAgents.map((item) => item.id);
     setSelectedAgentIds((prev) => {
       if (availableIds.length === 0) return [];
-      if (prev.length === 0) return availableIds;
-      const kept = prev.filter((id) => availableIds.includes(id));
-      return kept.length > 0 ? kept : availableIds;
+      if (!agentsFilterInitializedRef.current) {
+        agentsFilterInitializedRef.current = true;
+        return availableIds;
+      }
+      return prev.filter((id) => availableIds.includes(id));
     });
   }, [availableAgents]);
 
@@ -276,11 +279,11 @@ export default function AnalyticsPage() {
     return agentStats.filter((row) => selected.has(Number(row.agent_id)));
   }, [agentStats, selectedAgentIds, isAllAgentsSelected, availableAgents.length]);
 
-  const toggleAllAgents = (checked: boolean) => {
-    if (checked) {
-      setSelectedAgentIds(availableAgents.map((item) => item.id));
-      return;
-    }
+  const selectAllAgents = () => {
+    setSelectedAgentIds(availableAgents.map((item) => item.id));
+  };
+
+  const clearSelectedAgents = () => {
     setSelectedAgentIds([]);
   };
 
@@ -694,29 +697,39 @@ export default function AnalyticsPage() {
           </p>
 
           <div className="flex flex-wrap gap-2 mb-3">
-            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-1.5 text-sm text-slate-200">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-emerald-500"
-                checked={isAllAgentsSelected}
-                onChange={(e) => toggleAllAgents(e.target.checked)}
-              />
+            <Button
+              type="button"
+              size="sm"
+              variant={isAllAgentsSelected ? "default" : "outline"}
+              className={isAllAgentsSelected ? "bg-emerald-600 hover:bg-emerald-500" : "border-slate-600 text-slate-300"}
+              onClick={selectAllAgents}
+            >
               Todos
-            </label>
-            {availableAgents.map((agent) => (
-              <label
-                key={`filter-agent-${agent.id}`}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-1.5 text-sm text-slate-200"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-cyan-500"
-                  checked={selectedAgentIds.includes(agent.id)}
-                  onChange={(e) => toggleSingleAgent(agent.id, e.target.checked)}
-                />
-                {agent.name}
-              </label>
-            ))}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedAgentIds.length === 0 ? "default" : "outline"}
+              className={selectedAgentIds.length === 0 ? "bg-slate-600 hover:bg-slate-500" : "border-slate-600 text-slate-300"}
+              onClick={clearSelectedAgents}
+            >
+              Ninguno
+            </Button>
+            {availableAgents.map((agent) => {
+              const selected = selectedAgentIds.includes(agent.id);
+              return (
+                <Button
+                  key={`filter-agent-${agent.id}`}
+                  type="button"
+                  size="sm"
+                  variant={selected ? "default" : "outline"}
+                  className={selected ? "bg-cyan-600 hover:bg-cyan-500" : "border-slate-600 text-slate-300"}
+                  onClick={() => toggleSingleAgent(agent.id, !selected)}
+                >
+                  {selected ? "✓ " : ""}{agent.name}
+                </Button>
+              );
+            })}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
