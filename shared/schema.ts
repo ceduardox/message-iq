@@ -154,6 +154,8 @@ export const aiSettings = pgTable("ai_settings", {
   learningMessageCount: integer("learning_message_count").default(10), // How many messages to read for learning
   followUpEnabled: boolean("follow_up_enabled").default(false),
   followUpMinutes: integer("follow_up_minutes").default(20),
+  followUpCheckIntervalMinutes: integer("follow_up_check_interval_minutes").default(5),
+  followUpBatchSize: integer("follow_up_batch_size").default(10),
   followUpMessageMode: varchar("follow_up_message_mode", { length: 20 }).default("ai"),
   followUpFixedMessage: text("follow_up_fixed_message"),
   updatedAt: timestamp("updated_at").defaultNow(),

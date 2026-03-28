@@ -6,6 +6,8 @@ import { generateAiResponse } from "./ai-service";
 import type { Message } from "@shared/schema";
 
 let sendAiResponseFn: ((to: string, responseText: string) => Promise<any>) | null = null;
+let lastFollowUpSweepAt = 0;
+const FOLLOW_UP_TICK_MS = 60 * 1000;
 
 const HARD_DISCARD_PATTERNS = [
   "no me interesa",
@@ -65,9 +67,9 @@ export function initFollowUp(
     } catch (err) {
       console.error("[FollowUp] Error:", err);
     }
-  }, 5 * 60 * 1000);
+  }, FOLLOW_UP_TICK_MS);
 
-  console.log("[FollowUp] Scheduler started (every 5 min)");
+  console.log("[FollowUp] Scheduler started (tick every 1 min, configurable run interval)");
 }
 
 async function checkAndSendFollowUps() {
@@ -76,8 +78,13 @@ async function checkAndSendFollowUps() {
 
   const now = Date.now();
   const waitMinutes = settings.followUpMinutes || 20;
+  const checkIntervalMinutes = settings.followUpCheckIntervalMinutes || 5;
+  const batchSize = settings.followUpBatchSize || 10;
   const followUpMessageMode = settings.followUpMessageMode === "fixed" ? "fixed" : "ai";
   const fixedFollowUpMessage = settings.followUpFixedMessage?.trim() || "";
+  const checkIntervalMs = checkIntervalMinutes * 60 * 1000;
+  if (lastFollowUpSweepAt && now - lastFollowUpSweepAt < checkIntervalMs) return;
+  lastFollowUpSweepAt = now;
   const catalogAfterMs = 5 * 60 * 60 * 1000; // 5h
   const cutoff = new Date(now - waitMinutes * 60 * 1000);
   const window24hStart = new Date(now - 24 * 60 * 60 * 1000);
@@ -94,7 +101,7 @@ async function checkAndSendFollowUps() {
       ),
     )
     .orderBy(desc(conversations.lastMessageTimestamp))
-    .limit(10);
+    .limit(batchSize);
 
   if (candidates.length === 0) return;
 

@@ -50,6 +50,8 @@ interface FollowUpSettings {
   enabled: boolean | null;
   followUpEnabled: boolean | null;
   followUpMinutes: number | null;
+  followUpCheckIntervalMinutes: number | null;
+  followUpBatchSize: number | null;
   followUpMessageMode: string | null;
   followUpFixedMessage: string | null;
 }
@@ -66,6 +68,8 @@ export default function FollowUpPage() {
   const [historyData, setHistoryData] = useState<Record<number, PurchaseAnalysis[]>>({});
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [followUpMinutes, setFollowUpMinutes] = useState(20);
+  const [followUpCheckIntervalMinutes, setFollowUpCheckIntervalMinutes] = useState(5);
+  const [followUpBatchSize, setFollowUpBatchSize] = useState(10);
   const [followUpMessageMode, setFollowUpMessageMode] = useState<"ai" | "fixed">("ai");
   const [followUpFixedMessage, setFollowUpFixedMessage] = useState("");
   const [settingsEdited, setSettingsEdited] = useState(false);
@@ -78,6 +82,8 @@ export default function FollowUpPage() {
     if (!settings || settingsEdited) return;
     setFollowUpEnabled(settings.followUpEnabled || false);
     setFollowUpMinutes(settings.followUpMinutes || 20);
+    setFollowUpCheckIntervalMinutes(settings.followUpCheckIntervalMinutes || 5);
+    setFollowUpBatchSize(settings.followUpBatchSize || 10);
     setFollowUpMessageMode(settings.followUpMessageMode === "fixed" ? "fixed" : "ai");
     setFollowUpFixedMessage(settings.followUpFixedMessage || "");
   }, [settings, settingsEdited]);
@@ -122,6 +128,8 @@ export default function FollowUpPage() {
       return apiRequest("PATCH", "/api/ai/settings", {
         followUpEnabled,
         followUpMinutes,
+        followUpCheckIntervalMinutes,
+        followUpBatchSize,
         followUpMessageMode,
         followUpFixedMessage: followUpMessageMode === "fixed" ? (followUpFixedMessage.trim() || null) : null,
       });
@@ -318,8 +326,56 @@ export default function FollowUpPage() {
                     <span className="min-w-[4rem] text-center font-semibold text-emerald-600">{followUpMinutes} min</span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    El scheduler revisa candidatos cada 5 minutos y aplica este tiempo de espera antes del primer re-enganche.
+                    Este es el tiempo mínimo que debe pasar sin respuesta del cliente antes del primer re-enganche.
                   </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="follow-up-check-interval">Revisar cada</Label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="follow-up-check-interval"
+                        type="range"
+                        min={1}
+                        max={30}
+                        value={followUpCheckIntervalMinutes}
+                        onChange={(e) => {
+                          setFollowUpCheckIntervalMinutes(parseInt(e.target.value) || 5);
+                          setSettingsEdited(true);
+                        }}
+                        className="flex-1 accent-emerald-500"
+                        data-testid="slider-follow-up-check-interval"
+                      />
+                      <span className="min-w-[4rem] text-center font-semibold text-emerald-600">{followUpCheckIntervalMinutes} min</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Frecuencia con la que el sistema revisa si hay conversaciones listas para re-enganchar.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="follow-up-batch-size">Máximo por corrida</Label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="follow-up-batch-size"
+                        type="range"
+                        min={1}
+                        max={50}
+                        value={followUpBatchSize}
+                        onChange={(e) => {
+                          setFollowUpBatchSize(parseInt(e.target.value) || 10);
+                          setSettingsEdited(true);
+                        }}
+                        className="flex-1 accent-emerald-500"
+                        data-testid="slider-follow-up-batch-size"
+                      />
+                      <span className="min-w-[4rem] text-center font-semibold text-emerald-600">{followUpBatchSize}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Límite de conversaciones que el sistema puede procesar en cada revisión automática.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-3">

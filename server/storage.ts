@@ -192,6 +192,14 @@ export class DatabaseStorage implements IStorage {
     if (this.aiSettingsColumnsEnsured) return;
     await db.execute(sql`
       ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS follow_up_check_interval_minutes INTEGER NOT NULL DEFAULT 5
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS follow_up_batch_size INTEGER NOT NULL DEFAULT 10
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
       ADD COLUMN IF NOT EXISTS follow_up_message_mode VARCHAR(20) NOT NULL DEFAULT 'ai'
     `);
     await db.execute(sql`
