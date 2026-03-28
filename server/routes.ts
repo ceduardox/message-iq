@@ -1044,6 +1044,7 @@ async function processAiResponse(data: BufferedMessage) {
 
       let waResponse: any;
       let waMessageId: string;
+      let outboundMessageType: "text" | "audio" = "text";
 
       if (shouldSendAudio) {
         const ttsProvider = aiSettings?.ttsProvider || "openai";
@@ -1057,6 +1058,7 @@ async function processAiResponse(data: BufferedMessage) {
         if (audioSent) {
           waMessageId = `audio_${Date.now()}`;
           waResponse = { messages: [{ id: waMessageId }] };
+          outboundMessageType = "audio";
         } else {
           console.log("=== AUDIO FAILED, TEXT FALLBACK ===");
           waResponse = await sendAiResponseToWhatsApp(from, aiResult.response);
@@ -1071,7 +1073,7 @@ async function processAiResponse(data: BufferedMessage) {
         conversationId,
         waMessageId,
         direction: "out",
-        type: "text",
+        type: outboundMessageType,
         text: aiResult.response,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent",
@@ -1617,10 +1619,17 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
   
   try {
     const generated = await generateTtsAudioBuffer(text, voice, options, "whatsapp");
-    const audioBuffer = generated.audioBuffer;
-    const fileExt = generated.fileExt;
-    const contentType = generated.contentType;
-    console.log("[TTS] Audio generated:", audioBuffer.length, "bytes", { provider, fileExt });
+    const sourceAudioBuffer = generated.audioBuffer;
+    console.log("[TTS] Audio generated:", sourceAudioBuffer.length, "bytes", {
+      provider,
+      fileExt: generated.fileExt,
+      contentType: generated.contentType,
+    });
+
+    const audioBuffer = await transcodeToWhatsAppAudio(sourceAudioBuffer);
+    const fileExt = "ogg";
+    const contentType = "audio/ogg";
+    console.log("[TTS] Audio transcoded for WhatsApp:", audioBuffer.length, "bytes");
     
     tempPath = path.join(os.tmpdir(), `tts_${Date.now()}.${fileExt}`);
     fs.writeFileSync(tempPath, audioBuffer);
@@ -1650,7 +1659,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     console.log("[TTS] Media uploaded, ID:", mediaId);
     
     // Step 4: Send audio message
-    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber.slice(1) : phoneNumber;
+    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
     await axios.post(
       `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`,
       {
