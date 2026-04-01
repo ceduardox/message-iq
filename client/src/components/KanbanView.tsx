@@ -79,7 +79,7 @@ interface ColumnProps {
   unreadIds: Set<number>;
 }
 
-const KANBAN_READ_STATE_KEY = "ryzapp_kanban_read_state_v1";
+const KANBAN_READ_STATE_KEY = "iqmaximo_kanban_read_state_v1";
 
 interface AgentListItem {
   id: number;

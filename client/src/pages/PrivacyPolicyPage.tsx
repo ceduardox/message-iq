@@ -1,3 +1,5 @@
+import { BrandFooter } from "@/components/BrandFooter";
+
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 p-6 md:p-12">
@@ -64,6 +66,7 @@ export default function PrivacyPolicyPage() {
             <p>Para cualquier consulta sobre esta política de privacidad o sobre tus datos personales, puedes contactarnos a través de WhatsApp o visitar nuestra página de <a href="/data-deletion" className="text-emerald-400 underline">eliminación de datos</a>.</p>
           </section>
         </div>
+        <BrandFooter className="mt-10" />
       </div>
     </div>
   );

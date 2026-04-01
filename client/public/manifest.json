@@ -1,7 +1,7 @@
 {
-  "name": "Ryztor Agent IA",
-  "short_name": "Ryztor IA",
-  "description": "Ryztor Agent IA - Gestiona tus mensajes de WhatsApp con IA integrada",
+  "name": "IQMAXIMO Agent IA",
+  "short_name": "IQMAXIMO IA",
+  "description": "IQMAXIMO Agent IA - Gestiona tus mensajes de WhatsApp con IA integrada",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

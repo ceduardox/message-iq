@@ -548,7 +548,7 @@ export default function AIAgentPage() {
       if (typeof window !== "undefined") {
         return `${window.location.origin}${value}`;
       }
-      return `https://ryzapp.org${value}`;
+      return `https://iqexcelencia.com${value}`;
     }
     return value;
   };

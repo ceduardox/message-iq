@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { Message, Product } from "@shared/schema";
 
-const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
+const DEFAULT_PUBLIC_BASE_URL = "https://iqexcelencia.com";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
 

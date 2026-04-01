@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useConversations } from "@/hooks/use-inbox";
 import { NotificationBell } from "@/components/NotificationBell";
+import { BrandFooter } from "@/components/BrandFooter";
 import { KanbanView } from "@/components/KanbanView";
 import { Button } from "@/components/ui/button";
 import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound } from "lucide-react";
@@ -133,7 +134,7 @@ export default function InboxPage() {
           </div>
           <div>
             <h1 className="font-bold text-lg text-white flex items-center gap-2">
-              Ryztor Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
+              IQMAXIMO Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
               <Zap className="h-4 w-4 text-yellow-400" />
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1">
@@ -247,6 +248,7 @@ export default function InboxPage() {
           </Button>
         </div>
       )}
+      <BrandFooter className="hidden md:block border-t border-slate-800 bg-slate-950/80 px-4 py-2" />
       {/* Mobile Bottom Navigation - Futuristic */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/20 flex justify-around items-center py-2 px-1 z-50">
         <Link href="/">

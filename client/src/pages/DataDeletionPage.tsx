@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BrandFooter } from "@/components/BrandFooter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -104,6 +105,7 @@ export default function DataDeletionPage() {
             <p className="mt-1">La eliminación de datos es permanente y no se puede deshacer. Los datos serán eliminados dentro de los 30 días siguientes a la recepción de tu solicitud.</p>
           </section>
         </div>
+        <BrandFooter className="mt-10" />
       </div>
     </div>
   );

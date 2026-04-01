@@ -35,7 +35,7 @@ interface ChatAreaProps {
   onClose?: () => void;
 }
 
-const FAILED_MEDIA_STORAGE_KEY = "ryzapp_failed_media_ids_v1";
+const FAILED_MEDIA_STORAGE_KEY = "iqmaximo_failed_media_ids_v1";
 
 const readFailedMediaIdsFromSession = (): Record<string, true> => {
   if (typeof window === "undefined") return {};

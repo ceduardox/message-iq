@@ -167,7 +167,7 @@ The server handles three main responsibilities:
 - **Required Secrets**:
   - `META_ACCESS_TOKEN`: Access token with whatsapp_business_messaging permission
   - `WA_PHONE_NUMBER_ID`: WhatsApp Business phone number ID
-  - `WA_VERIFY_TOKEN`: Token for webhook verification (default: ryztor_verify_2026)
+  - `WA_VERIFY_TOKEN`: Token for webhook verification (default: iqmaximo_verify_2026)
   - `APP_SECRET`: Optional, for payload signature validation
 
 ### PostgreSQL Database

@@ -2,6 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginRequest } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { BrandFooter } from "@/components/BrandFooter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -81,7 +82,7 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-white">
-            Ryztor Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
+            IQMAXIMO Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
           </h1>
           <p className="text-emerald-200/70 text-sm flex items-center justify-center gap-2">
             <Sparkles className="h-4 w-4" />
@@ -181,11 +182,14 @@ export default function LoginPage() {
           </Form>
         </div>
 
-        <p className="text-center text-xs text-slate-500 mt-6 flex items-center justify-center gap-2">
-          <span className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
-          Potenciado con Inteligencia Artificial
-          <span className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
-        </p>
+        <div className="mt-6 space-y-3">
+          <p className="text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+            <span className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
+            Potenciado con Inteligencia Artificial
+            <span className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
+          </p>
+          <BrandFooter />
+        </div>
       </div>
     </div>
   );

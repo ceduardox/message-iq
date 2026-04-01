@@ -220,7 +220,7 @@ let adLeadRoutingTableEnsured = false;
 let dailyCostSettingsTableEnsured = false;
 let analyticsViewPermissionsTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
-const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
+const DEFAULT_PUBLIC_BASE_URL = "https://iqexcelencia.com";
 
 function getRuntimePublicDir() {
   if (process.env.NODE_ENV === "production") {
@@ -583,9 +583,9 @@ function getConversationPushOptions(conversation?: { assignedAgentId?: number | 
 function getPushTargetUrl(data?: Record<string, string>) {
   const conversationId = data?.conversationId;
   if (conversationId && /^\d+$/.test(conversationId)) {
-    return `https://ryzapp.org/?conversationId=${conversationId}`;
+    return `${DEFAULT_PUBLIC_BASE_URL}/?conversationId=${conversationId}`;
   }
-  return "https://ryzapp.org/";
+  return `${DEFAULT_PUBLIC_BASE_URL}/`;
 }
 
 function getConversationAdvisorName(assignedAgentName?: string | null) {
@@ -1759,7 +1759,7 @@ async function sendPushNotification(
       contents: { en: message },
       data: data || {},
       url: targetUrl,
-      chrome_web_icon: "https://ryzapp.org/icon-512.png",
+      chrome_web_icon: `${DEFAULT_PUBLIC_BASE_URL}/icon-512.png`,
       web_push_topic: uniqueTopic,
       ttl: 60,
     };
@@ -1806,7 +1806,7 @@ async function sendPushNotification(
             contents: { en: message },
             data: data || {},
             url: targetUrl,
-            chrome_web_icon: "https://ryzapp.org/icon-512.png",
+            chrome_web_icon: `${DEFAULT_PUBLIC_BASE_URL}/icon-512.png`,
             web_push_topic: uniqueTopic,
             ttl: 60,
           },

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ryztor-v2';
+const CACHE_NAME = 'iqmaximo-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
