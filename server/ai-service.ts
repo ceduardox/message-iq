@@ -2,9 +2,6 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { Message, Product } from "@shared/schema";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 const DEFAULT_PUBLIC_BASE_URL = "https://ryzapp.org";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
@@ -112,13 +109,22 @@ function getDefaultModelForProvider(provider: AiProvider): string {
   return provider === "gemini" ? DEFAULT_GEMINI_MODEL : DEFAULT_OPENAI_MODEL;
 }
 
+function getOpenAiClient(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+
+  return new OpenAI({ apiKey });
+}
+
 async function requestOpenAiCompletion(params: {
   model: string;
   messages: any[];
   maxTokens: number;
   temperature: number;
 }) {
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAiClient().chat.completions.create({
     model: params.model,
     messages: params.messages,
     max_tokens: params.maxTokens,
