@@ -2737,6 +2737,38 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/messages/status/:id", requireAuth, async (req, res) => {
+    try {
+      const messageId = String(req.params.id || "").trim();
+      if (!messageId) {
+        return res.status(400).json({ message: "Missing message id" });
+      }
+
+      const message = await storage.getMessageByWaId(messageId);
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      const session = req.session as any;
+      if (session?.role === "agent" && session.agentId) {
+        const conversation = await storage.getConversation(message.conversationId);
+        if (!conversation || conversation.assignedAgentId !== session.agentId) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+
+      return res.json({
+        messageId,
+        status: message.status || "sent",
+        conversationId: message.conversationId,
+        createdAt: message.createdAt || null,
+      });
+    } catch (error) {
+      console.error("Message status error:", error);
+      return res.status(500).json({ message: "Error fetching status" });
+    }
+  });
+
   app.post("/api/send-image", requireAuth, upload.single("image"), async (req, res) => {
     try {
       const file = req.file;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   AlertCircle,
@@ -23,10 +23,11 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type SendStatus = "pending" | "success" | "error";
+type DeliveryStatus = "sent" | "delivered" | "read" | "failed" | "unknown";
 
 type RecipientResult = {
-  text?: { status: SendStatus; error?: string };
-  video?: { status: SendStatus; error?: string };
+  text?: { status: SendStatus; error?: string; messageId?: string; deliveryStatus?: DeliveryStatus };
+  video?: { status: SendStatus; error?: string; messageId?: string; deliveryStatus?: DeliveryStatus };
 };
 
 const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
@@ -70,6 +71,21 @@ const formatBytes = (bytes: number) => {
   return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 };
 
+const formatDeliveryStatus = (status?: DeliveryStatus) => {
+  switch (status) {
+    case "delivered":
+      return "Entregado";
+    case "read":
+      return "Leido";
+    case "failed":
+      return "Fallido";
+    case "sent":
+      return "Enviado";
+    default:
+      return "Desconocido";
+  }
+};
+
 export default function BulkSendPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -82,6 +98,9 @@ export default function BulkSendPage() {
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<Record<string, RecipientResult>>({});
   const [progress, setProgress] = useState({ total: 0, done: 0 });
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<Date | null>(null);
+  const resultsRef = useRef<Record<string, RecipientResult>>({});
 
   const invalidNumbers = useMemo(
     () => numbers.filter((number) => !isValidNumber(number)),
@@ -105,6 +124,10 @@ export default function BulkSendPage() {
   const progressTotal = progress.total || totalOperations;
   const progressValue =
     progressTotal > 0 ? Math.round((progress.done / progressTotal) * 100) : 0;
+
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
 
   const addNumbers = () => {
     const parsed = splitNumbers(numbersInput);
@@ -134,14 +157,27 @@ export default function BulkSendPage() {
     setNumbers((prev) => prev.filter((num) => isValidNumber(num)));
   };
 
-  const markResult = (to: string, kind: "text" | "video", status: SendStatus, error?: string) => {
+  const markResult = (
+    to: string,
+    kind: "text" | "video",
+    status: SendStatus,
+    error?: string,
+    messageId?: string,
+    deliveryStatus?: DeliveryStatus,
+  ) => {
     setResults((prev) => {
       const current = prev[to] || {};
+      const existing = current[kind];
       return {
         ...prev,
         [to]: {
           ...current,
-          [kind]: { status, error },
+          [kind]: {
+            status,
+            error,
+            messageId: messageId ?? existing?.messageId,
+            deliveryStatus: deliveryStatus ?? existing?.deliveryStatus,
+          },
         },
       };
     });
@@ -161,6 +197,8 @@ export default function BulkSendPage() {
       const details = payload?.error?.details || payload?.message || "Error al enviar";
       throw new Error(details);
     }
+    const payload = await res.json().catch(() => ({}));
+    return payload?.messageId as string | undefined;
   };
 
   const sendVideoMessage = async (to: string, file: File, caption: string) => {
@@ -177,6 +215,39 @@ export default function BulkSendPage() {
       const payload = await res.json().catch(() => ({}));
       const details = payload?.error || payload?.message || "Error al enviar video";
       throw new Error(details);
+    }
+    const payload = await res.json().catch(() => ({}));
+    return payload?.messageId as string | undefined;
+  };
+
+  const refreshDeliveryStatuses = async () => {
+    if (refreshingStatus) return;
+    const targets: Array<{ messageId: string; to: string; kind: "text" | "video" }> = [];
+    for (const [to, entry] of Object.entries(resultsRef.current)) {
+      if (entry.text?.messageId) targets.push({ messageId: entry.text.messageId, to, kind: "text" });
+      if (entry.video?.messageId) targets.push({ messageId: entry.video.messageId, to, kind: "video" });
+    }
+    if (!targets.length) return;
+
+    setRefreshingStatus(true);
+    try {
+      for (const target of targets) {
+        const res = await fetch(`/api/messages/status/${target.messageId}`, { credentials: "include" });
+        if (!res.ok) {
+          markResult(target.to, target.kind, "success", undefined, target.messageId, "unknown");
+          continue;
+        }
+        const payload = await res.json().catch(() => ({}));
+        const statusRaw = String(payload?.status || "").toLowerCase();
+        const deliveryStatus: DeliveryStatus =
+          statusRaw === "delivered" || statusRaw === "read" || statusRaw === "failed"
+            ? statusRaw
+            : "sent";
+        markResult(target.to, target.kind, "success", undefined, target.messageId, deliveryStatus);
+      }
+      setLastStatusRefreshAt(new Date());
+    } finally {
+      setRefreshingStatus(false);
     }
   };
 
@@ -228,12 +299,13 @@ export default function BulkSendPage() {
       for (const op of opsForTarget) {
         try {
           if (op.kind === "text") {
-            await sendTextMessage(op.to, textToSend);
+            const messageId = await sendTextMessage(op.to, textToSend);
+            markResult(op.to, op.kind, "success", undefined, messageId, "sent");
           } else {
             if (!videoFile) throw new Error("Falta el video");
-            await sendVideoMessage(op.to, videoFile, captionToSend);
+            const messageId = await sendVideoMessage(op.to, videoFile, captionToSend);
+            markResult(op.to, op.kind, "success", undefined, messageId, "sent");
           }
-          markResult(op.to, op.kind, "success");
           successCount += 1;
         } catch (error: any) {
           markResult(op.to, op.kind, "error", error?.message || "Error desconocido");
@@ -254,6 +326,12 @@ export default function BulkSendPage() {
       title: "Envio finalizado",
       description: `Exitos: ${successCount} - Errores: ${errorCount}`,
     });
+
+    if (successCount > 0) {
+      setTimeout(() => {
+        refreshDeliveryStatuses();
+      }, 4000);
+    }
   };
 
   const resultNumbers = useMemo(() => Object.keys(results), [results]);
@@ -513,6 +591,20 @@ export default function BulkSendPage() {
               </Button>
               <Button
                 variant="outline"
+                onClick={refreshDeliveryStatuses}
+                disabled={sending || refreshingStatus || !hasResults}
+              >
+                {refreshingStatus ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Actualizando estados
+                  </>
+                ) : (
+                  "Actualizar estados"
+                )}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   setResults({});
                   setProgress({ total: 0, done: 0 });
@@ -522,6 +614,11 @@ export default function BulkSendPage() {
                 Limpiar resultado
               </Button>
             </div>
+            {lastStatusRefreshAt && (
+              <div className="text-xs text-slate-500">
+                Ultima revision: {lastStatusRefreshAt.toLocaleTimeString()}
+              </div>
+            )}
 
             {progressTotal > 0 && (
               <div className="space-y-2">
@@ -606,6 +703,16 @@ export default function BulkSendPage() {
                       </div>
                     </div>
                     <div className="space-y-1 text-xs text-slate-400">
+                      {entry.text?.messageId && (
+                        <div>
+                          Texto WA: {formatDeliveryStatus(entry.text.deliveryStatus)}
+                        </div>
+                      )}
+                      {entry.video?.messageId && (
+                        <div>
+                          Video WA: {formatDeliveryStatus(entry.video.deliveryStatus)}
+                        </div>
+                      )}
                       {entry.text?.status === "error" && (
                         <div>Texto: {entry.text.error}</div>
                       )}
