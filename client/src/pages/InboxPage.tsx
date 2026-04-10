@@ -6,7 +6,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { BrandFooter } from "@/components/BrandFooter";
 import { KanbanView } from "@/components/KanbanView";
 import { Button } from "@/components/ui/button";
-import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound } from "lucide-react";
+import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Send, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link, useLocation } from "wouter";
 import {
@@ -134,7 +134,7 @@ export default function InboxPage() {
           </div>
           <div>
             <h1 className="font-bold text-lg text-white flex items-center gap-2">
-              IQMAXIMO Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
+              IQExcelencia Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
               <Zap className="h-4 w-4 text-yellow-400" />
             </h1>
             <p className="text-xs text-slate-400 flex items-center gap-1">
@@ -177,6 +177,11 @@ export default function InboxPage() {
           <Link href="/analytics">
             <Button variant="ghost" size="icon" title="Analytics" data-testid="button-analytics-desktop" className="text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10">
               <BarChart3 className="h-5 w-5" />
+            </Button>
+          </Link>
+          <Link href="/bulk-send">
+            <Button variant="ghost" size="icon" title="Envio masivo" data-testid="button-bulk-send-desktop" className="text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10">
+              <Send className="h-5 w-5" />
             </Button>
           </Link>
           {isAdmin && (
@@ -271,7 +276,7 @@ export default function InboxPage() {
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access') ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
+            <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access' || location === '/bulk-send') ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
               <EllipsisVertical className="h-5 w-5" />
               <span className="text-[10px] mt-0.5 font-medium">Mas</span>
             </button>
@@ -280,6 +285,10 @@ export default function InboxPage() {
             <DropdownMenuItem onClick={() => setLocation("/reminders")} className="focus:bg-slate-800">
               <Clock className="h-4 w-4 mr-2 text-amber-400" />
               Recordatorios
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setLocation("/bulk-send")} className="focus:bg-slate-800">
+              <Send className="h-4 w-4 mr-2 text-emerald-300" />
+              Envio masivo
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setLocation("/push-settings")} className="focus:bg-slate-800">
               <Bell className="h-4 w-4 mr-2 text-emerald-400" />

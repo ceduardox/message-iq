@@ -12,6 +12,7 @@ const AIAgentPage = lazy(() => import("@/pages/AIAgentPage"));
 const FollowUpPage = lazy(() => import("@/pages/FollowUpPage"));
 const RemindersPage = lazy(() => import("@/pages/RemindersPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
+const BulkSendPage = lazy(() => import("@/pages/BulkSendPage"));
 const AgentsPage = lazy(() => import("@/pages/AgentsPage"));
 const AdminAccessPage = lazy(() => import("@/pages/AdminAccessPage"));
 const AgentAiPage = lazy(() => import("@/pages/AgentAiPage"));
@@ -111,6 +112,9 @@ function Router() {
         </Route>
         <Route path="/analytics">
           <ProtectedRoute component={AnalyticsPage} />
+        </Route>
+        <Route path="/bulk-send">
+          <ProtectedRoute component={BulkSendPage} />
         </Route>
         <Route path="/agent-ai">
           <AgentRoute component={AgentAiPage} />
