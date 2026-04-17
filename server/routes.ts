@@ -908,7 +908,8 @@ async function processAiResponse(data: BufferedMessage) {
 
   try {
     const aiSettings = await storage.getAiSettings();
-    const fixedCommerceFlowEnabled = aiSettings?.learningMode !== true;
+    // Disable the legacy hardcoded commerce flow so every conversation goes through the active prompt/AI.
+    const fixedCommerceFlowEnabled = false;
     const recentMessages = await storage.getMessages(conversationId);
 
     if (fixedCommerceFlowEnabled && shouldForceFirstContactProblemMenu(messageForAi, recentMessages, imageBase64ForAi, wasAudioMessage)) {
