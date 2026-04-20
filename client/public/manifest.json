@@ -1,7 +1,8 @@
 {
-  "name": "IQMAXIMO Agent IA",
-  "short_name": "IQMAXIMO IA",
-  "description": "IQMAXIMO Agent IA - Gestiona tus mensajes de WhatsApp con IA integrada",
+  "id": "/",
+  "name": "IQ",
+  "short_name": "IQ",
+  "description": "IQ - Inbox inteligente de WhatsApp Business con IA para ventas y soporte.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

@@ -1,6 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { serveStatic } from "./static";
+import { serveStatic, setStaticAssetHeaders } from "./static";
 import { ensureDatabaseSchema } from "./database-bootstrap";
 import { createServer } from "http";
 import path from "path";
@@ -33,7 +33,11 @@ function getPublicPath(): string {
 // Serve static files from client/public (for Service Workers, manifest, icons)
 // Only in development - production uses dist/public via serveStatic
 if (process.env.NODE_ENV !== "production") {
-  app.use(express.static(getPublicPath()));
+  app.use(
+    express.static(getPublicPath(), {
+      setHeaders: setStaticAssetHeaders,
+    }),
+  );
 }
 const httpServer = createServer(app);
 
