@@ -365,10 +365,10 @@ export default function AIAgentPage() {
       setNewImageIngredientsUrl("");
       setUploadProgress({});
       setUploadingSlots({});
-      toast({ title: "Producto agregado" });
+      toast({ title: "Elemento agregado" });
     },
     onError: (error: Error) => {
-      toast({ title: "Error al agregar producto", description: error.message, variant: "destructive" });
+      toast({ title: "Error al agregar el elemento", description: error.message, variant: "destructive" });
     },
   });
 
@@ -379,10 +379,10 @@ export default function AIAgentPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       setEditingId(null);
-      toast({ title: "Producto actualizado" });
+      toast({ title: "Elemento actualizado" });
     },
     onError: (error: Error) => {
-      toast({ title: "Error al actualizar producto", description: error.message, variant: "destructive" });
+      toast({ title: "Error al actualizar el elemento", description: error.message, variant: "destructive" });
     },
   });
 
@@ -392,10 +392,10 @@ export default function AIAgentPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      toast({ title: "Producto eliminado" });
+      toast({ title: "Elemento eliminado" });
     },
     onError: (error: Error) => {
-      toast({ title: "Error al eliminar producto", description: error.message, variant: "destructive" });
+      toast({ title: "Error al eliminar el elemento", description: error.message, variant: "destructive" });
     },
   });
 
@@ -781,7 +781,7 @@ export default function AIAgentPage() {
                 <code className="text-xs text-slate-300 block bg-black/30 rounded p-2">
                   [BOTONES: Opción 1, Opción 2, Opción 3]
                 </code>
-                <p className="text-xs text-slate-400 mt-2">Ejemplo en instrucciones: <em className="text-slate-300">"Cuando el cliente pregunte por productos, responde: ¿Qué te interesa? [BOTONES: Ver catálogo, Ver precios, Hablar con asesor]"</em></p>
+                <p className="text-xs text-slate-400 mt-2">Ejemplo en instrucciones: <em className="text-slate-300">"Cuando el cliente pregunte por productos o servicios, responde: ¿Que te interesa? [BOTONES: Ver opciones, Ver precios, Hablar con asesor]"</em></p>
                 <p className="text-xs text-yellow-400/80 mt-1">Máx. 20 caracteres por botón. El cliente toca y su respuesta llega al IA.</p>
               </div>
               <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700/30">
@@ -789,7 +789,7 @@ export default function AIAgentPage() {
                 <code className="text-xs text-slate-300 block bg-black/30 rounded p-2">
                   [LISTA: Título del botón | Opción 1, Opción 2, Opción 3, ...]
                 </code>
-                <p className="text-xs text-slate-400 mt-2">Ejemplo en instrucciones: <em className="text-slate-300">"Cuando pregunten qué hay disponible, responde: Estos son nuestros productos: [LISTA: Ver productos | Creatina, Proteína, Vitaminas, Pre-entreno, BCAA]"</em></p>
+                <p className="text-xs text-slate-400 mt-2">Ejemplo en instrucciones: <em className="text-slate-300">"Cuando pregunten que hay disponible, responde: Estas son nuestras opciones: [LISTA: Ver opciones | Producto A, Servicio B, Opcion C]"</em></p>
                 <p className="text-xs text-yellow-400/80 mt-1">El título del botón máx. 20 caracteres. Cada opción máx. 24 caracteres.</p>
               </div>
               <p className="text-xs text-slate-400">El texto antes de [BOTONES:] o [LISTA:] se envía como mensaje. Cuando el cliente elige una opción, el IA recibe el texto de la opción elegida y responde según tus instrucciones.</p>
@@ -1231,8 +1231,8 @@ export default function AIAgentPage() {
                 <Package className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h3 className="font-semibold text-white">Productos</h3>
-                <p className="text-xs text-slate-400">La IA buscará solo el producto que mencione el cliente</p>
+                <h3 className="font-semibold text-white">Productos o servicios</h3>
+                <p className="text-xs text-slate-400">La IA buscara solo el producto o servicio que mencione el cliente</p>
               </div>
             </div>
             <div className="grid gap-3 p-4 border border-slate-700/50 rounded-xl bg-slate-900/50">
@@ -1240,7 +1240,7 @@ export default function AIAgentPage() {
                 <div>
                   <Label className="text-slate-300">Nombre *</Label>
                   <Input
-                    placeholder="Ej: Berberina"
+                    placeholder="Ej: Producto o servicio A"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     data-testid="input-product-name"
@@ -1250,7 +1250,7 @@ export default function AIAgentPage() {
                 <div>
                   <Label className="text-slate-300">Precio</Label>
                   <Input
-                    placeholder="Ej: 280 Bs"
+                    placeholder="Ej: 280 Bs o consultar"
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
                     data-testid="input-product-price"
@@ -1261,7 +1261,7 @@ export default function AIAgentPage() {
               <div>
                 <Label className="text-slate-300">Palabras clave (separadas por coma)</Label>
                 <Input
-                  placeholder="Ej: glucosa, azúcar, diabetes"
+                  placeholder="Ej: asesoria, soporte, plan premium"
                   value={newKeywords}
                   onChange={(e) => setNewKeywords(e.target.value)}
                   data-testid="input-product-keywords"
@@ -1271,7 +1271,7 @@ export default function AIAgentPage() {
               <div>
                 <Label className="text-slate-300">Descripción</Label>
                 <Textarea
-                  placeholder="Beneficios, dosis, instrucciones..."
+                  placeholder="Caracteristicas, beneficios, alcance, instrucciones..."
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   rows={2}
@@ -1280,7 +1280,7 @@ export default function AIAgentPage() {
                 />
               </div>
               <div className="space-y-3">
-                <Label className="text-slate-300">Imagenes del producto (con % de carga)</Label>
+                <Label className="text-slate-300">Imagenes del producto o servicio (con % de carga)</Label>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Input
@@ -1378,7 +1378,7 @@ export default function AIAgentPage() {
               </div>
               <Button onClick={handleAddProduct} disabled={createProductMutation.isPending} data-testid="button-add-product" className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg shadow-emerald-500/30">
                 {createProductMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                Agregar Producto
+                Agregar elemento
               </Button>
             </div>
 
@@ -1577,7 +1577,7 @@ export default function AIAgentPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">
-                No hay productos. Agrega tu primer producto arriba.
+                No hay elementos. Agrega tu primer producto o servicio arriba.
               </p>
             )}
           </div>
