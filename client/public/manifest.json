@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "IQ",
-  "short_name": "IQ",
-  "description": "IQ - Inbox inteligente de WhatsApp Business con IA para ventas y soporte.",
+  "name": "IQx",
+  "short_name": "IQx",
+  "description": "IQx - Inbox inteligente de WhatsApp Business con IA para ventas y soporte.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
