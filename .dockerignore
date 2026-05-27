@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+dist
+npm-debug.log*
+.env
+.env.*
+*.local
+attached_assets
+DOCUMENTACION_CRM_REPORTE_IQX.md
+ROLLBACK-*.md
