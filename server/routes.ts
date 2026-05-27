@@ -19,6 +19,7 @@ import multer from "multer";
 import { sql } from "drizzle-orm";
 import { spawn } from "child_process";
 import ffmpegStatic from "ffmpeg-static";
+import { renderIqxReadingReportHtml } from "../CRM_IQX_REPORT_TEMPLATE.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadAudio = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
@@ -1996,6 +1997,24 @@ function fileToDataUri(filePath: string, mimeType: string) {
 }
 
 async function buildIqxReportHtml(data: IqxReadingReportResponse) {
+  {
+    const templateLogoPath = path.join(getRuntimePublicDir(), "logo.png");
+    const templateLogoDataUri = fileToDataUri(templateLogoPath, "image/png");
+    const QRCode = await import("qrcode");
+    const templateQrDataUrl = await QRCode.toDataURL(IQX_REPORT_QR_URL, {
+      width: 220,
+      margin: 1,
+      color: { dark: "#071a3d", light: "#ffffff" },
+    });
+
+    return renderIqxReadingReportHtml(data, {
+      logoSrc: templateLogoDataUri || "https://iqexponencial.app/logo.png",
+      qrSrc: templateQrDataUrl,
+      website: "www.iqexponencial.com",
+      social: "SIGUENOS EN REDES SOCIALES @iqexponencial",
+    });
+  }
+
   const logoPath = path.join(getRuntimePublicDir(), "logo.png");
   const logoDataUri = fileToDataUri(logoPath, "image/png");
   const QRCode = await import("qrcode");
