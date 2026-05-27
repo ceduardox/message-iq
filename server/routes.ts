@@ -764,6 +764,15 @@ async function processAiResponse(data: BufferedMessage) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
       const shouldSendAudio = wasAudioMessage && aiSettings?.audioResponseEnabled;
+      if (wasAudioMessage) {
+        logAudioDebug("AUDIO_RESPONSE_DECISION", {
+          conversationId,
+          audioResponseEnabled: !!aiSettings?.audioResponseEnabled,
+          shouldSendAudio,
+          ttsProvider: aiSettings?.ttsProvider || "openai",
+          audioVoice: aiSettings?.audioVoice || "nova",
+        });
+      }
       if (aiResult.imageUrl) {
         const imgResponse = await sendToWhatsApp(from, 'image', { imageUrl: aiResult.imageUrl });
         await storage.createMessage({
@@ -800,6 +809,7 @@ async function processAiResponse(data: BufferedMessage) {
           outboundMessageType = "audio";
         } else {
           console.log("=== AUDIO FAILED, TEXT FALLBACK ===");
+          logAudioDebug("AUDIO_TEXT_FALLBACK", { conversationId, provider: ttsProvider, voice: selectedVoice });
           const sendResult = await sendAiResponseToWhatsApp(from, aiResult.response);
           waResponse = sendResult.waResponse;
           waMessageId = waResponse.messages[0].id;
@@ -1353,6 +1363,11 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
   
   if (!token || !phoneNumberId) {
     console.log("[TTS] Missing WhatsApp credentials");
+    logAudioDebug("TTS_ERROR", {
+      reason: "Missing WhatsApp credentials",
+      hasMetaToken: !!token,
+      hasPhoneNumberId: !!phoneNumberId,
+    });
     return false;
   }
   
@@ -1361,10 +1376,23 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
   let tempPath: string | null = null;
   
   try {
+    logAudioDebug("TTS_START", {
+      provider,
+      voice,
+      textLength: text.length,
+      hasOpenAI: !!process.env.OPENAI_API_KEY,
+      hasElevenLabs: !!process.env.ELEVENLABS_API_KEY,
+    });
     const generated = await generateTtsAudioBuffer(text, voice, options, "whatsapp");
     const sourceAudioBuffer = generated.audioBuffer;
     console.log("[TTS] Audio generated:", sourceAudioBuffer.length, "bytes", {
       provider,
+      fileExt: generated.fileExt,
+      contentType: generated.contentType,
+    });
+    logAudioDebug("TTS_GENERATED", {
+      provider,
+      bytes: sourceAudioBuffer.length,
       fileExt: generated.fileExt,
       contentType: generated.contentType,
     });
@@ -1373,6 +1401,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     const fileExt = "ogg";
     const contentType = "audio/ogg";
     console.log("[TTS] Audio transcoded for WhatsApp:", audioBuffer.length, "bytes");
+    logAudioDebug("TTS_TRANSCODED", { bytes: audioBuffer.length, contentType });
     
     tempPath = path.join(os.tmpdir(), `tts_${Date.now()}.${fileExt}`);
     fs.writeFileSync(tempPath, audioBuffer);
@@ -1400,6 +1429,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     
     const mediaId = uploadResponse.data.id;
     console.log("[TTS] Media uploaded, ID:", mediaId);
+    logAudioDebug("TTS_MEDIA_UPLOADED", { mediaId });
     
     // Step 4: Send audio message
     const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
@@ -1420,6 +1450,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     );
     
     console.log("[TTS] Audio message sent successfully");
+    logAudioDebug("TTS_SENT", { phoneNumber, mediaId });
     return true;
     
   } catch (error: any) {
@@ -1427,6 +1458,12 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     if (error.response?.data) {
       console.error("[TTS] Details:", JSON.stringify(error.response.data));
     }
+    logAudioDebug("TTS_ERROR", {
+      provider,
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
     return false;
   } finally {
     if (tempPath && fs.existsSync(tempPath)) {
