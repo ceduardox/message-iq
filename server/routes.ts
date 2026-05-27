@@ -2249,6 +2249,59 @@ function getIqxReportFileName(data: IqxReadingReportResponse, code: string) {
   return `informe-iqexponencial-${studentName}-${sanitizeFilePart(code)}.pdf`;
 }
 
+function parseIqxStudentAge(data: IqxReadingReportResponse) {
+  const match = String(data.student?.age || "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function getIqxMainImprovementArea(data: IqxReadingReportResponse) {
+  const comprehension = data.scores?.comprehension;
+  const speedWpm = data.scores?.speedWpm;
+  const mainNeed = data.cognitiveProfile?.mainNeed;
+
+  if (typeof comprehension === "number" && comprehension < 80) return "comprension lectora";
+  if (typeof speedWpm === "number" && speedWpm > 0 && speedWpm < 120) return "velocidad lectora";
+  if (mainNeed) return mainNeed.toLowerCase();
+  return "concentracion y habitos de lectura";
+}
+
+function getIqxAgeBenefit(age: number | null) {
+  if (age !== null && age <= 11) {
+    return "Para su edad, fortalecer esto puede ayudarle a leer con mas seguridad, comprender mejor las tareas y ganar confianza en clases.";
+  }
+  if (age !== null && age <= 17) {
+    return "Para su edad, mejorar esto puede ayudarle a estudiar con menos esfuerzo, entender mejor lo que lee y responder con mas seguridad en evaluaciones.";
+  }
+  return "Mejorar esto puede ayudarle a procesar mejor la informacion, estudiar con mas enfoque y rendir mejor en actividades academicas o profesionales.";
+}
+
+function buildIqxReportFollowupMessage(data: IqxReadingReportResponse) {
+  const area = getIqxMainImprovementArea(data);
+  const age = parseIqxStudentAge(data);
+  const comprehension = data.scores?.comprehension;
+  const speedWpm = data.scores?.speedWpm;
+  const readerCategory = data.scores?.readerCategory;
+  const metricParts = [
+    typeof comprehension === "number" ? `comprension ${Math.round(comprehension)}%` : null,
+    typeof speedWpm === "number" && speedWpm > 0 ? `velocidad ${Math.round(speedWpm)} PPM` : null,
+    readerCategory ? `perfil ${readerCategory}` : null,
+  ].filter(Boolean);
+  const metrics = metricParts.length > 0 ? ` (${metricParts.join(", ")}).` : ".";
+
+  return [
+    "Ya te enviamos tu informe completo IQX.",
+    "",
+    "Resumen rapido:",
+    `El resultado muestra que el punto principal a fortalecer es ${area}${metrics}`,
+    getIqxAgeBenefit(age),
+    "",
+    "En IQEXPONENCIAL podemos ayudarle con entrenamiento personalizado en lectura, comprension, memoria y concentracion.",
+    "",
+    "Quiere que le expliquemos que plan de mejora seria mas adecuado?",
+    "[BOTONES: Si, quiero mejorar, Agendar llamada, Mas info]",
+  ].join("\n");
+}
+
 async function fetchIqxReadingReport(code: string): Promise<IqxReadingReportResponse> {
   const apiKey = process.env.CRM_API_KEY;
   if (!apiKey) {
@@ -2340,6 +2393,28 @@ async function handleIqxReportRequest(params: { code: string; from: string; conv
         updated_at = NOW()
       WHERE id = ${reportRow.id}
     `);
+
+    try {
+      const followupText = buildIqxReportFollowupMessage(reportData);
+      const followupSent = await sendAiResponseToWhatsApp(from, followupText);
+      const followupWaMessageId = followupSent.waResponse.messages?.[0]?.id || `iqx_followup_${Date.now()}`;
+      await storage.createMessage({
+        conversationId,
+        waMessageId: followupWaMessageId,
+        direction: "out",
+        type: "text",
+        text: followupSent.deliveredText,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+        rawJson: followupSent.waResponse,
+      });
+      await storage.updateConversation(conversationId, {
+        lastMessage: followupSent.deliveredText,
+        lastMessageTimestamp: new Date(),
+      });
+    } catch (followupError: any) {
+      console.error("[IQX Report] followup failed:", { code, from, error: followupError?.message || followupError });
+    }
   } catch (error: any) {
     const status = error?.response?.status;
     const errorMessage = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Error desconocido";
