@@ -5,11 +5,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx server/index.ts",
-    "build": "tsx script/build.ts",
+    "build": "npm run playwright:install && tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check:mojibake": "node script/check-mojibake.cjs",
     "check": "npm run check:mojibake && tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "playwright:install": "playwright install chromium"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
