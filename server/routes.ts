@@ -2298,7 +2298,7 @@ function buildIqxReportFollowupMessage(data: IqxReadingReportResponse) {
     "En IQEXPONENCIAL podemos ayudarle con entrenamiento personalizado en lectura, comprension, memoria y concentracion.",
     "",
     "Quiere que le expliquemos que plan de mejora seria mas adecuado?",
-    "[BOTONES: Si, quiero mejorar, Agendar llamada, Mas info]",
+    "[BOTONES: Quiero mejorar, Agendar llamada, Mas info]",
   ].join("\n");
 }
 
