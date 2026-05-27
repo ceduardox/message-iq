@@ -2226,17 +2226,27 @@ async function generateIqxReportPdf(data: IqxReadingReportResponse) {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1240, height: 1754 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: { width: 1240, height: 2600 }, deviceScaleFactor: 1 });
     await page.setContent(await buildIqxReportHtml(data), { waitUntil: "networkidle" });
+    const reportBox = await page.locator(".report").boundingBox();
+    const width = Math.ceil(reportBox?.width || 1240);
+    const height = Math.ceil(reportBox?.height || 2600);
     const pdf = await page.pdf({
       printBackground: true,
-      preferCSSPageSize: true,
+      width: `${width}px`,
+      height: `${height}px`,
       margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      pageRanges: "1",
     });
     return Buffer.from(pdf);
   } finally {
     await browser.close();
   }
+}
+
+function getIqxReportFileName(data: IqxReadingReportResponse, code: string) {
+  const studentName = sanitizeFilePart(data.student?.name || "estudiante");
+  return `informe-iqexponencial-${studentName}-${sanitizeFilePart(code)}.pdf`;
 }
 
 async function fetchIqxReadingReport(code: string): Promise<IqxReadingReportResponse> {
@@ -2306,7 +2316,7 @@ async function handleIqxReportRequest(params: { code: string; from: string; conv
   try {
     const reportData = await fetchIqxReadingReport(code);
     const pdfBuffer = await generateIqxReportPdf(reportData);
-    const fileName = `informe-iqx-${sanitizeFilePart(code)}.pdf`;
+    const fileName = getIqxReportFileName(reportData, code);
     const sent = await sendDocumentBufferToWhatsApp(
       from,
       pdfBuffer,
