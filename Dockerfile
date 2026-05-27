@@ -2,6 +2,8 @@ FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 WORKDIR /app
 
+RUN echo "USING_PLAYWRIGHT_DOCKER_IMAGE=v1.60.0-noble"
+
 COPY package*.json ./
 RUN npm ci
 
