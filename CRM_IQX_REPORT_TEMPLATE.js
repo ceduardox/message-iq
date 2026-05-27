@@ -211,10 +211,26 @@ function renderReferenceRows(rows, selected, highlightClass) {
 function renderList(items, type) {
   return items.map((item) => `
     <li>
-      <span class="${type === "strength" ? "dot-check" : "dot-warning"}">${type === "strength" ? "OK" : ""}</span>
+      <span class="${type === "strength" ? "dot-check" : "dot-warning"}">${type === "strength" ? iconSvg("check") : ""}</span>
       <span>${escapeHtml(item)}</span>
     </li>
   `).join("");
+}
+
+function iconSvg(name) {
+  const attrs = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const paths = {
+    user: '<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/>',
+    calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/>',
+    gauge: '<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    spark: '<path d="M12 2l1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2z"/>',
+    check: '<path d="M20 6L9 17l-5-5"/>',
+  };
+  return `<svg ${attrs}>${paths[name] || paths.spark}</svg>`;
 }
 
 export function renderIqxReadingReportHtml(data, options = {}) {
@@ -252,7 +268,7 @@ export function renderIqxReadingReportHtml(data, options = {}) {
     .report {
       width: 1240px;
       background: #fff;
-      padding: 32px;
+      padding: 28px;
     }
     .shell {
       overflow: hidden;
@@ -263,27 +279,27 @@ export function renderIqxReadingReportHtml(data, options = {}) {
     }
     .top-grid {
       display: grid;
-      grid-template-columns: 340px 1fr;
+      grid-template-columns: 315px 1fr;
       background: #fff;
     }
     .brand {
-      min-height: 208px;
-      padding: 24px 40px;
+      min-height: 164px;
+      padding: 15px 34px;
       display: flex;
       flex-direction: column;
       justify-content: center;
     }
-    .brand img { width: 210px; height: auto; object-fit: contain; margin-bottom: 16px; }
-    .brand .name { font-size: 16px; letter-spacing: .22em; color: #334155; font-weight: 700; }
-    .brand .line { width: 220px; height: 3px; background: #06b6d4; margin: 16px 0 12px; }
-    .brand .method { font-size: 12px; letter-spacing: .18em; color: #64748b; font-weight: 700; }
+    .brand img { width: 156px; height: auto; object-fit: contain; margin-bottom: 10px; }
+    .brand .name { font-size: 13px; letter-spacing: .2em; color: #334155; font-weight: 700; }
+    .brand .line { width: 190px; height: 3px; background: #06b6d4; margin: 10px 0 8px; }
+    .brand .method { font-size: 10px; letter-spacing: .16em; color: #64748b; font-weight: 700; }
     .hero {
       position: relative;
-      min-height: 110px;
+      min-height: 88px;
       overflow: hidden;
       background: #071a3d;
       color: #fff;
-      padding: 26px 48px;
+      padding: 20px 44px;
     }
     .hero:before {
       content: "";
@@ -305,21 +321,21 @@ export function renderIqxReadingReportHtml(data, options = {}) {
       transform: skewX(-12deg);
       background: rgba(255, 255, 255, .95);
     }
-    .hero-content { padding-left: 40px; position: relative; z-index: 1; }
-    .hero h1 { margin: 0; font-size: 44px; line-height: 1; font-weight: 900; letter-spacing: .04em; }
-    .hero p { margin: 10px 0 0; font-size: 22px; font-weight: 700; letter-spacing: .03em; }
+    .hero-content { padding-left: 38px; position: relative; z-index: 1; }
+    .hero h1 { margin: 0; font-size: 39px; line-height: 1; font-weight: 900; letter-spacing: .04em; }
+    .hero p { margin: 7px 0 0; font-size: 18px; font-weight: 700; letter-spacing: .03em; }
     .identity {
       border-bottom: 1px solid #e2e8f0;
-      padding: 16px 40px;
+      padding: 12px 34px;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 20px;
     }
     .id-item { display: flex; align-items: center; gap: 14px; min-width: 0; }
     .id-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 16px;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
       background: linear-gradient(135deg, #22d3ee, #14b8a6);
       color: #fff;
       display: flex;
@@ -328,92 +344,96 @@ export function renderIqxReadingReportHtml(data, options = {}) {
       font-weight: 900;
       flex: 0 0 auto;
     }
-    .id-item b { display: block; font-size: 15px; color: #334155; }
-    .id-item span { display: block; font-size: 18px; color: #0f172a; font-weight: 700; line-height: 1.15; }
-    .content { background: #f8fafc; padding: 24px 32px; }
-    .profile-row { display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
+    .id-icon svg { width: 21px; height: 21px; }
+    .id-item b { display: block; font-size: 13px; color: #334155; }
+    .id-item span { display: block; font-size: 16px; color: #0f172a; font-weight: 700; line-height: 1.15; }
+    .content { background: #f8fafc; padding: 18px 28px; }
+    .profile-row { display: grid; grid-template-columns: 330px 1fr; gap: 22px; }
     .card {
       background: #fff;
       border: 1px solid #e2e8f0;
       border-radius: 28px;
       box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
     }
-    .profile-card { padding: 24px; display: flex; gap: 20px; align-items: center; }
+    .profile-card { padding: 18px; display: flex; gap: 16px; align-items: center; }
     .avatar {
-      width: 128px;
-      height: 128px;
+      width: 104px;
+      height: 104px;
       border-radius: 999px;
       border: 6px solid #67e8f9;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 58px;
+      font-size: 0;
       color: #334155;
       flex: 0 0 auto;
       box-shadow: inset 0 2px 8px rgba(15, 23, 42, .08);
     }
-    .eyebrow { color: #64748b; font-size: 14px; letter-spacing: .05em; font-weight: 900; margin: 0; }
-    .profile-title { margin: 12px 0 0; font-size: 31px; line-height: .98; font-weight: 900; color: var(--profile-color); }
-    .profile-desc { margin: 18px 0 0; color: #334155; font-size: 17px; line-height: 1.45; }
-    .results-card { padding: 24px; }
+    .avatar svg { width: 49px; height: 49px; }
+    .eyebrow { color: #64748b; font-size: 13px; letter-spacing: .05em; font-weight: 900; margin: 0; }
+    .profile-title { margin: 7px 0 0; font-size: 27px; line-height: .98; font-weight: 900; color: var(--profile-color); }
+    .profile-desc { margin: 10px 0 0; color: #334155; font-size: 14px; line-height: 1.35; }
+    .results-card { padding: 18px; }
     .pill {
       display: inline-flex;
-      height: 48px;
+      height: 42px;
       align-items: center;
       border-radius: 999px;
-      padding: 0 28px;
+      padding: 0 24px;
       background: linear-gradient(90deg, #06b6d4, #3b82f6);
       color: #fff;
       font-size: 15px;
       font-weight: 900;
-      margin-bottom: 24px;
+      margin-bottom: 18px;
     }
     .metrics { display: grid; grid-template-columns: repeat(4, 1fr); }
-    .metric { text-align: center; padding: 8px 20px; border-left: 1px solid #e2e8f0; }
+    .metric { text-align: center; padding: 6px 18px; border-left: 1px solid #e2e8f0; }
     .metric:first-child { border-left: 0; }
-    .metric .icon { font-size: 42px; line-height: 1; margin-bottom: 12px; }
-    .metric h3 { min-height: 48px; margin: 0; display: flex; align-items: end; justify-content: center; font-size: 15px; line-height: 1.15; font-weight: 900; }
-    .metric strong { display: block; margin-top: 18px; font-size: 48px; line-height: 1; font-weight: 900; }
-    .metric span { display: block; margin-top: 8px; color: #64748b; font-size: 16px; font-weight: 600; }
-    .section-title { display: flex; align-items: center; gap: 16px; margin: 28px 0; }
+    .metric .icon { height: 38px; line-height: 1; margin-bottom: 10px; display:flex; align-items:center; justify-content:center; }
+    .metric .icon svg { width: 38px; height: 38px; }
+    .metric h3 { min-height: 42px; margin: 0; display: flex; align-items: end; justify-content: center; font-size: 14px; line-height: 1.12; font-weight: 900; }
+    .metric strong { display: block; margin-top: 13px; font-size: 43px; line-height: 1; font-weight: 900; }
+    .metric span { display: block; margin-top: 6px; color: #64748b; font-size: 14px; font-weight: 600; }
+    .section-title { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
     .section-title:before, .section-title:after { content: ""; height: 1px; background: #cbd5e1; flex: 1; }
-    .section-title h2 { margin: 0; color: #334155; font-size: 24px; font-weight: 900; letter-spacing: .03em; }
-    .tables { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
-    .table-card { overflow: hidden; border-radius: 24px; background: #fff; border: 1px solid #bfdbfe; }
+    .section-title h2 { margin: 0; color: #334155; font-size: 22px; font-weight: 900; letter-spacing: .03em; }
+    .tables { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+    .table-card { overflow: hidden; border-radius: 22px; background: #fff; border: 1px solid #bfdbfe; }
     .table-card.green { border-color: #bbf7d0; }
-    .table-head { padding: 12px 20px; color: #fff; font-size: 18px; font-weight: 900; }
+    .table-head { padding: 10px 18px; color: #fff; font-size: 17px; font-weight: 900; }
     .table-head.green { background: linear-gradient(90deg, #16a34a, #10b981); }
     .table-head.blue { background: #0b3a72; }
-    table { width: 100%; border-collapse: collapse; font-size: 15px; }
-    th { background: #eff6ff; text-align: left; padding: 12px 16px; color: #334155; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #eff6ff; text-align: left; padding: 9px 14px; color: #334155; }
     .green th { background: #f0fdf4; }
-    td { border-top: 1px solid #e2e8f0; padding: 11px 16px; vertical-align: top; color: #475569; }
+    td { border-top: 1px solid #e2e8f0; padding: 8px 14px; vertical-align: top; color: #475569; }
     td:first-child { color: #0f172a; font-weight: 700; }
     tr.hl-green td { background: rgba(240, 253, 244, .9); }
     tr.hl-blue td { background: rgba(239, 246, 255, .9); }
     .comparison {
-      margin: 16px;
-      padding: 16px 20px;
+      margin: 14px;
+      padding: 13px 16px;
       border-radius: 18px;
-      font-size: 17px;
+      font-size: 14px;
       line-height: 1.35;
       font-weight: 600;
     }
     .comparison.green { border: 1px solid #bbf7d0; background: #f0fdf4; color: #14532d; }
     .comparison.blue { border: 1px solid #bfdbfe; background: #eff6ff; color: #1e3a8a; }
-    .analysis-grid { display: grid; grid-template-columns: 1.1fr .8fr 1fr; gap: 24px; margin-top: 24px; }
-    .analysis-card { padding: 24px; border-radius: 24px; }
-    .analysis-card h2 { margin: 0 0 16px; font-size: 24px; font-weight: 900; }
-    .analysis-card h3 { margin: 14px 0 8px; font-size: 18px; font-weight: 900; }
-    .analysis-card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 16px; color: #334155; line-height: 1.35; }
+    .analysis-grid { display: grid; grid-template-columns: 1.1fr .8fr 1fr; gap: 20px; margin-top: 20px; }
+    .analysis-card { padding: 20px; border-radius: 22px; }
+    .analysis-card h2 { margin: 0 0 12px; font-size: 22px; font-weight: 900; }
+    .analysis-card h3 { margin: 11px 0 7px; font-size: 16px; font-weight: 900; }
+    .analysis-card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; color: #334155; line-height: 1.32; }
     .analysis-card li { display: flex; gap: 8px; align-items: flex-start; }
-    .dot-check { width: 18px; height: 18px; border-radius: 999px; background: #22c55e; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex: 0 0 auto; margin-top: 1px; }
+    .dot-check { width: 18px; height: 18px; border-radius: 999px; background: #22c55e; color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; margin-top: 1px; }
+    .dot-check svg { width: 12px; height: 12px; }
     .dot-warning { width: 8px; height: 8px; border-radius: 999px; background: #f59e0b; flex: 0 0 auto; margin-top: 8px; }
-    .level-card { padding: 24px; text-align: center; border-radius: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .level-title { font-size: 22px; font-weight: 900; margin-bottom: 18px; }
+    .level-card { padding: 20px; text-align: center; border-radius: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .level-title { font-size: 20px; font-weight: 900; margin-bottom: 14px; }
     .ring {
-      width: 172px;
-      height: 172px;
+      width: 150px;
+      height: 150px;
       border-radius: 999px;
       border: 12px solid #cffafe;
       display: flex;
@@ -422,42 +442,42 @@ export function renderIqxReadingReportHtml(data, options = {}) {
       justify-content: center;
       box-shadow: inset 0 0 0 10px #fff, 0 0 0 1px #e2e8f0;
     }
-    .ring strong { font-size: 72px; line-height: .9; color: #0891b2; font-weight: 900; }
-    .ring span { font-size: 18px; color: #475569; font-weight: 900; }
-    .potential { margin: 18px 0 0; color: #059669; font-size: 24px; font-weight: 900; }
-    .projection { display: grid; gap: 12px; margin-top: 18px; }
-    .projection-item { display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 16px; }
-    .projection-item b { font-size: 17px; }
-    .projection-item strong { color: #10b981; font-size: 30px; font-weight: 900; }
+    .ring strong { font-size: 62px; line-height: .9; color: #0891b2; font-weight: 900; }
+    .ring span { font-size: 16px; color: #475569; font-weight: 900; }
+    .potential { margin: 14px 0 0; color: #059669; font-size: 22px; font-weight: 900; }
+    .projection { display: grid; gap: 10px; margin-top: 14px; }
+    .projection-item { display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 10px 14px; }
+    .projection-item b { font-size: 15px; }
+    .projection-item strong { color: #10b981; font-size: 27px; font-weight: 900; }
     .blue-band {
-      margin-top: 24px;
+      margin-top: 22px;
       border-radius: 24px;
       background: #0b2e63;
       color: #fff;
-      padding: 20px 32px;
+      padding: 17px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 24px;
     }
-    .blue-band h2 { margin: 0; font-size: 24px; font-weight: 900; line-height: 1.2; }
-    .blue-band p { margin: 6px 0 0; color: #cffafe; font-size: 18px; }
-    .cognitive-box { min-width: 420px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.1); border-radius: 16px; padding: 14px 16px; }
+    .blue-band h2 { margin: 0; font-size: 22px; font-weight: 900; line-height: 1.2; }
+    .blue-band p { margin: 5px 0 0; color: #cffafe; font-size: 16px; }
+    .cognitive-box { min-width: 390px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.1); border-radius: 16px; padding: 12px 14px; }
     .cognitive-box h3 { margin: 0 0 10px; font-size: 18px; }
     .cognitive-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; font-size: 14px; }
     .cognitive-grid span { color: rgba(255,255,255,.65); }
-    .recommendation-grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; margin-top: 24px; }
-    .recommendation { padding: 24px; border-radius: 24px; }
-    .recommendation h2 { margin: 0 0 12px; font-size: 24px; font-weight: 900; }
-    .recommendation p { margin: 0; font-size: 18px; line-height: 1.45; color: #334155; }
-    .mini-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .mini { border: 1px solid #e2e8f0; border-radius: 16px; background: #f8fafc; padding: 12px; font-size: 14px; }
+    .recommendation-grid { display: grid; grid-template-columns: 1fr 260px; gap: 22px; margin-top: 22px; }
+    .recommendation { padding: 20px; border-radius: 22px; }
+    .recommendation h2 { margin: 0 0 10px; font-size: 22px; font-weight: 900; }
+    .recommendation p { margin: 0; font-size: 16px; line-height: 1.4; color: #334155; }
+    .mini-grid { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .mini { border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; padding: 10px; font-size: 13px; }
     .mini span { color: #64748b; display: block; }
     .mini b { display: block; margin-top: 4px; font-size: 15px; color: #0f172a; }
-    .qr-card { padding: 24px; text-align: center; border-radius: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .qr-card { padding: 20px; text-align: center; border-radius: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .qr {
-      width: 160px;
-      height: 160px;
+      width: 140px;
+      height: 140px;
       border: 8px solid #e2e8f0;
       border-radius: 18px;
       background: #fff;
@@ -476,18 +496,19 @@ export function renderIqxReadingReportHtml(data, options = {}) {
       background-size: 24px 24px;
       background-position: 0 0, 12px 12px;
     }
-    .qr-card h3 { margin: 14px 0 0; font-size: 18px; line-height: 1.25; }
-    .footer { margin-top: 24px; border-radius: 24px; overflow: hidden; background: #081735; color: #fff; }
+    .qr-card h3 { margin: 12px 0 0; font-size: 16px; line-height: 1.25; }
+    .footer { margin-top: 22px; border-radius: 22px; overflow: hidden; background: #081735; color: #fff; }
     .footer-grid { display: grid; grid-template-columns: 220px 1fr 220px; align-items: center; }
-    .footer-icon { min-height: 190px; background: radial-gradient(circle at center, rgba(34,197,94,.35), transparent 60%); display: flex; align-items: center; justify-content: center; font-size: 54px; color: #67e8f9; }
-    .footer-center { text-align: center; padding: 20px; }
-    .footer-center h2 { margin: 0; font-size: 30px; font-weight: 900; letter-spacing: .03em; }
-    .footer-center h3 { margin: 6px 0 0; font-size: 30px; color: #67e8f9; font-weight: 900; }
-    .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
-    .badges div { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); border-radius: 16px; padding: 12px 8px; font-size: 14px; font-weight: 700; }
+    .footer-icon { min-height: 160px; background: radial-gradient(circle at center, rgba(34,197,94,.35), transparent 60%); display: flex; align-items: center; justify-content: center; color: #67e8f9; }
+    .footer-icon svg { width: 54px; height: 54px; }
+    .footer-center { text-align: center; padding: 17px; }
+    .footer-center h2 { margin: 0; font-size: 27px; font-weight: 900; letter-spacing: .03em; }
+    .footer-center h3 { margin: 5px 0 0; font-size: 27px; color: #67e8f9; font-weight: 900; }
+    .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+    .badges div { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); border-radius: 14px; padding: 10px 7px; font-size: 12px; font-weight: 700; }
     .footer-logo { display: flex; align-items: center; justify-content: center; padding: 24px; }
     .footer-logo img { height: 96px; width: auto; object-fit: contain; }
-    .footer-bottom { background: #fff; color: #334155; display: flex; justify-content: space-between; padding: 14px 32px; font-size: 18px; font-weight: 700; }
+    .footer-bottom { background: #fff; color: #334155; display: flex; justify-content: space-between; padding: 12px 32px; font-size: 16px; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -508,10 +529,10 @@ export function renderIqxReadingReportHtml(data, options = {}) {
             </div>
           </div>
           <div class="identity">
-            <div class="id-item"><div class="id-icon">A</div><div><b>Alumno:</b><span>${escapeHtml(data.student?.name || "-")}</span></div></div>
-            <div class="id-item"><div class="id-icon">#</div><div><b>Edad:</b><span>${escapeHtml(data.student?.age ? `${data.student.age} anos` : "-")}</span></div></div>
-            <div class="id-item"><div class="id-icon">F</div><div><b>Fecha del Test:</b><span>${escapeHtml(formatDate(data.createdAt))}</span></div></div>
-            <div class="id-item"><div class="id-icon">ID</div><div><b>ID Evaluacion:</b><span>${escapeHtml(getEvaluationId(data))}</span></div></div>
+            <div class="id-item"><div class="id-icon">${iconSvg("user")}</div><div><b>Alumno:</b><span>${escapeHtml(data.student?.name || "-")}</span></div></div>
+            <div class="id-item"><div class="id-icon">${iconSvg("user")}</div><div><b>Edad:</b><span>${escapeHtml(data.student?.age ? `${data.student.age} anos` : "-")}</span></div></div>
+            <div class="id-item"><div class="id-icon">${iconSvg("calendar")}</div><div><b>Fecha del Test:</b><span>${escapeHtml(formatDate(data.createdAt))}</span></div></div>
+            <div class="id-item"><div class="id-icon">${iconSvg("shield")}</div><div><b>ID Evaluacion:</b><span>${escapeHtml(getEvaluationId(data))}</span></div></div>
           </div>
         </div>
       </div>
@@ -519,7 +540,7 @@ export function renderIqxReadingReportHtml(data, options = {}) {
       <div class="content">
         <div class="profile-row">
           <div class="card profile-card" style="--profile-color:${profileColor}">
-            <div class="avatar">A</div>
+            <div class="avatar">${iconSvg("user")}</div>
             <div>
               <p class="eyebrow">PERFIL OBTENIDO</p>
               <h2 class="profile-title">${escapeHtml(profileTitle)}</h2>
@@ -530,10 +551,10 @@ export function renderIqxReadingReportHtml(data, options = {}) {
           <div class="card results-card">
             <div class="pill">RESULTADOS GENERALES</div>
             <div class="metrics">
-              <div class="metric"><div class="icon" style="color:#06b6d4">C</div><h3>COMPRENSION LECTORA</h3><strong>${escapeHtml(data.scores?.comprehension ?? 0)}%</strong><span>${escapeHtml(data.scores?.correctAnswers ?? 0)} de ${escapeHtml(data.scores?.totalAnswers ?? 0)}</span></div>
-              <div class="metric"><div class="icon" style="color:#3b82f6">V</div><h3>VELOCIDAD LECTORA</h3><strong>${escapeHtml(data.scores?.speedWpm ?? 0)}</strong><span>PPM</span></div>
-              <div class="metric"><div class="icon" style="color:#8b5cf6">T</div><h3>TIEMPO DE LECTURA</h3><strong>${escapeHtml(formatTime(data.scores?.readingTimeSeconds))}</strong><span>min</span></div>
-              <div class="metric"><div class="icon" style="color:#f97316">R</div><h3>TIEMPO DE RESPUESTA</h3><strong>${escapeHtml(formatTime(data.scores?.questionsTimeSeconds))}</strong><span>seg</span></div>
+              <div class="metric"><div class="icon" style="color:#06b6d4">${iconSvg("book")}</div><h3>COMPRENSION LECTORA</h3><strong>${escapeHtml(data.scores?.comprehension ?? 0)}%</strong><span>${escapeHtml(data.scores?.correctAnswers ?? 0)} de ${escapeHtml(data.scores?.totalAnswers ?? 0)}</span></div>
+              <div class="metric"><div class="icon" style="color:#3b82f6">${iconSvg("gauge")}</div><h3>VELOCIDAD LECTORA</h3><strong>${escapeHtml(data.scores?.speedWpm ?? 0)}</strong><span>PPM</span></div>
+              <div class="metric"><div class="icon" style="color:#8b5cf6">${iconSvg("clock")}</div><h3>TIEMPO DE LECTURA</h3><strong>${escapeHtml(formatTime(data.scores?.readingTimeSeconds))}</strong><span>min</span></div>
+              <div class="metric"><div class="icon" style="color:#f97316">${iconSvg("target")}</div><h3>TIEMPO DE RESPUESTA</h3><strong>${escapeHtml(formatTime(data.scores?.questionsTimeSeconds))}</strong><span>seg</span></div>
             </div>
           </div>
         </div>
@@ -616,7 +637,7 @@ export function renderIqxReadingReportHtml(data, options = {}) {
 
         <div class="footer">
           <div class="footer-grid">
-            <div class="footer-icon">*</div>
+            <div class="footer-icon">${iconSvg("spark")}</div>
             <div class="footer-center">
               <h2>TU MENTE TIENE UN POTENCIAL ILIMITADO.</h2>
               <h3>ENTRENALA. ACELERALA. TRANSFORMA TU FUTURO.</h3>
