@@ -77,6 +77,24 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const iqxReadingReports = pgTable("iqx_reading_reports", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 40 }).notNull().unique(),
+  resultId: varchar("result_id", { length: 64 }),
+  phone: varchar("phone", { length: 40 }).notNull(),
+  conversationId: integer("conversation_id").references(() => conversations.id),
+  studentName: text("student_name"),
+  reportData: jsonb("report_data"),
+  pdfFileName: text("pdf_file_name"),
+  whatsappMediaId: varchar("whatsapp_media_id", { length: 128 }),
+  whatsappMessageId: varchar("whatsapp_message_id", { length: 128 }),
+  status: varchar("status", { length: 30 }).notNull().default("pending"),
+  error: text("error"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  generatedAt: timestamp("generated_at"),
+  sentAt: timestamp("sent_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 // === RELATIONS ===
 
 export const conversationsRelations = relations(conversations, ({ many }) => ({
@@ -103,6 +121,7 @@ export const insertSubadminSchema = createInsertSchema(subadmins).omit({ id: tru
 
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type IqxReadingReport = typeof iqxReadingReports.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type QuickMessage = typeof quickMessages.$inferSelect;
 export type Agent = typeof agents.$inferSelect;
@@ -253,3 +272,4 @@ export const learnedRules = pgTable("learned_rules", {
 export const insertLearnedRuleSchema = createInsertSchema(learnedRules).omit({ id: true, createdAt: true });
 export type LearnedRule = typeof learnedRules.$inferSelect;
 export type InsertLearnedRule = z.infer<typeof insertLearnedRuleSchema>;
+

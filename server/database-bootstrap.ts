@@ -91,6 +91,26 @@ export async function ensureDatabaseSchema(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS iqx_reading_reports (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(40) NOT NULL UNIQUE,
+      result_id VARCHAR(64),
+      phone VARCHAR(40) NOT NULL,
+      conversation_id INTEGER REFERENCES conversations(id),
+      student_name TEXT,
+      report_data JSONB,
+      pdf_file_name TEXT,
+      whatsapp_media_id VARCHAR(128),
+      whatsapp_message_id VARCHAR(128),
+      status VARCHAR(30) NOT NULL DEFAULT 'pending',
+      error TEXT,
+      requested_at TIMESTAMP DEFAULT NOW(),
+      generated_at TIMESTAMP,
+      sent_at TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_settings (
       id SERIAL PRIMARY KEY,
       enabled BOOLEAN DEFAULT false,
@@ -265,3 +285,4 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
   schemaEnsured = true;
 }
+

@@ -111,6 +111,65 @@ let dailyCostSettingsTableEnsured = false;
 let analyticsViewPermissionsTableEnsured = false;
 const PUSH_SETTINGS_CACHE_TTL_MS = 15000;
 const DEFAULT_PUBLIC_BASE_URL = "https://iqexcelencia.com";
+const IQX_REPORT_CODE_REGEX = /\bIQX-R-[A-Z0-9]{32}\b/;
+const IQX_REPORT_API_BASE = "https://iqexponencial.app/api/crm/reading-report";
+const IQX_REPORT_QR_URL = "https://iqexponencial.com";
+
+interface IqxReadingReportResponse {
+  code: string;
+  resultId: string;
+  reportType: "reading_iqx";
+  reportVersion: number;
+  createdAt: string | null;
+  student: {
+    name: string;
+    email: string | null;
+    phone: string | null;
+    age: string | null;
+    country: string | null;
+    countryCode: string | null;
+    state: string | null;
+    city: string | null;
+    grade: string | null;
+    institution: string | null;
+    studentType: string | null;
+    semester: string | null;
+    isProfessional: boolean | null;
+    profession: string | null;
+    occupation: string | null;
+    workplace: string | null;
+    comment: string | null;
+  };
+  reading: {
+    category: string | null;
+    title: string | null;
+    wordCount: number | null;
+    themeNumber: number | null;
+    language: string | null;
+    content: string | null;
+  };
+  scores: {
+    comprehension: number | null;
+    speedWpm: number | null;
+    maxSpeedWpm: number | null;
+    correctAnswers: number | null;
+    totalAnswers: number | null;
+    readingTimeSeconds: number | null;
+    questionsTimeSeconds: number | null;
+    readerCategory: string | null;
+  };
+  cognitiveProfile: {
+    answers: unknown;
+    score: number | null;
+    profile: string | null;
+    mainNeed: string | null;
+    interest: string | null;
+  };
+  source: {
+    sessionId: string | null;
+    isPwa: boolean | null;
+  };
+}
 
 function getRuntimePublicDir() {
   if (process.env.NODE_ENV === "production") {
@@ -1767,6 +1826,509 @@ async function sendToWhatsApp(to: string, type: 'text' | 'image' | 'interactive'
   }
 }
 
+async function sendDocumentBufferToWhatsApp(to: string, fileBuffer: Buffer, fileName: string, caption?: string) {
+  const token = process.env.META_ACCESS_TOKEN;
+  const phoneId = process.env.WA_PHONE_NUMBER_ID;
+  if (!token || !phoneId) {
+    throw new Error("Missing Meta configuration");
+  }
+
+  const safeFileName = fileName.trim() || `documento-${Date.now()}.pdf`;
+  const FormData = (await import("form-data")).default;
+  const formData = new FormData();
+  formData.append("file", fileBuffer, { filename: safeFileName, contentType: "application/pdf" });
+  formData.append("messaging_product", "whatsapp");
+  formData.append("type", "application/pdf");
+
+  const uploadRes = await axios.post(
+    `https://graph.facebook.com/v24.0/${phoneId}/media`,
+    formData,
+    { headers: { Authorization: `Bearer ${token}`, ...formData.getHeaders() } }
+  );
+  const mediaId = uploadRes.data.id;
+
+  const formattedTo = to.startsWith("+") ? to : `+${to}`;
+  const payload: any = {
+    messaging_product: "whatsapp",
+    to: formattedTo,
+    type: "document",
+    document: { id: mediaId, filename: safeFileName },
+  };
+  if (caption) payload.document.caption = caption;
+
+  const waResponse = await axios.post(
+    `https://graph.facebook.com/v24.0/${phoneId}/messages`,
+    payload,
+    { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+  );
+  const waMessageId = waResponse.data.messages[0].id;
+  const waMessageStatus = waResponse.data.messages[0]?.message_status || null;
+
+  const normalizedTo = to.replace(/^\+/, "");
+  let conversation = await storage.getConversationByWaId(normalizedTo);
+  const lastMessageText = `[pdf] ${safeFileName}`;
+  if (!conversation) {
+    conversation = await storage.createConversation({
+      waId: normalizedTo, contactName: normalizedTo,
+      lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
+    });
+  } else {
+    await storage.updateConversation(conversation.id, {
+      lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
+    });
+  }
+
+  await storage.createMessage({
+    conversationId: conversation.id, waMessageId,
+    direction: "out", type: "document",
+    text: lastMessageText,
+    mediaId, mimeType: "application/pdf",
+    timestamp: Math.floor(Date.now() / 1000).toString(),
+    status: "sent", rawJson: waResponse.data,
+  });
+
+  return { mediaId, waMessageId, waMessageStatus, waResponse: waResponse.data };
+}
+
+function extractIqxReportCode(text?: string | null) {
+  const match = String(text || "").toUpperCase().match(IQX_REPORT_CODE_REGEX);
+  return match?.[0] || null;
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function valueOrDash(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  return escapeHtml(value);
+}
+
+function formatPercent(value: number | null | undefined) {
+  return typeof value === "number" ? `${Math.round(value)}%` : "-";
+}
+
+function formatNumber(value: number | null | undefined, suffix = "") {
+  return typeof value === "number" ? `${Math.round(value)}${suffix}` : "-";
+}
+
+function formatTime(seconds: number | null | undefined) {
+  if (!seconds) return "-";
+  const total = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-BO", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function getEvaluationId(resultId: string, createdAt: string | null) {
+  const date = createdAt ? new Date(createdAt) : new Date();
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const numeric = String(resultId || "").replace(/\D/g, "");
+  const suffix = numeric ? numeric.slice(-3).padStart(3, "0") : "001";
+  return `IQX-${yy}${mm}${dd}-${suffix}`;
+}
+
+function parseAge(value: string | null | undefined) {
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function getUnescoReferenceByAge(age: number | null) {
+  if (!age) return null;
+  if (age <= 7) return { min: 90 };
+  if (age <= 9) return { min: 110 };
+  if (age <= 11) return { min: 150 };
+  if (age <= 13) return { min: 200 };
+  if (age <= 14) return { min: 250 };
+  return { min: 300 };
+}
+
+function getIqxLevel(data: IqxReadingReportResponse) {
+  const comp = data.scores.comprehension ?? 0;
+  const speed = data.scores.speedWpm ?? 0;
+  const category = data.scores.readerCategory;
+  const unesco = getUnescoReferenceByAge(parseAge(data.student.age));
+
+  if (category === "LECTOR CON DIFICULTAD SEVERA") return 1;
+  if (category === "LECTOR CON DIFICULTAD") return 2;
+  if (category === "LECTOR REGULAR") return comp >= 70 ? 3 : 2;
+  if (category === "LECTOR COMPETENTE" && unesco && speed >= unesco.min) return 5;
+  if (category === "LECTOR COMPETENTE") return 4;
+  return 3;
+}
+
+function getProfileDescription(category: string | null) {
+  if (!category) return "Resultado en proceso de interpretacion.";
+  if (category === "LECTOR COMPETENTE") return "Buen nivel de comprension y velocidad lectora.";
+  if (category === "LECTOR REGULAR") return "Comprension funcional con margen claro para elevar la velocidad y consistencia.";
+  if (category === "LECTOR CON DIFICULTAD") return "Necesita reforzar comprension y tecnica lectora para ganar precision.";
+  return "Requiere apoyo prioritario en comprension y base lectora.";
+}
+
+function getProfileTone(category: string | null) {
+  if (category === "LECTOR COMPETENTE") return "competente";
+  if (category === "LECTOR REGULAR") return "regular";
+  if (category === "LECTOR CON DIFICULTAD") return "dificultad";
+  return "severa";
+}
+
+function fileToDataUri(filePath: string, mimeType: string) {
+  if (!fs.existsSync(filePath)) return "";
+  return `data:${mimeType};base64,${fs.readFileSync(filePath).toString("base64")}`;
+}
+
+async function buildIqxReportHtml(data: IqxReadingReportResponse) {
+  const logoPath = path.join(getRuntimePublicDir(), "logo.png");
+  const logoDataUri = fileToDataUri(logoPath, "image/png");
+  const QRCode = await import("qrcode");
+  const qrDataUrl = await QRCode.toDataURL(IQX_REPORT_QR_URL, {
+    width: 220,
+    margin: 1,
+    color: { dark: "#071a3d", light: "#ffffff" },
+  });
+  const level = getIqxLevel(data);
+  const profile = data.scores.readerCategory || "PERFIL EN PROCESO";
+  const tone = getProfileTone(data.scores.readerCategory);
+  const evaluationId = getEvaluationId(data.resultId, data.createdAt);
+  const lowComprehension = (data.scores.comprehension ?? 0) < 80;
+  const recommendation =
+    data.scores.readerCategory === "LECTOR COMPETENTE"
+      ? "Tu perfil muestra un excelente potencial. Con entrenamiento cognitivo personalizado podras mejorar tu comprension, velocidad lectora y rendimiento academico o profesional."
+      : "Tu perfil muestra oportunidades claras de crecimiento. Con entrenamiento cognitivo personalizado podras mejorar tu comprension, velocidad lectora y rendimiento academico o profesional.";
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: 1240px 1754px; margin: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #0f172a; font-family: Inter, Arial, system-ui, sans-serif; }
+    .page { width: 1240px; padding: 32px; background: #fff; }
+    .report { border: 1px solid #e2e8f0; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 60px rgba(15,23,42,0.16); }
+    .header { display: grid; grid-template-columns: 340px 1fr; background: #fff; }
+    .brand { padding: 28px 40px 24px; }
+    .brand img { width: 210px; max-height: 96px; object-fit: contain; display: block; }
+    .brand-title { margin-top: 16px; font-size: 18px; font-weight: 900; color: #071a3d; }
+    .brand-line { width: 220px; height: 3px; background: #06b6d4; margin: 12px 0; }
+    .brand-sub { font-size: 11px; font-weight: 800; color: #475569; letter-spacing: .5px; }
+    .hero { position: relative; min-height: 110px; padding: 30px 44px; background: #071a3d; color: #fff; overflow: hidden; }
+    .hero:before { content: ""; position: absolute; left: -36px; top: 0; width: 86px; height: 140px; transform: skewX(-22deg); background: linear-gradient(180deg,#22d3ee,#0891b2); }
+    .hero h1 { position: relative; margin: 0; font-size: 42px; line-height: 1; font-weight: 950; letter-spacing: 0; }
+    .hero p { position: relative; margin: 10px 0 0; font-size: 18px; color: #dbeafe; font-weight: 700; }
+    .facts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 22px 32px 30px; background: #f8fafc; }
+    .fact { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 16px; min-height: 92px; }
+    .fact .label { color: #475569; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    .fact .value { margin-top: 8px; color: #071a3d; font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
+    .section { padding: 30px 32px; }
+    .grid-main { display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 28px; padding: 24px; }
+    .avatar { width: 128px; height: 128px; border-radius: 64px; margin: 0 auto 18px; background: linear-gradient(135deg,#06b6d4,#071a3d); display:flex; align-items:center; justify-content:center; color:#fff; font-size: 56px; font-weight: 900; }
+    .eyebrow { color: #475569; font-size: 12px; font-weight: 900; text-transform: uppercase; text-align: center; }
+    .profile { margin-top: 12px; font-size: 28px; line-height: 1.05; font-weight: 950; text-align: center; }
+    .profile.competente { color: #22c55e; }
+    .profile.regular { color: #eab308; }
+    .profile.dificultad { color: #f97316; }
+    .profile.severa { color: #ef4444; }
+    .desc { margin-top: 16px; color: #475569; font-size: 16px; line-height: 1.45; text-align: center; }
+    .pill { display: inline-block; padding: 10px 18px; border-radius: 999px; color: #fff; font-weight: 900; background: linear-gradient(90deg,#06b6d4,#0b3a72); }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
+    .metric { min-height: 150px; border-radius: 22px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 18px; }
+    .metric .num { font-size: 44px; line-height: 1; color: #071a3d; font-weight: 950; }
+    .metric .txt { margin-top: 10px; color: #475569; font-size: 14px; font-weight: 800; }
+    .center-title { text-align: center; color: #071a3d; font-size: 26px; font-weight: 950; margin: 0 0 20px; }
+    .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 18px; border: 1px solid #e2e8f0; font-size: 13px; }
+    th { color: #fff; padding: 12px 10px; text-align: left; font-size: 13px; }
+    .bolivia th { background: #22c55e; }
+    .unesco th { background: #0b3a72; }
+    td { padding: 10px; border-top: 1px solid #e2e8f0; color: #334155; vertical-align: top; }
+    .notice { margin-top: 16px; border-left: 6px solid #f97316; background: #fff7ed; color: #9a3412; padding: 16px 18px; border-radius: 14px; font-weight: 800; }
+    .tri { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .tri h3 { margin: 0 0 12px; color: #071a3d; font-size: 20px; font-weight: 950; }
+    .tri ul { margin: 0; padding-left: 20px; color: #475569; font-size: 15px; line-height: 1.55; }
+    .level { width: 150px; height: 150px; border-radius: 75px; margin: 8px auto; background: conic-gradient(#06b6d4 ${level * 20}%, #e2e8f0 0); display:flex; align-items:center; justify-content:center; }
+    .level-inner { width: 112px; height: 112px; border-radius: 56px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:950; color:#071a3d; }
+    .blue-band { margin: 0 32px; border-radius: 28px; background: #0b2e63; color: #fff; padding: 30px; }
+    .blue-band .lead { font-size: 28px; line-height: 1.15; font-weight: 950; margin: 0; }
+    .blue-band .sub { margin: 8px 0 18px; color: #bae6fd; font-size: 18px; font-weight: 800; }
+    .cog { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .cog div { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; padding: 14px; }
+    .cog span { display:block; color:#bae6fd; font-size:11px; font-weight:900; text-transform:uppercase; }
+    .cog strong { display:block; margin-top:6px; font-size:17px; overflow-wrap:anywhere; }
+    .rec-grid { display: grid; grid-template-columns: 1fr 270px; gap: 24px; }
+    .rec-text { color:#475569; font-size:18px; line-height:1.5; font-weight:700; }
+    .mini { display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin-top:18px; }
+    .mini div { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:14px; }
+    .mini span { color:#64748b; font-size:11px; font-weight:900; text-transform:uppercase; }
+    .mini strong { display:block; margin-top:6px; color:#071a3d; font-size:15px; overflow-wrap:anywhere; }
+    .qr { text-align:center; border:1px solid #e2e8f0; border-radius:24px; padding:18px; }
+    .qr img { width: 190px; height: 190px; }
+    .qr div { color:#071a3d; font-weight:900; font-size:13px; overflow-wrap:anywhere; }
+    .footer { background:#081735; color:#fff; padding:28px 34px; text-align:center; }
+    .footer .big { font-size:25px; line-height:1.15; font-weight:950; }
+    .badges { margin:18px 0; display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+    .badges span { border:1px solid rgba(255,255,255,.22); border-radius:999px; padding:8px 14px; color:#dbeafe; font-size:12px; font-weight:800; }
+    .footer .line { border-top:1px solid rgba(255,255,255,.2); padding-top:14px; color:#e0f2fe; font-weight:800; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="report">
+      <div class="header">
+        <div class="brand">
+          ${logoDataUri ? `<img src="${logoDataUri}" alt="IQX" />` : ""}
+          <div class="brand-title">INTELIGENCIA EXPONENCIAL</div>
+          <div class="brand-line"></div>
+          <div class="brand-sub">METODO X - NEUROACELERACION COGNITIVA</div>
+        </div>
+        <div class="hero">
+          <h1>REPORTE DE RESULTADOS IQX</h1>
+          <p>EVALUACION DE COMPRENSION LECTORA</p>
+        </div>
+        <div class="facts">
+          <div class="fact"><div class="label">Alumno</div><div class="value">${valueOrDash(data.student.name)}</div></div>
+          <div class="fact"><div class="label">Edad</div><div class="value">${valueOrDash(data.student.age)}</div></div>
+          <div class="fact"><div class="label">Fecha del Test</div><div class="value">${formatDate(data.createdAt)}</div></div>
+          <div class="fact"><div class="label">ID Evaluacion</div><div class="value">${evaluationId}</div></div>
+        </div>
+      </div>
+
+      <div class="section grid-main">
+        <div class="card">
+          <div class="avatar">${escapeHtml((data.student.name || "I").trim().charAt(0).toUpperCase() || "I")}</div>
+          <div class="eyebrow">Perfil obtenido</div>
+          <div class="profile ${tone}">${escapeHtml(profile)}</div>
+          <div class="desc">${escapeHtml(getProfileDescription(data.scores.readerCategory))}</div>
+        </div>
+        <div class="card">
+          <div class="pill">RESULTADOS GENERALES</div>
+          <div class="metrics">
+            <div class="metric"><div class="num">${formatPercent(data.scores.comprehension)}</div><div class="txt">Comprension lectora</div></div>
+            <div class="metric"><div class="num">${formatNumber(data.scores.speedWpm)}</div><div class="txt">Velocidad lectora PPM</div></div>
+            <div class="metric"><div class="num">${formatTime(data.scores.readingTimeSeconds)}</div><div class="txt">Tiempo de lectura</div></div>
+            <div class="metric"><div class="num">${formatTime(data.scores.questionsTimeSeconds)}</div><div class="txt">Tiempo de respuesta</div></div>
+          </div>
+          <div class="desc">Respuestas correctas: ${formatNumber(data.scores.correctAnswers)} / ${formatNumber(data.scores.totalAnswers)}</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2 class="center-title">COMPARATIVO CON PARAMETROS DE REFERENCIA</h2>
+        <div class="tables">
+          <table class="bolivia">
+            <tr><th>Rango de edad</th><th>Velocidad lectora PPM</th><th>Nivel de comprension</th></tr>
+            <tr><td>7 anos</td><td>60 - 90</td><td>Comprende textos simples y cortos</td></tr>
+            <tr><td>8 anos</td><td>70 - 110</td><td>Comprende textos mas complejos con apoyo</td></tr>
+            <tr><td>9 anos</td><td>80 - 120</td><td>Extrae informacion detallada</td></tr>
+            <tr><td>10 anos</td><td>90 - 140</td><td>Comprende textos narrativos y expositivos</td></tr>
+            <tr><td>11 anos</td><td>100 - 150</td><td>Analiza y sintetiza informacion</td></tr>
+            <tr><td>12 anos</td><td>110 - 160</td><td>Comprension profunda de textos variados</td></tr>
+            <tr><td>13 a 14 anos</td><td>150 - 170</td><td>Analiza y sintetiza informacion</td></tr>
+            <tr><td>15 a 17 anos</td><td>150 - 200</td><td>Comprension profunda de textos extensos</td></tr>
+            <tr><td>18 anos en adelante</td><td>200+</td><td>Comprension profunda de textos extensos</td></tr>
+          </table>
+          <table class="unesco">
+            <tr><th>Rango de edad</th><th>Velocidad lectora PPM</th><th>Nivel de comprension</th></tr>
+            <tr><td>7 anos</td><td>90 - 110</td><td>Comprende textos simples y cortos</td></tr>
+            <tr><td>8 y 9 anos</td><td>110 - 150</td><td>Comprende textos mas complejos con apoyo</td></tr>
+            <tr><td>10 y 11 anos</td><td>150 - 200</td><td>Extrae informacion detallada</td></tr>
+            <tr><td>12 y 13 anos</td><td>200 - 250</td><td>Comprende textos narrativos y expositivos</td></tr>
+            <tr><td>13 y 14 anos</td><td>250 - 300</td><td>Analiza y sintetiza informacion</td></tr>
+            <tr><td>15 anos en adelante</td><td>300+</td><td>Comprension profunda de textos variados</td></tr>
+          </table>
+        </div>
+        ${lowComprehension ? `<div class="notice">No se puede valorar la velocidad lectora con la escala porque la comprension presentada es menor al 80%. Primero debe priorizarse la comprension lectora.</div>` : ""}
+      </div>
+
+      <div class="section tri">
+        <div class="card"><h3>ANALISIS IQX</h3><ul><li>${escapeHtml(getProfileDescription(data.scores.readerCategory))}</li><li>Texto leido: ${valueOrDash(data.reading.title)}</li><li>Comprension: ${formatPercent(data.scores.comprehension)}</li></ul></div>
+        <div class="card"><h3>NIVEL IQX</h3><div class="level"><div class="level-inner">${level}</div></div><div class="desc">Nivel ${level} de 5</div></div>
+        <div class="card"><h3>PROYECCION DE MEJORA</h3><ul><li>Comprension profunda +30%</li><li>Velocidad lectora +40%</li><li>Retencion de informacion +35%</li><li>Analisis y pensamiento critico +35%</li></ul></div>
+      </div>
+
+      <div class="blue-band">
+        <p class="lead">Entrenar tu cerebro es aprender mas rapido, comprender mejor y alcanzar tu maximo potencial.</p>
+        <p class="sub">En IQX te ayudamos a lograrlo.</p>
+        <div class="cog">
+          <div><span>Perfil</span><strong>${valueOrDash(data.cognitiveProfile.profile)}</strong></div>
+          <div><span>Area clave</span><strong>${valueOrDash(data.cognitiveProfile.mainNeed)}</strong></div>
+          <div><span>Interes</span><strong>${valueOrDash(data.cognitiveProfile.interest)}</strong></div>
+          <div><span>Puntaje</span><strong>${formatNumber(data.cognitiveProfile.score)}</strong></div>
+        </div>
+      </div>
+
+      <div class="section rec-grid">
+        <div class="card">
+          <div class="pill">RECOMENDACION IQX</div>
+          <p class="rec-text">${escapeHtml(recommendation)}</p>
+          <div class="mini">
+            <div><span>Texto leido</span><strong>${valueOrDash(data.reading.title)}</strong></div>
+            <div><span>Palabras</span><strong>${formatNumber(data.reading.wordCount)}</strong></div>
+            <div><span>Institucion</span><strong>${valueOrDash(data.student.institution)}</strong></div>
+          </div>
+        </div>
+        <div class="qr">
+          <img src="${qrDataUrl}" alt="QR IQX" />
+          <div>${escapeHtml(IQX_REPORT_QR_URL)}</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="big">TU MENTE TIENE UN POTENCIAL ILIMITADO.<br />ENTRENALA. ACELERALA. TRANSFORMA TU FUTURO.</div>
+        <div class="badges"><span>Neurociencia aplicada</span><span>Entrenamiento cognitivo</span><span>Resultados medibles</span><span>Metodo X comprobado</span></div>
+        <div class="line">www.iqexponencial.com &nbsp;&nbsp; SIGUENOS EN REDES SOCIALES @iqexponencial</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function generateIqxReportPdf(data: IqxReadingReportResponse) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1240, height: 1754 }, deviceScaleFactor: 1 });
+    await page.setContent(await buildIqxReportHtml(data), { waitUntil: "networkidle" });
+    const pdf = await page.pdf({
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
+    return Buffer.from(pdf);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function fetchIqxReadingReport(code: string): Promise<IqxReadingReportResponse> {
+  const apiKey = process.env.CRM_API_KEY;
+  if (!apiKey) {
+    throw new Error("CRM_API_KEY is not configured");
+  }
+
+  const response = await axios.get(`${IQX_REPORT_API_BASE}/${encodeURIComponent(code)}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    timeout: 20000,
+  });
+  return response.data;
+}
+
+async function upsertIqxReportRequest(code: string, from: string, conversationId: number) {
+  const result: any = await db.execute(sql`
+    INSERT INTO iqx_reading_reports (code, phone, conversation_id, status, updated_at)
+    VALUES (${code}, ${from}, ${conversationId}, 'pending', NOW())
+    ON CONFLICT (code)
+    DO UPDATE SET
+      phone = EXCLUDED.phone,
+      conversation_id = EXCLUDED.conversation_id,
+      updated_at = NOW()
+    RETURNING id, status, whatsapp_message_id
+  `);
+  return result.rows?.[0] as { id: number; status: string; whatsapp_message_id: string | null } | undefined;
+}
+
+async function markIqxReportStatus(id: number, status: string, error?: string) {
+  await db.execute(sql`
+    UPDATE iqx_reading_reports
+    SET status = ${status}, error = ${error || null}, updated_at = NOW()
+    WHERE id = ${id}
+  `);
+}
+
+async function claimIqxReportProcessing(id: number) {
+  const result: any = await db.execute(sql`
+    UPDATE iqx_reading_reports
+    SET status = 'processing', error = NULL, updated_at = NOW()
+    WHERE id = ${id}
+      AND status IN ('pending', 'failed')
+    RETURNING id
+  `);
+  return Boolean(result.rows?.[0]);
+}
+
+async function handleIqxReportRequest(params: { code: string; from: string; conversationId: number }) {
+  const { code, from, conversationId } = params;
+  const reportRow = await upsertIqxReportRequest(code, from, conversationId);
+  if (!reportRow) return;
+
+  if (reportRow.status === "sent") {
+    await sendToWhatsApp(from, "text", { text: "Tu informe completo IQX ya fue enviado para este codigo. Si necesitas reenviarlo, escribenos y lo revisamos." });
+    return;
+  }
+
+  const claimed = await claimIqxReportProcessing(reportRow.id);
+  if (!claimed) {
+    await sendToWhatsApp(from, "text", { text: "Ya estamos generando tu informe completo IQX. Te lo enviaremos en unos segundos." });
+    return;
+  }
+
+  await sendToWhatsApp(from, "text", { text: "Recibimos tu codigo. Estamos generando tu informe completo IQX." });
+
+  try {
+    const reportData = await fetchIqxReadingReport(code);
+    const pdfBuffer = await generateIqxReportPdf(reportData);
+    const fileName = `informe-iqx-${sanitizeFilePart(code)}.pdf`;
+    const sent = await sendDocumentBufferToWhatsApp(
+      from,
+      pdfBuffer,
+      fileName,
+      "Tu informe completo IQX de lectura."
+    );
+
+    await db.execute(sql`
+      UPDATE iqx_reading_reports
+      SET
+        result_id = ${reportData.resultId},
+        student_name = ${reportData.student.name || null},
+        report_data = ${JSON.stringify(reportData)}::jsonb,
+        pdf_file_name = ${fileName},
+        whatsapp_media_id = ${sent.mediaId},
+        whatsapp_message_id = ${sent.waMessageId},
+        status = 'sent',
+        error = NULL,
+        generated_at = NOW(),
+        sent_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${reportRow.id}
+    `);
+  } catch (error: any) {
+    const status = error?.response?.status;
+    const errorMessage = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Error desconocido";
+    await markIqxReportStatus(reportRow.id, "failed", String(errorMessage).slice(0, 1000));
+
+    if (status === 404) {
+      await sendToWhatsApp(from, "text", { text: "No encontramos un resultado IQX para ese codigo. Verifica que lo hayas copiado completo." });
+    } else if (status === 401) {
+      await sendToWhatsApp(from, "text", { text: "No pudimos validar el acceso al informe IQX. El equipo revisara la configuracion." });
+    } else if (String(errorMessage).includes("CRM_API_KEY")) {
+      await sendToWhatsApp(from, "text", { text: "El CRM aun no tiene configurada la clave para generar informes IQX. El equipo debe completar la configuracion." });
+    } else {
+      await sendToWhatsApp(from, "text", { text: "No pudimos generar tu informe IQX en este momento. Intentalo nuevamente en unos minutos." });
+    }
+    console.error("[IQX Report] failed:", { code, from, status, error: errorMessage });
+  }
+}
+
 // Send AI response with interactive elements if detected
 async function sendAiResponseToWhatsApp(to: string, responseText: string) {
   const sanitizedResponseText = repairMojibakeText(responseText);
@@ -2166,6 +2728,18 @@ export async function registerRoutes(
                 from,
                 conversation.assignedAgentId,
               );
+
+              const iqxReportCode = extractIqxReportCode(messageText);
+              if (iqxReportCode) {
+                void handleIqxReportRequest({
+                  code: iqxReportCode,
+                  from,
+                  conversationId: conversation.id,
+                }).catch((error) => {
+                  console.error("[IQX Report] unhandled processing error:", error);
+                });
+                continue;
+              }
 
               // 5. AI Auto-Response with debounce buffer (groups rapid messages)
               let agentAllowsAi = true;
@@ -3092,60 +3666,8 @@ export async function registerRoutes(
       }
 
       const safeFileName = file.originalname?.trim() || `documento-${Date.now()}.pdf`;
-      const FormData = (await import("form-data")).default;
-      const formData = new FormData();
-      formData.append("file", file.buffer, { filename: safeFileName, contentType: "application/pdf" });
-      formData.append("messaging_product", "whatsapp");
-      formData.append("type", "application/pdf");
-
-      const uploadRes = await axios.post(
-        `https://graph.facebook.com/v24.0/${phoneId}/media`,
-        formData,
-        { headers: { Authorization: `Bearer ${token}`, ...formData.getHeaders() } }
-      );
-      const mediaId = uploadRes.data.id;
-
-      const formattedTo = to.startsWith('+') ? to : `+${to}`;
-      const payload: any = {
-        messaging_product: "whatsapp",
-        to: formattedTo,
-        type: "document",
-        document: { id: mediaId, filename: safeFileName },
-      };
-      if (caption) payload.document.caption = caption;
-
-      const waResponse = await axios.post(
-        `https://graph.facebook.com/v24.0/${phoneId}/messages`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
-      );
-      const waMessageId = waResponse.data.messages[0].id;
-      const waMessageStatus = waResponse.data.messages[0]?.message_status || null;
-
-      const normalizedTo = to.replace(/^\+/, "");
-      let conversation = await storage.getConversationByWaId(normalizedTo);
-      const lastMessageText = `[pdf] ${safeFileName}`;
-      if (!conversation) {
-        conversation = await storage.createConversation({
-          waId: normalizedTo, contactName: normalizedTo,
-          lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
-        });
-      } else {
-        await storage.updateConversation(conversation.id, {
-          lastMessage: lastMessageText, lastMessageTimestamp: new Date(),
-        });
-      }
-
-      await storage.createMessage({
-        conversationId: conversation.id, waMessageId,
-        direction: "out", type: "document",
-        text: lastMessageText,
-        mediaId, mimeType: "application/pdf",
-        timestamp: Math.floor(Date.now() / 1000).toString(),
-        status: "sent", rawJson: waResponse.data,
-      });
-
-      res.json({ success: true, messageId: waMessageId, messageStatus: waMessageStatus });
+      const sent = await sendDocumentBufferToWhatsApp(to, file.buffer, safeFileName, caption);
+      res.json({ success: true, messageId: sent.waMessageId, messageStatus: sent.waMessageStatus });
     } catch (error: any) {
       const details = error.response?.data?.error?.message || error.response?.data?.message || error.message;
       console.error("Document upload error:", error.response?.data || error.message);
