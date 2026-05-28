@@ -142,6 +142,7 @@ export function buildCurrentDateContext(now = new Date()): string {
     `- Hoy es ${readableDate}${isoDate ? ` (${isoDate})` : ""}.`,
     `- Hora actual aproximada: ${readableTime}.`,
     '- Si el cliente pregunta por "hoy", "mañana", agenda, vencimientos o fechas relativas, responde usando esta fecha del CRM. No inventes meses ni uses fechas de entrenamiento.',
+    "- Esta fecha prevalece sobre cualquier fecha antigua escrita en el prompt, reglas aprendidas o historial.",
   ].join("\n");
 }
 function getOpenAiClient(): OpenAI {
@@ -345,6 +346,9 @@ REGLA LOGISTICA INMUTABLE:
 - "No habilitada para pago al recibir" NO significa "sin envio".
 
 ${instructions}
+
+=== FECHA ACTUAL AUTORITATIVA ===
+${currentDateContext}
 
 === REGLAS ===
 - Responde en 2-5 líneas máximo
