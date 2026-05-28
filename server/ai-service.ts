@@ -5,6 +5,7 @@ import type { Message, Product } from "@shared/schema";
 const DEFAULT_PUBLIC_BASE_URL = "https://iqexcelencia.com";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+const CRM_TIME_ZONE = "America/La_Paz";
 
 type AiProvider = "openai" | "gemini";
 
@@ -109,6 +110,40 @@ function getDefaultModelForProvider(provider: AiProvider): string {
   return provider === "gemini" ? DEFAULT_GEMINI_MODEL : DEFAULT_OPENAI_MODEL;
 }
 
+export function buildCurrentDateContext(now = new Date()): string {
+  const dateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CRM_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = dateParts.find((part) => part.type === "year")?.value || "";
+  const month = dateParts.find((part) => part.type === "month")?.value || "";
+  const day = dateParts.find((part) => part.type === "day")?.value || "";
+  const isoDate = year && month && day ? `${year}-${month}-${day}` : "";
+
+  const readableDate = new Intl.DateTimeFormat("es-BO", {
+    timeZone: CRM_TIME_ZONE,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+  const readableTime = new Intl.DateTimeFormat("es-BO", {
+    timeZone: CRM_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+
+  return [
+    "CONTEXTO DE FECHA ACTUAL DEL CRM:",
+    `- Zona horaria oficial: ${CRM_TIME_ZONE} (Bolivia).`,
+    `- Hoy es ${readableDate}${isoDate ? ` (${isoDate})` : ""}.`,
+    `- Hora actual aproximada: ${readableTime}.`,
+    '- Si el cliente pregunta por "hoy", "mañana", agenda, vencimientos o fechas relativas, responde usando esta fecha del CRM. No inventes meses ni uses fechas de entrenamiento.',
+  ].join("\n");
+}
 function getOpenAiClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -297,11 +332,13 @@ export async function generateAiResponse(
     const learnedRulesContext = learnedRules.length > 0 
       ? "\n=== REGLAS APRENDIDAS ===\n" + learnedRules.map(r => `- ${r.rule}`).join("\n")
       : "";
+    const currentDateContext = buildCurrentDateContext();
     
     // Build system prompt
     const systemPrompt = `NOMBRE DE ASESORA PARA ESTA CONVERSACION: ${resolvedAdvisorName}
 REGLA INMUTABLE: Si te presentas o mencionas nombre de asesora, usa SIEMPRE "${resolvedAdvisorName}".
 Solo usa "Isabella" cuando el nombre asignado sea exactamente Isabella.
+${currentDateContext}
 REGLA LOGISTICA INMUTABLE:
 - Nunca niegues envio por ciudad o provincia.
 - Si la ciudad NO esta habilitada para pago al recibir, SI confirmas envio por transportadora/flota/trufi.
