@@ -31,6 +31,7 @@ const WHATSAPP_VIDEO_MAX_BYTES = 16 * 1024 * 1024;
 const AI_DEBOUNCE_MS = 3000;
 const INCOMING_PUSH_COOLDOWN_MS = 60000;
 const BLOCKED_LEGACY_BUTTON_SETS = [
+  ["diabetes/azucar", "peso/antojos", "estres/calambres"],
   ["azucar y peso", "dolor y estres", "dolor articular"],
   ["solo diabetes", "diabetes peso"],
 ];

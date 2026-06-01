@@ -185,7 +185,7 @@ async function checkAndSendFollowUps() {
       if (alreadySentCatalog) continue;
 
       const catalogMessage =
-        "Si gusta, le muestro opciones segun lo que busca. [BOTONES: Diabetes/Azucar, Peso/Antojos, Estres/Calambres]";
+        "Si gusta, le muestro opciones segun lo que busca. [BOTONES: Ver catalogo, Ver precios, Hablar con asesor]";
 
       try {
         await sendAiResponseFn(conv.waId, catalogMessage);
