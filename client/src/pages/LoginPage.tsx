@@ -82,7 +82,7 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-white">
-            IQMAXIMO Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
+            IQExcelencia Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">IA</span>
           </h1>
           <p className="text-emerald-200/70 text-sm flex items-center justify-center gap-2">
             <Sparkles className="h-4 w-4" />

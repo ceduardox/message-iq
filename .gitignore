@@ -7,3 +7,5 @@ vite.config.ts.*
 .env
 .env.*
 !.env.example
+railway_dump.sql
+tmp-iqx-preview/

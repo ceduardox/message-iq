@@ -145,6 +145,7 @@ export function buildCurrentDateContext(now = new Date()): string {
     "- Esta fecha prevalece sobre cualquier fecha antigua escrita en el prompt, reglas aprendidas o historial.",
   ].join("\n");
 }
+
 function getOpenAiClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -317,7 +318,7 @@ export async function generateAiResponse(
         content: m.text || `[${m.type}]`,
       })) as Array<{ role: "user" | "assistant"; content: string }>;
 
-    const resolvedAdvisorName = (advisorName || "").trim() || "Isabella";
+    const resolvedAdvisorName = (advisorName || "").trim() || "Asesora";
     const promptTemplate = settings.systemPrompt || "Eres un asistente de ventas amigable.";
     let instructions = promptTemplate
       .replace(/\{\{\s*AGENT_NAME\s*\}\}/gi, resolvedAdvisorName)
@@ -338,7 +339,7 @@ export async function generateAiResponse(
     // Build system prompt
     const systemPrompt = `NOMBRE DE ASESORA PARA ESTA CONVERSACION: ${resolvedAdvisorName}
 REGLA INMUTABLE: Si te presentas o mencionas nombre de asesora, usa SIEMPRE "${resolvedAdvisorName}".
-Solo usa "Isabella" cuando el nombre asignado sea exactamente Isabella.
+No uses otros nombres distintos al asignado.
 ${currentDateContext}
 REGLA LOGISTICA INMUTABLE:
 - Nunca niegues envio por ciudad o provincia.
@@ -355,8 +356,8 @@ ${currentDateContext}
 - Máximo 2 preguntas por respuesta
 - Tono humano y cálido
 - Para enviar imagen usa: [IMAGEN: url]
-- Para enviar botones interactivos (máximo 3 opciones, 20 caracteres cada una) usa: [BOTONES: opción1, opción2, opción3]. Ejemplo: Te paso nuestros productos [BOTONES: Berberina, Citrato Magnesio, Ver más]
-- Para enviar una lista interactiva (hasta 10 opciones) usa: [LISTA: título del botón | opción1, opción2, opción3]. Ejemplo: Mira nuestro catálogo [LISTA: Ver productos | Berberina, Citrato Magnesio, Bitter Melon]
+- Para enviar botones interactivos (máximo 3 opciones, 20 caracteres cada una) usa: [BOTONES: opción1, opción2, opción3]. Ejemplo: Te paso opciones [BOTONES: Producto A, Producto B, Hablar con asesor]
+- Para enviar una lista interactiva (hasta 10 opciones) usa: [LISTA: título del botón | opción1, opción2, opción3]. Ejemplo: Mira el catálogo [LISTA: Ver productos | Producto A, Producto B, Producto C]
 - IMPORTANTE: Cuando las instrucciones mencionen "botones" o el cliente deba elegir entre opciones, SIEMPRE usa el formato [BOTONES:] o [LISTA:]. NUNCA escribas las opciones como texto plano con asteriscos o viñetas.
 - IMPORTANTE: Cuando el cliente confirme el pedido con TODOS los datos (producto, cantidad, dirección/ubicación), escribe [PEDIDO_LISTO] al final de tu respuesta para marcar que hay un pedido listo para entregar.
 - Un pedido está listo cuando tienes: producto, cantidad, y dirección de entrega (ubicación GPS o dirección escrita)

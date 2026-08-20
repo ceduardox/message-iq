@@ -95,6 +95,7 @@ export const iqxReadingReports = pgTable("iqx_reading_reports", {
   sentAt: timestamp("sent_at"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
 // === RELATIONS ===
 
 export const conversationsRelations = relations(conversations, ({ many }) => ({
@@ -182,7 +183,7 @@ export const aiSettings = pgTable("ai_settings", {
   elevenlabsVoiceId: varchar("elevenlabs_voice_id", { length: 50 }).default("JBFqnCBsd6RMkjVDRZzb"), // ElevenLabs voice ID
   ttsSpeed: integer("tts_speed").default(100), // 25-400, divide by 100 for actual value (0.25x - 4.0x)
   ttsInstructions: text("tts_instructions"), // Only for realistic voices - describes tone/style
-  learningMode: boolean("learning_mode").default(false), // Enable/disable learning from human responses
+  learningMode: boolean("learning_mode").default(true), // When true, disables fixed commerce flow (legacy)
   learningMessageCount: integer("learning_message_count").default(10), // How many messages to read for learning
   followUpEnabled: boolean("follow_up_enabled").default(false),
   followUpMinutes: integer("follow_up_minutes").default(20),
@@ -272,4 +273,3 @@ export const learnedRules = pgTable("learned_rules", {
 export const insertLearnedRuleSchema = createInsertSchema(learnedRules).omit({ id: true, createdAt: true });
 export type LearnedRule = typeof learnedRules.$inferSelect;
 export type InsertLearnedRule = z.infer<typeof insertLearnedRuleSchema>;
-

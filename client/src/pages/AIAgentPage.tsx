@@ -712,7 +712,7 @@ export default function AIAgentPage() {
                   </div>
                   <Textarea
                     id="primary-prompt"
-                    placeholder="Ej: Eres Isabella, asistente de ventas amigable. Responde siempre en espanol. Si quieren comprar, pide ubicacion..."
+                    placeholder="Ej: Eres {{AGENT_NAME}}, asesor de ventas de [empresa]. Responde siempre en español. Si el cliente necesita opciones, usa [BOTONES:] o [LISTA:]."
                     value={primaryPrompt}
                     onChange={(e) => {
                       const newValue = e.target.value.slice(0, maxPromptChars);
@@ -736,7 +736,7 @@ export default function AIAgentPage() {
                   </div>
                   <Textarea
                     id="secondary-prompt"
-                    placeholder="Use este espacio para otro flujo, por ejemplo reclutamiento o filtros informativos."
+                    placeholder="Ej: Flujo alternativo (soporte, reclutamiento, FAQs)."
                     value={secondaryPrompt}
                     onChange={(e) => {
                       const newValue = e.target.value.slice(0, maxPromptChars);
@@ -751,6 +751,9 @@ export default function AIAgentPage() {
                     {secondaryPrompt.length} / {maxPromptChars} caracteres
                   </div>
                 </div>
+                <p className="text-xs text-slate-400">
+                  {"Tip: puedes usar {{AGENT_NAME}} o {{NOMBRE_AGENTE}} en el prompt para insertar el nombre del asesor."}
+                </p>
               </div>
             </div>
             {promptEdited && (
@@ -946,7 +949,7 @@ export default function AIAgentPage() {
               <div className="space-y-1">
                 <Label htmlFor="fixedCommerceFlow" className="text-slate-300">Usar Flujo Comercial Fijo</Label>
                 <p className="text-xs text-slate-500">
-                  Mantiene activos los menus y respuestas fijas del CRM. Si el prompt tiene instrucciones, este flujo se ignora. Para usar solo el prompt del cliente y sus botones, desact?valo.
+                  Mantiene activos los menus y respuestas fijas del CRM. Si el prompt tiene instrucciones, este flujo se ignora. Para usar solo el prompt del cliente y sus botones, desactívalo.
                 </p>
               </div>
               <Switch

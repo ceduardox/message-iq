@@ -1,4 +1,4 @@
-const CACHE_NAME = 'iqmaximo-v2';
+const CACHE_NAME = 'iqexcelencia-v1';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

@@ -110,6 +110,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_settings (
       id SERIAL PRIMARY KEY,
@@ -129,7 +130,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       elevenlabs_voice_id VARCHAR(50) DEFAULT 'JBFqnCBsd6RMkjVDRZzb',
       tts_speed INTEGER DEFAULT 100,
       tts_instructions TEXT,
-      learning_mode BOOLEAN DEFAULT false,
+      learning_mode BOOLEAN DEFAULT true,
       learning_message_count INTEGER DEFAULT 10,
       follow_up_enabled BOOLEAN DEFAULT false,
       follow_up_minutes INTEGER DEFAULT 20,
@@ -285,4 +286,3 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
   schemaEnsured = true;
 }
-
