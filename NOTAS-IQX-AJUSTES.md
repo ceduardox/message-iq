@@ -147,6 +147,15 @@
 - Fix: se agregó `onSelect={(e) => e.preventDefault()}` a los 3 items expansores → el menú permanece abierto y solo alterna la sección (expandir/colapsar).
 - Las opciones internas (elegir agente, etiqueta, estado) sí cierran el menú al seleccionar (comportamiento esperado).
 
+### 3.15 FIX: AUDIO DE LA IA NO APARECÍA EN EL CHAT (IMPLEMENTADO)
+- Problema: cuando la IA respondía con audio, el mensaje saliente se guardaba con mediaId=null → el chat solo mostraba el texto y no el reproductor de audio (ChatArea renderiza <audio> solo si msg.mediaId existe).
+- Fix backend (server/routes.ts):
+  - `sendAudioResponse()` ahora devuelve el `mediaId` de WhatsApp (Promise<string | null>) en vez de true/false.
+  - En `processAiResponse`, al enviar audio se captura `outboundMediaId` y `outboundMimeType="audio/ogg"` y se guardan en `createMessage`.
+- El audio entrante (cliente manda audio) ya se guardaba con mediaId (msg.audio.id) → funcionaba.
+- El endpoint /api/media/:mediaId ya sirve el media (usa el mediaId de Meta para descargar la URL y hacer stream).
+- Resultado: el reproductor de audio aparece en el chat tanto para audios recibidos como enviados por la IA.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

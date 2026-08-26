@@ -850,6 +850,8 @@ async function processAiResponse(data: BufferedMessage) {
       let waResponse: any;
       let waMessageId: string;
       let outboundMessageType: "text" | "audio" = "text";
+      let outboundMediaId: string | null = null;
+      let outboundMimeType: string | null = null;
 
       if (shouldSendAudio) {
         const ttsProvider = aiSettings?.ttsProvider || "openai";
@@ -861,11 +863,13 @@ async function processAiResponse(data: BufferedMessage) {
         const ttsInstructions = aiSettings?.ttsInstructions || null;
         console.log("=== SENDING AUDIO ===", ttsProvider, selectedVoice, ttsSpeed);
 
-        const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: aiSettings?.fishApiKey || undefined, expression: ttsExpression });
-        if (audioSent) {
+        const audioMediaId = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: aiSettings?.fishApiKey || undefined, expression: ttsExpression });
+        if (audioMediaId) {
           waMessageId = `audio_${Date.now()}`;
           waResponse = { messages: [{ id: waMessageId }] };
           outboundMessageType = "audio";
+          outboundMediaId = audioMediaId;
+          outboundMimeType = "audio/ogg";
         } else {
           console.log("=== AUDIO FAILED, TEXT FALLBACK ===");
           logAudioDebug("AUDIO_TEXT_FALLBACK", { conversationId, provider: ttsProvider, voice: selectedVoice });
@@ -887,6 +891,8 @@ async function processAiResponse(data: BufferedMessage) {
         direction: "out",
         type: outboundMessageType,
         text: aiResult.response,
+        mediaId: outboundMediaId,
+        mimeType: outboundMimeType,
         timestamp: Math.floor(Date.now() / 1000).toString(),
         status: "sent",
         rawJson: waResponse,
@@ -1511,8 +1517,8 @@ async function generateTtsAudioBuffer(
   };
 }
 
-// Generate audio response and send via WhatsApp
-async function sendAudioResponse(phoneNumber: string, text: string, voice: string = "nova", options: TtsOptions = {}): Promise<boolean> {
+// Generate audio response and send via WhatsApp. Returns the mediaId on success, null on failure.
+async function sendAudioResponse(phoneNumber: string, text: string, voice: string = "nova", options: TtsOptions = {}): Promise<string | null> {
   const token = process.env.META_ACCESS_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
   
@@ -1523,7 +1529,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
       hasMetaToken: !!token,
       hasPhoneNumberId: !!phoneNumberId,
     });
-    return false;
+    return null;
   }
   
   const provider = options.provider || "openai";
@@ -1607,7 +1613,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
     
     console.log("[TTS] Audio message sent successfully");
     logAudioDebug("TTS_SENT", { phoneNumber, mediaId });
-    return true;
+    return mediaId;
     
   } catch (error: any) {
     console.error("[TTS] Error:", error.message);
@@ -1620,7 +1626,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
       status: error.response?.status,
       data: error.response?.data,
     });
-    return false;
+    return null;
   } finally {
     if (tempPath && fs.existsSync(tempPath)) {
       try { fs.unlinkSync(tempPath); } catch (e) {}
