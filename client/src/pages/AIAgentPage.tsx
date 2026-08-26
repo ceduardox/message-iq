@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -840,7 +840,7 @@ export default function AIAgentPage() {
                   >
                     <SelectValue placeholder="Seleccione prompt" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-slate-800 border-slate-600/70 text-white">
                     <SelectItem value="primary">Prompt principal</SelectItem>
                     <SelectItem value="secondary">Prompt alternativo</SelectItem>
                   </SelectContent>
@@ -1455,7 +1455,7 @@ export default function AIAgentPage() {
                           <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-fish-gender">
                             <SelectValue placeholder="Todos" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-slate-800 border-slate-600/70 text-white">
                             <SelectItem value="all">Todos</SelectItem>
                             <SelectItem value="female">Mujer</SelectItem>
                             <SelectItem value="male">Hombre</SelectItem>
@@ -1469,7 +1469,7 @@ export default function AIAgentPage() {
                           <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-fish-nationality">
                             <SelectValue placeholder="Todas" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-slate-800 border-slate-600/70 text-white">
                             <SelectItem value="all">Todas</SelectItem>
                             {Array.from(new Set(fishVoices.map((v) => v.labels?.nationality || "es").filter(Boolean))).sort().map((nat) => (
                               <SelectItem key={nat} value={nat}>{nat}</SelectItem>
@@ -2395,7 +2395,7 @@ function AdBannerModal({
             <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-ad-banner-segment">
               <SelectValue placeholder="Sin segmento" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-slate-800 border-slate-600/70 text-white">
               <SelectItem value="hijos">Para hijos</SelectItem>
               <SelectItem value="adulto">Para adulto</SelectItem>
               <SelectItem value="universitario">Universitario / profesional</SelectItem>

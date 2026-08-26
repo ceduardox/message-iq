@@ -113,6 +113,11 @@
 - Composer (input area): padding-bottom extra en móvil (env(safe-area-inset-bottom)) para que no quede oculto bajo el menú/nav inferior.
 - En PC el header se mantiene como estaba (badges visibles, botones normales).
 
+### 3.11 FIX: DROPDOWNS/SELECTS CON FONDO TRANSPARENTE (IMPLEMENTADO)
+- Causa: las variables CSS `--popover` y `--popover-foreground` NO estaban definidas en client/src/index.css, por lo que `bg-popover text-popover-foreground` del componente Select (y otros) no aplicaba fondo → opciones con fondo transparente y texto ilegible.
+- Fix: se definieron `--popover` / `--popover-foreground` en :root (claro) y .dark (oscuro).
+- Además, en AIAgentPage (página oscura forzada, independiente del tema global), todos los SelectContent ahora usan `className="bg-slate-800 border-slate-600/70 text-white"` para garantizar texto visible.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)
