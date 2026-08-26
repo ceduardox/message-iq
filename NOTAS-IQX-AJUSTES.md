@@ -134,6 +134,14 @@
 - Se eliminó el scroll horizontal (overflow-x-auto) del header en móvil.
 - NOTA: usa los mismos handlers/mutations que los botones desktop (reassignMutation, toggleConversationLabel, toggleAiMutation, toggleShouldCallMutation, setOrderStatusMutation, openReminderEditor, setShowLearnModal, deleteConversationMutation).
 
+### 3.13 FIX MENÚ MÓVIL: SUBMENÚS CORTADOS + NO REPLIEGUE (IMPLEMENTADO)
+- Problema: los DropdownMenuSub de Radix se posicionan a un lado del trigger → en móvil salen cortados fuera de la vista, y el toggle no replegaba en touch.
+- Solución: se reemplazaron los submenús laterales por SECCIONES EXPANDIBLES EN LÍNEA dentro del mismo dropdown (estado mobileMenuExpandedSection: "agents" | "labels" | "status").
+- Comportamiento: al tocar "Reasignar agente"/"Etiquetas"/"Estado" se expande la lista debajo (con indentación y borde lateral) dentro del menú; al tocar de nuevo se colapsa. Icono ChevronRight gira 90° cuando está abierto.
+- Al cerrar el menú completo se resetea la sección expandida.
+- Los 3 submenús se eliminaron del menú móvil (ya no hay DropdownMenuSub en ChatArea); el desktop no usa submenús (usa botones con sus propios dropdowns).
+- Quedó el width max-w-[min(92vw,320px)] para no desbordar en móvil.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

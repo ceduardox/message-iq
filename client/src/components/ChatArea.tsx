@@ -16,10 +16,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -103,6 +99,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const [reminderAtInput, setReminderAtInput] = useState("");
   const [reminderNoteInput, setReminderNoteInput] = useState("");
   const [showLearnModal, setShowLearnModal] = useState(false);
+  const [mobileMenuExpandedSection, setMobileMenuExpandedSection] = useState<"agents" | "labels" | "status" | null>(null);
   const [learnFocus, setLearnFocus] = useState("");
   const [learnMessageCount, setLearnMessageCount] = useState(10);
   const [suggestedRule, setSuggestedRule] = useState("");
@@ -1831,13 +1828,13 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 
         {/* Mobile actions menu (3-dot) */}
         <div className="md:hidden flex items-center">
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={(open) => { if (!open) setMobileMenuExpandedSection(null); }}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="flex-shrink-0 h-8 w-8" data-testid="button-mobile-actions" title="Opciones">
                 <EllipsisVertical className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={4} className="bg-popover text-popover-foreground border border-border/60">
+            <DropdownMenuContent align="end" sideOffset={4} className="bg-popover text-popover-foreground border border-border/60 max-w-[min(92vw,320px)]">
               {onClose && (
                 <>
                   <DropdownMenuItem onClick={onClose} data-testid="mobile-action-close">
@@ -1849,54 +1846,56 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               )}
               {isAdmin && agentsData.length > 0 && (
                 <>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <UserRoundCog className="h-4 w-4 mr-2" />
-                      Reasignar agente
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
-                        <DropdownMenuItem onClick={() => reassignMutation.mutate(null)}>Sin agente</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {agentsData.map((agent) => (
-                          <DropdownMenuItem key={agent.id} onClick={() => reassignMutation.mutate(agent.id)} className={cn(conversation.assignedAgentId === agent.id && "font-bold")}>
-                            {agent.name} {conversation.assignedAgentId === agent.id ? "(actual)" : ""}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
+                  <DropdownMenuItem
+                    onClick={() => setMobileMenuExpandedSection((prev) => (prev === "agents" ? null : "agents"))}
+                    data-testid="mobile-section-agents"
+                  >
+                    <UserRoundCog className="h-4 w-4 mr-2" />
+                    Reasignar agente
+                    <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", mobileMenuExpandedSection === "agents" && "rotate-90")} />
+                  </DropdownMenuItem>
+                  {mobileMenuExpandedSection === "agents" && (
+                    <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
+                      <DropdownMenuItem onClick={() => reassignMutation.mutate(null)}>Sin agente</DropdownMenuItem>
+                      {agentsData.map((agent) => (
+                        <DropdownMenuItem key={agent.id} onClick={() => reassignMutation.mutate(agent.id)} className={cn(conversation.assignedAgentId === agent.id && "font-bold")}>
+                          {agent.name} {conversation.assignedAgentId === agent.id ? "(actual)" : ""}
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  )}
                   <DropdownMenuSeparator />
                 </>
               )}
               {ownedLabels.length > 0 && (
                 <>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Tag className="h-4 w-4 mr-2" />
-                      Etiquetas
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
-                        <DropdownMenuItem onClick={() => setLabelMutation.mutate([])}>
-                          <span className={cn("mr-2 inline-flex", currentLabelIds.length === 0 ? "text-emerald-500" : "text-transparent")}>
+                  <DropdownMenuItem
+                    onClick={() => setMobileMenuExpandedSection((prev) => (prev === "labels" ? null : "labels"))}
+                    data-testid="mobile-section-labels"
+                  >
+                    <Tag className="h-4 w-4 mr-2" />
+                    Etiquetas
+                    <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", mobileMenuExpandedSection === "labels" && "rotate-90")} />
+                  </DropdownMenuItem>
+                  {mobileMenuExpandedSection === "labels" && (
+                    <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
+                      <DropdownMenuItem onClick={() => setLabelMutation.mutate([])}>
+                        <span className={cn("mr-2 inline-flex", currentLabelIds.length === 0 ? "text-emerald-500" : "text-transparent")}>
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                        Sin etiqueta
+                      </DropdownMenuItem>
+                      {ownedLabels.map((label) => (
+                        <DropdownMenuItem key={label.id} onClick={() => toggleConversationLabel(label.id)}>
+                          <span className={cn("mr-2 inline-flex", currentLabelIds.includes(label.id) ? "text-emerald-500" : "text-transparent")}>
                             <Check className="h-3.5 w-3.5" />
                           </span>
-                          Sin etiqueta
+                          <div className={cn("w-3 h-3 rounded-full mr-2", LABEL_COLORS.find(c => c.name === label.color)?.bg)} />
+                          {label.name}
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {ownedLabels.map((label) => (
-                          <DropdownMenuItem key={label.id} onClick={() => toggleConversationLabel(label.id)}>
-                            <span className={cn("mr-2 inline-flex", currentLabelIds.includes(label.id) ? "text-emerald-500" : "text-transparent")}>
-                              <Check className="h-3.5 w-3.5" />
-                            </span>
-                            <div className={cn("w-3 h-3 rounded-full mr-2", LABEL_COLORS.find(c => c.name === label.color)?.bg)} />
-                            {label.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
+                      ))}
+                    </div>
+                  )}
                   <DropdownMenuSeparator />
                 </>
               )}
@@ -1917,20 +1916,22 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 {conversation.shouldCall ? "Quitar marca de llamar" : "Marcar para llamar"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Package className="h-4 w-4 mr-2" />
-                  Estado
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
-                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>Sin estado</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>Cierre en proceso</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>Por cerrar</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>Cerrado</DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
+              <DropdownMenuItem
+                onClick={() => setMobileMenuExpandedSection((prev) => (prev === "status" ? null : "status"))}
+                data-testid="mobile-section-status"
+              >
+                <Package className="h-4 w-4 mr-2" />
+                Estado
+                <ChevronRight className={cn("ml-auto h-4 w-4 transition-transform", mobileMenuExpandedSection === "status" && "rotate-90")} />
+              </DropdownMenuItem>
+              {mobileMenuExpandedSection === "status" && (
+                <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>Sin estado</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>Cierre en proceso</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>Por cerrar</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>Cerrado</DropdownMenuItem>
+                </div>
+              )}
               <DropdownMenuItem onClick={openReminderEditor}>
                 <Clock className="h-4 w-4 mr-2 text-amber-500" />
                 {conversation.reminderAt ? "Editar recordatorio" : "Agregar recordatorio"}
