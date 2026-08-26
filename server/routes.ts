@@ -2959,14 +2959,15 @@ export async function registerRoutes(
               // 2. Ensure Conversation Exists (now using correct messageText)
               let conversation = await storage.getConversationByWaId(from);
               let wasConversationJustCreated = false;
+              const incomingAdId = extractAdIdFromIncomingMessage(msg);
               if (!conversation) {
                 wasConversationJustCreated = true;
-                const incomingAdId = extractAdIdFromIncomingMessage(msg);
                 const adRouting = incomingAdId ? await getNextAgentForAdIdRouting(incomingAdId) : {};
                 const nextAgent = adRouting.agent || await storage.getNextAgentForAssignment();
                 conversation = await storage.createConversation({
                   waId: from,
                   contactName: name,
+                  adId: incomingAdId || undefined,
                   lastMessage: messageText || `[${msg.type}]`,
                   lastMessageTimestamp: new Date(parseInt(msg.timestamp) * 1000),
                   assignedAgentId: nextAgent?.id || null,
@@ -3043,8 +3044,23 @@ export async function registerRoutes(
                 }
               }
               if (messageForAi && !conversation.aiDisabled && agentAllowsAi) {
+                // Inject ad banner context (what the ad says) so the AI connects with the problem.
+                let messageForAiWithContext = messageForAi;
+                if (incomingAdId) {
+                  try {
+                    const banner = await storage.getActiveAdBannerByAdId(incomingAdId);
+                    if (banner?.problemText) {
+                      const segmentHint = banner.segment
+                        ? ` (segmento: ${banner.segment})`
+                        : "";
+                      messageForAiWithContext = `[CONTEXTO DEL ANUNCIO POR EL QUE LLEGO EL PROSPECTO: "${banner.problemText}"${segmentHint}. Si el prospecto menciona el problema o pide info, conéctalo con como IQx puede ayudarlo.] ${messageForAi}`;
+                    }
+                  } catch (bannerError) {
+                    console.error("Error loading ad banner context:", bannerError);
+                  }
+                }
                 const bufferedMsg: BufferedMessage = {
-                  messageForAi,
+                  messageForAi: messageForAiWithContext,
                   imageBase64ForAi,
                   wasAudioMessage,
                   conversationId: conversation.id,
@@ -5234,6 +5250,87 @@ Maximo 2 lineas. Se especifico y practico.`;
     } catch (error) {
       console.error("Error deleting ad routing rule:", error);
       res.status(500).json({ message: "Error deleting ad routing rule" });
+    }
+  });
+
+  // === AD BANNERS (ad_id → what the ad says, injected to AI context) ===
+  app.get("/api/ad-banners", requireAdmin, async (_req, res) => {
+    try {
+      const banners = await storage.getAdBanners();
+      res.json(banners);
+    } catch (error) {
+      console.error("Error fetching ad banners:", error);
+      res.status(500).json({ message: "Error fetching ad banners" });
+    }
+  });
+
+  app.post("/api/ad-banners", requireAdmin, async (req, res) => {
+    try {
+      const parsed = z.object({
+        adId: z.string().min(1).max(120),
+        problemText: z.string().min(1).max(500),
+        imageUrl: z.string().max(1000).nullable().optional(),
+        segment: z.string().max(40).nullable().optional(),
+        isActive: z.boolean().optional(),
+      }).parse(req.body);
+      const banner = await storage.createAdBanner({
+        adId: parsed.adId,
+        problemText: parsed.problemText,
+        imageUrl: parsed.imageUrl ?? null,
+        segment: parsed.segment ?? null,
+        isActive: parsed.isActive ?? true,
+      });
+      res.json(banner);
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid ad banner data", errors: error.errors });
+      }
+      console.error("Error creating ad banner:", error);
+      res.status(500).json({ message: "Error creating ad banner" });
+    }
+  });
+
+  app.patch("/api/ad-banners/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid banner id" });
+      }
+      const parsed = z.object({
+        adId: z.string().min(1).max(120).optional(),
+        problemText: z.string().min(1).max(500).optional(),
+        imageUrl: z.string().max(1000).nullable().optional(),
+        segment: z.string().max(40).nullable().optional(),
+        isActive: z.boolean().optional(),
+      }).parse(req.body);
+      const banner = await storage.updateAdBanner(id, {
+        adId: parsed.adId,
+        problemText: parsed.problemText,
+        imageUrl: parsed.imageUrl,
+        segment: parsed.segment,
+        isActive: parsed.isActive,
+      });
+      res.json(banner);
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid ad banner data", errors: error.errors });
+      }
+      console.error("Error updating ad banner:", error);
+      res.status(500).json({ message: "Error updating ad banner" });
+    }
+  });
+
+  app.delete("/api/ad-banners/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid banner id" });
+      }
+      await storage.deleteAdBanner(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting ad banner:", error);
+      res.status(500).json({ message: "Error deleting ad banner" });
     }
   });
 

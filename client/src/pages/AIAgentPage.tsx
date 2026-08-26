@@ -11,6 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { 
   ArrowLeft, 
   Bot, 
@@ -28,7 +31,8 @@ import {
   MessageSquare,
   Clock,
   Eye,
-  EyeOff
+  EyeOff,
+  Megaphone
 } from "lucide-react";
 
 interface AiSettings {
@@ -91,6 +95,16 @@ interface LearnedRule {
   rule: string;
   learnedFrom: string | null;
   conversationId: number | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+interface AdBanner {
+  id: number;
+  adId: string;
+  problemText: string;
+  imageUrl: string | null;
+  segment: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -219,6 +233,10 @@ export default function AIAgentPage() {
     queryKey: ["/api/ai/rules"],
   });
 
+  const { data: adBanners = [], isLoading: bannersLoading } = useQuery<AdBanner[]>({
+    queryKey: ["/api/ad-banners"],
+  });
+
   const { data: pushLogs = [], isLoading: pushLogsLoading, refetch: refetchPushLogs } = useQuery<PushLog[]>({
     queryKey: ["/api/push-logs"],
     refetchInterval: 10000,
@@ -266,6 +284,104 @@ export default function AIAgentPage() {
   // State for editing rules
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [editRuleText, setEditRuleText] = useState("");
+
+  // State for ad banners modal
+  const [bannerModalOpen, setBannerModalOpen] = useState(false);
+  const [bannerModalMode, setBannerModalMode] = useState<"create" | "edit">("create");
+  const [bannerEditingId, setBannerEditingId] = useState<number | null>(null);
+  const [bannerAdId, setBannerAdId] = useState("");
+  const [bannerProblemText, setBannerProblemText] = useState("");
+  const [bannerImageUrl, setBannerImageUrl] = useState("");
+  const [bannerSegment, setBannerSegment] = useState("");
+
+  const resetBannerForm = () => {
+    setBannerModalMode("create");
+    setBannerEditingId(null);
+    setBannerAdId("");
+    setBannerProblemText("");
+    setBannerImageUrl("");
+    setBannerSegment("");
+  };
+
+  const openCreateBanner = () => {
+    resetBannerForm();
+    setBannerModalOpen(true);
+  };
+
+  const openEditBanner = (banner: AdBanner) => {
+    setBannerModalMode("edit");
+    setBannerEditingId(banner.id);
+    setBannerAdId(banner.adId);
+    setBannerProblemText(banner.problemText);
+    setBannerImageUrl(banner.imageUrl || "");
+    setBannerSegment(banner.segment || "");
+    setBannerModalOpen(true);
+  };
+
+  const createBannerMutation = useMutation({
+    mutationFn: async (data: { adId: string; problemText: string; imageUrl: string | null; segment: string | null }) => {
+      return apiRequest("POST", "/api/ad-banners", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ad-banners"] });
+      setBannerModalOpen(false);
+      resetBannerForm();
+      toast({ title: "Banner guardado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al guardar banner", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateBannerMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<AdBanner> }) => {
+      return apiRequest("PATCH", `/api/ad-banners/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ad-banners"] });
+      setBannerModalOpen(false);
+      resetBannerForm();
+      toast({ title: "Banner actualizado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al actualizar banner", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteBannerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/ad-banners/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ad-banners"] });
+      toast({ title: "Banner eliminado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al eliminar banner", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSaveBanner = () => {
+    if (!bannerAdId.trim()) {
+      toast({ title: "El ID del anuncio es requerido", variant: "destructive" });
+      return;
+    }
+    if (!bannerProblemText.trim()) {
+      toast({ title: "El texto del anuncio es requerido", variant: "destructive" });
+      return;
+    }
+    const payload = {
+      adId: bannerAdId.trim(),
+      problemText: bannerProblemText.trim(),
+      imageUrl: bannerImageUrl.trim() || null,
+      segment: bannerSegment.trim() || null,
+    };
+    if (bannerModalMode === "edit" && bannerEditingId !== null) {
+      updateBannerMutation.mutate({ id: bannerEditingId, data: payload });
+    } else {
+      createBannerMutation.mutate(payload);
+    }
+  };
 
   const deleteRuleMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -1925,6 +2041,101 @@ export default function AIAgentPage() {
             )}
           </div>
 
+          {/* Ad Banners Card */}
+          <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/5 to-transparent rounded-2xl" />
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
+                    <Megaphone className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Publicidad / Banners</h3>
+                    <p className="text-xs text-slate-400">Conecta cada anuncio (ad_id) con lo que dice, para que la IA enganche con el problema</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={openCreateBanner}
+                  data-testid="button-add-ad-banner"
+                  className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg shadow-cyan-500/30"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nuevo anuncio
+                </Button>
+              </div>
+
+              {bannersLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : adBanners.length > 0 ? (
+                <div className="space-y-3">
+                  {adBanners.map((banner) => (
+                    <div
+                      key={banner.id}
+                      className={`p-3 border rounded-xl bg-slate-900/50 ${!banner.isActive ? "opacity-50" : ""}`}
+                      data-testid={`ad-banner-${banner.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {banner.imageUrl ? (
+                          <img
+                            src={banner.imageUrl}
+                            alt="Banner"
+                            className="h-12 w-12 rounded object-cover border border-slate-700/60 bg-slate-900"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded bg-slate-800 flex items-center justify-center border border-slate-700/60">
+                            <Megaphone className="h-5 w-5 text-slate-500" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <code className="text-xs bg-black/40 rounded px-1.5 py-0.5 text-cyan-300">{banner.adId}</code>
+                            <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${banner.isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-600/20 text-slate-400"}`}>
+                              {banner.isActive ? "Activo" : "Inactivo"}
+                            </span>
+                            {banner.segment && (
+                              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400">{banner.segment}</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-300 mt-1">"{banner.problemText}"</p>
+                        </div>
+                        <div className="flex gap-1 items-center">
+                          <Switch
+                            checked={banner.isActive}
+                            onCheckedChange={(checked) => updateBannerMutation.mutate({ id: banner.id, data: { isActive: checked } })}
+                            data-testid={`switch-ad-banner-active-${banner.id}`}
+                          />
+                          <Button variant="ghost" size="icon" onClick={() => openEditBanner(banner)} data-testid={`button-edit-ad-banner-${banner.id}`}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteBannerMutation.mutate(banner.id)}
+                            disabled={deleteBannerMutation.isPending}
+                            data-testid={`button-delete-ad-banner-${banner.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No hay anuncios configurados. Agrega el ad_id de Meta y qué dice cada publicidad para que la IA conecte con el problema.
+                </p>
+              )}
+              <p className="text-xs text-slate-500">
+                Para obtener el ID de un anuncio: Meta Ads Manager → campaña → columna "ID del anuncio". Solo se inyecta a la IA si el banner está <span className="text-emerald-400">Activo</span>.
+              </p>
+            </div>
+          </div>
+
           {/* Push Notification Controls */}
           <div className="bg-slate-800/40 backdrop-blur-md border border-slate-700/50 rounded-xl p-5 shadow-xl">
             <div className="mb-4">
@@ -2021,6 +2232,156 @@ export default function AIAgentPage() {
           </div>
         </div>
       </main>
+
+      {/* Ad Banner Modal (responsive: bottom sheet on mobile, centered dialog on desktop) */}
+      <AdBannerModal
+        open={bannerModalOpen}
+        mode={bannerModalMode}
+        adId={bannerAdId}
+        problemText={bannerProblemText}
+        imageUrl={bannerImageUrl}
+        segment={bannerSegment}
+        saving={createBannerMutation.isPending || updateBannerMutation.isPending}
+        onAdIdChange={setBannerAdId}
+        onProblemTextChange={setBannerProblemText}
+        onImageUrlChange={setBannerImageUrl}
+        onSegmentChange={setBannerSegment}
+        onCancel={() => { setBannerModalOpen(false); resetBannerForm(); }}
+        onSave={handleSaveBanner}
+      />
     </div>
+  );
+}
+
+function AdBannerModal({
+  open,
+  mode,
+  adId,
+  problemText,
+  imageUrl,
+  segment,
+  saving,
+  onAdIdChange,
+  onProblemTextChange,
+  onImageUrlChange,
+  onSegmentChange,
+  onCancel,
+  onSave,
+}: {
+  open: boolean;
+  mode: "create" | "edit";
+  adId: string;
+  problemText: string;
+  imageUrl: string;
+  segment: string;
+  saving: boolean;
+  onAdIdChange: (v: string) => void;
+  onProblemTextChange: (v: string) => void;
+  onImageUrlChange: (v: string) => void;
+  onSegmentChange: (v: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const isMobile = useIsMobile();
+
+  const formContent = (
+    <>
+      <div className="space-y-3">
+        <div>
+          <Label className="text-slate-300">ID del anuncio (ad_id) *</Label>
+          <Input
+            placeholder="Ej: 716182253839272"
+            value={adId}
+            onChange={(e) => onAdIdChange(e.target.value)}
+            data-testid="input-ad-banner-id"
+            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+          />
+          <p className="text-xs text-slate-500 mt-1">Meta Ads Manager → campaña → "ID del anuncio"</p>
+        </div>
+        <div>
+          <Label className="text-slate-300">Qué dice el anuncio (texto/imagen) *</Label>
+          <Textarea
+            placeholder='Ej: "Estudia pero no retiene"'
+            value={problemText}
+            onChange={(e) => onProblemTextChange(e.target.value)}
+            rows={2}
+            data-testid="textarea-ad-banner-problem"
+            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+          />
+          <p className="text-xs text-slate-500 mt-1">La IA conectará la conversación con este problema.</p>
+        </div>
+        <div>
+          <Label className="text-slate-300">URL de la imagen (opcional)</Label>
+          <Input
+            placeholder="https://..."
+            value={imageUrl}
+            onChange={(e) => onImageUrlChange(e.target.value)}
+            data-testid="input-ad-banner-image"
+            className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+          />
+        </div>
+        <div>
+          <Label className="text-slate-300">Segmento (opcional)</Label>
+          <Select value={segment || undefined} onValueChange={(v) => onSegmentChange(v)}>
+            <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-ad-banner-segment">
+              <SelectValue placeholder="Sin segmento" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="hijos">Para hijos</SelectItem>
+              <SelectItem value="adulto">Para adulto</SelectItem>
+              <SelectItem value="universitario">Universitario / profesional</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </>
+  );
+
+  const modalButtons = (
+    <>
+      <Button variant="outline" onClick={onCancel} className="border-slate-600/50 text-slate-300 hover:bg-slate-700/50" data-testid="button-cancel-ad-banner">
+        Cancelar
+      </Button>
+      <Button
+        onClick={onSave}
+        disabled={saving}
+        data-testid="button-save-ad-banner"
+        className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg shadow-cyan-500/30"
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+        {mode === "edit" ? "Guardar cambios" : "Guardar anuncio"}
+      </Button>
+    </>
+  );
+
+  const title = mode === "edit" ? "Editar anuncio" : "Nuevo anuncio";
+  const description = "Vincula el ad_id de Meta con el texto del anuncio para que la IA enganche con el problema.";
+
+  if (isMobile) {
+    return (
+      <Sheet open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+        <SheetContent side="bottom" className="bg-slate-900 border-slate-700/50 text-white">
+          <SheetHeader>
+            <SheetTitle className="text-white">{title}</SheetTitle>
+            <SheetDescription className="text-slate-400">{description}</SheetDescription>
+          </SheetHeader>
+          <div className="py-4">{formContent}</div>
+          <SheetFooter>{modalButtons}</SheetFooter>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+      <DialogContent className="bg-slate-900 border-slate-700/50 text-white">
+        <DialogHeader>
+          <DialogTitle className="text-white">{title}</DialogTitle>
+          <DialogDescription className="text-slate-400">{description}</DialogDescription>
+        </DialogHeader>
+        <div className="py-2">{formContent}</div>
+        <DialogFooter>{modalButtons}</DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

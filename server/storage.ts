@@ -12,6 +12,7 @@ import {
   learnedRules,
   agents,
   subadmins,
+  adBanners,
   type Conversation,
   type InsertConversation,
   type Message,
@@ -36,6 +37,8 @@ import {
   type InsertAgent,
   type Subadmin,
   type InsertSubadmin,
+  type AdBanner,
+  type InsertAdBanner,
 } from "@shared/schema";
 import { eq, and, lt, desc, asc, sql } from "drizzle-orm";
 
@@ -114,6 +117,13 @@ export interface IStorage {
   getNextAgentForAssignment(): Promise<Agent | undefined>;
   deleteConversation(id: number): Promise<void>;
 
+  // Ad Banners
+  getAdBanners(): Promise<AdBanner[]>;
+  getActiveAdBannerByAdId(adId: string): Promise<AdBanner | undefined>;
+  createAdBanner(banner: InsertAdBanner): Promise<AdBanner>;
+  updateAdBanner(id: number, banner: Partial<InsertAdBanner>): Promise<AdBanner>;
+  deleteAdBanner(id: number): Promise<void>;
+
   // Subadmins
   getSubadmins(): Promise<Subadmin[]>;
   getSubadminByUsername(username: string): Promise<Subadmin | undefined>;
@@ -127,6 +137,7 @@ export class DatabaseStorage implements IStorage {
   private agentAiColumnEnsured = false;
   private aiSettingsColumnsEnsured = false;
   private subadminsTableEnsured = false;
+  private adBannersTableEnsured = false;
 
   private mapFallbackAgentRow(row: any): Agent {
     return {
@@ -249,6 +260,22 @@ export class DatabaseStorage implements IStorage {
       )
     `);
     this.subadminsTableEnsured = true;
+  }
+
+  private async ensureAdBannersTable(): Promise<void> {
+    if (this.adBannersTableEnsured) return;
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ad_banners (
+        id SERIAL PRIMARY KEY,
+        ad_id VARCHAR(120) NOT NULL UNIQUE,
+        problem_text TEXT NOT NULL,
+        image_url TEXT,
+        segment VARCHAR(40),
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    this.adBannersTableEnsured = true;
   }
 
   private async getAssignmentCursor(): Promise<number> {
@@ -752,6 +779,44 @@ export class DatabaseStorage implements IStorage {
     await db.delete(conversations).where(eq(conversations.id, id));
   }
 
+  // Ad Banners
+  async getAdBanners(): Promise<AdBanner[]> {
+    await this.ensureAdBannersTable();
+    return await db.select().from(adBanners).orderBy(desc(adBanners.id));
+  }
+
+  async getActiveAdBannerByAdId(adId: string): Promise<AdBanner | undefined> {
+    await this.ensureAdBannersTable();
+    const normalized = normalizeAdIdLike(adId);
+    if (!normalized) return undefined;
+    const [banner] = await db
+      .select()
+      .from(adBanners)
+      .where(and(eq(adBanners.adId, normalized), eq(adBanners.isActive, true)));
+    return banner;
+  }
+
+  async createAdBanner(banner: InsertAdBanner): Promise<AdBanner> {
+    await this.ensureAdBannersTable();
+    const [created] = await db.insert(adBanners).values({ ...banner, adId: normalizeAdIdLike(banner.adId) || banner.adId }).returning();
+    return created;
+  }
+
+  async updateAdBanner(id: number, banner: Partial<InsertAdBanner>): Promise<AdBanner> {
+    await this.ensureAdBannersTable();
+    const [updated] = await db
+      .update(adBanners)
+      .set(banner.adId !== undefined ? { ...banner, adId: normalizeAdIdLike(banner.adId) || banner.adId } : banner)
+      .where(eq(adBanners.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAdBanner(id: number): Promise<void> {
+    await this.ensureAdBannersTable();
+    await db.delete(adBanners).where(eq(adBanners.id, id));
+  }
+
   async getSubadmins(): Promise<Subadmin[]> {
     await this.ensureSubadminsTable();
     return await db.select().from(subadmins).orderBy(asc(subadmins.name));
@@ -779,6 +844,13 @@ export class DatabaseStorage implements IStorage {
     await this.ensureSubadminsTable();
     await db.delete(subadmins).where(eq(subadmins.id, id));
   }
+}
+
+function normalizeAdIdLike(raw: unknown): string {
+  if (raw === null || raw === undefined) return "";
+  const str = String(raw).trim();
+  if (!str) return "";
+  return str.replace(/\D/g, "") || str;
 }
 
 export const storage = new DatabaseStorage();

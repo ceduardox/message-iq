@@ -230,6 +230,23 @@ export async function ensureDatabaseSchema(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ad_banners (
+      id SERIAL PRIMARY KEY,
+      ad_id VARCHAR(120) NOT NULL UNIQUE,
+      problem_text TEXT NOT NULL,
+      image_url TEXT,
+      segment VARCHAR(40),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS ad_id VARCHAR(120)
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS daily_cost_settings (
       date DATE PRIMARY KEY,
       unit_cost_bs NUMERIC(12, 4) NOT NULL,

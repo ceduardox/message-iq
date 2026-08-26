@@ -43,6 +43,7 @@ export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   waId: varchar("wa_id").notNull().unique(),
   contactName: text("contact_name"),
+  adId: varchar("ad_id", { length: 120 }), // Meta Ads ad_id that brought this lead
   labelId: integer("label_id").references(() => labels.id),
   labelId2: integer("label_id_2").references(() => labels.id),
   isPinned: boolean("is_pinned").default(false),
@@ -276,3 +277,19 @@ export const learnedRules = pgTable("learned_rules", {
 export const insertLearnedRuleSchema = createInsertSchema(learnedRules).omit({ id: true, createdAt: true });
 export type LearnedRule = typeof learnedRules.$inferSelect;
 export type InsertLearnedRule = z.infer<typeof insertLearnedRuleSchema>;
+
+// === AD BANNERS TABLE ===
+
+export const adBanners = pgTable("ad_banners", {
+  id: serial("id").primaryKey(),
+  adId: varchar("ad_id", { length: 120 }).notNull().unique(),
+  problemText: text("problem_text").notNull(), // What the ad/banner says (e.g. "estudia pero no retiene")
+  imageUrl: text("image_url"), // Optional: banner image URL
+  segment: varchar("segment", { length: 40 }), // Optional: "hijos" | "adulto" | "universitario" | null
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAdBannerSchema = createInsertSchema(adBanners).omit({ id: true, createdAt: true });
+export type AdBanner = typeof adBanners.$inferSelect;
+export type InsertAdBanner = z.infer<typeof insertAdBannerSchema>;

@@ -76,6 +76,20 @@
 - Los modos aplican igual: all=todas, first=primera, until_second=2 primeras. Para lead nuevo siempre suena la primera (es "first" implícito) + modo del usuario.
 - IMPORTANTE: el audio de bienvenida requiere audioResponseEnabled activo en /ai-agent y el proveedor/voz configurados.
 
+### 3.7 SISTEMA DE BANNERS PUBLICITARIOS (ad_id → texto) - IMPLEMENTADO
+- Tabla BD: ad_banners (id, ad_id UNIQUE, problem_text, image_url, segment, is_active, created_at).
+- Columna nueva en conversations: ad_id (se guarda el ad del referral que trajo al lead).
+- Backend: CRUD /api/ad-banners (GET/POST/PATCH/DELETE, requireAdmin).
+- Webhook: al recibir mensaje con ad_id, busca banner ACTIVO por ad_id; si existe, inyecta a messageForAi: [CONTEXTO DEL ANUNCIO: "texto del banner" (segmento)] para que la IA conecte con el problema.
+- Frontend (/ai-agent): tarjeta "Publicidad / Banners" con:
+  - Lista de banners (imagen thumbnail, ad_id, texto, segmento, toggle activo, editar, eliminar).
+  - Botón "Nuevo anuncio" → modal RESPONSIVE: en móvil Sheet bottom (sube desde abajo), en PC Dialog centrado.
+  - Campos: ad_id (obligatorio), texto del anuncio (obligatorio), imagen URL (opcional), segmento (opcional: hijos/adulto/universitario).
+  - Toggle activar/desactivar (para cuando cambie la publicidad/imagen/video sin borrar).
+- Cómo obtener ad_id: Meta Ads Manager → campaña → columna "ID del anuncio".
+- NOTA: solo inyecta si el banner está Activo. Puede convivir con ad_lead_routing_rules (asignación de agente) que es independiente.
+- Seguridad: endpoints requireAdmin; no borra datos al desactivar (toggle).
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)
