@@ -961,10 +961,10 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             <div className="absolute inset-0 z-10 h-full flex flex-col bg-slate-900">
               <button
                 onClick={() => setActiveId(null)}
-                className="group px-3 py-2.5 border-b border-slate-700 text-left text-sm text-emerald-400 font-medium flex items-center gap-2 bg-slate-800/50 select-none transition-all duration-75 active:scale-90 active:bg-slate-700 active:text-emerald-200 active:shadow-inner active:brightness-90"
+                className="group px-3 py-2.5 border-b border-[#00CFFF]/20 text-left text-sm text-white font-medium flex items-center gap-2 bg-gradient-to-r from-[#7A3DB8]/40 to-[#00CFFF]/20 select-none transition-all duration-75 active:scale-90 active:from-[#7A3DB8] active:to-[#00CFFF] active:text-white active:shadow-inner active:brightness-90"
                 data-testid="button-back-kanban"
               >
-                <ArrowLeft className="h-4 w-4 transition-transform duration-100 group-active:-translate-x-0.5" />
+                <ArrowLeft className="h-4 w-4 transition-transform duration-100 group-active:-translate-x-0.5 text-[#00CFFF]" />
                 <span className="transition-transform duration-100 group-active:translate-x-0.5">Volver al Kanban</span>
               </button>
               <div className="flex-1 overflow-hidden">
