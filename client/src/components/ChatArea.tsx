@@ -2302,7 +2302,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       />
 
       {/* Input Area */}
-      <div className="p-1.5 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] md:p-2 bg-[#f0f2f5] dark:bg-[#202c33] z-20 flex-shrink-0 overflow-x-hidden">
+      <div className="p-1.5 pb-4 md:pb-2 md:p-2 bg-[#f0f2f5] dark:bg-[#202c33] z-20 flex-shrink-0 overflow-x-hidden">
         {showImageInput && !imageUrl && (
           <div className="mb-2 px-2">
             <Input placeholder="URL de imagen..." value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} className="text-sm" />
