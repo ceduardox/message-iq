@@ -142,6 +142,11 @@
 - Los 3 submenús se eliminaron del menú móvil (ya no hay DropdownMenuSub en ChatArea); el desktop no usa submenús (usa botones con sus propios dropdowns).
 - Quedó el width max-w-[min(92vw,320px)] para no desbordar en móvil.
 
+### 3.14 FIX BUG MENÚ MÓVIL: SE REPLEGABA AL TOCAR LAS OPCIONES EXPANSORAS (IMPLEMENTADO)
+- Causa raíz: los DropdownMenuItem de Radix cierran el menú al hacer click (evento onSelect por defecto). Al tocar "Reasignar agente"/"Etiquetas"/"Estado" se cerraba TODO el dropdown antes de poder expandir la sección.
+- Fix: se agregó `onSelect={(e) => e.preventDefault()}` a los 3 items expansores → el menú permanece abierto y solo alterna la sección (expandir/colapsar).
+- Las opciones internas (elegir agente, etiqueta, estado) sí cierran el menú al seleccionar (comportamiento esperado).
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

@@ -1847,6 +1847,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               {isAdmin && agentsData.length > 0 && (
                 <>
                   <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
                     onClick={() => setMobileMenuExpandedSection((prev) => (prev === "agents" ? null : "agents"))}
                     data-testid="mobile-section-agents"
                   >
@@ -1870,6 +1871,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               {ownedLabels.length > 0 && (
                 <>
                   <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
                     onClick={() => setMobileMenuExpandedSection((prev) => (prev === "labels" ? null : "labels"))}
                     data-testid="mobile-section-labels"
                   >
@@ -1917,6 +1919,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                onSelect={(e) => e.preventDefault()}
                 onClick={() => setMobileMenuExpandedSection((prev) => (prev === "status" ? null : "status"))}
                 data-testid="mobile-section-status"
               >
