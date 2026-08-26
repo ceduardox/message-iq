@@ -90,6 +90,16 @@
 - NOTA: solo inyecta si el banner está Activo. Puede convivir con ad_lead_routing_rules (asignación de agente) que es independiente.
 - Seguridad: endpoints requireAdmin; no borra datos al desactivar (toggle).
 
+### 3.8 VOCES FISH: FILTROS DE GÉNERO/NACIONALIDAD + VELOCIDAD + EXPRESIÓN (IMPLEMENTADO)
+- Verificación API Fish Audio: permite `prosody.speed` (0.5-2.0) y `temperature` (0-1) = expresividad ("higher is more varied"). NO tiene campo "expression" explícito; se usa temperature.
+- Backend /api/fish/voices: ahora extrae GÉNERO real (male/female) de tags/descripción, y NACIONALIDAD/acento (latin american, mexican, spanish, etc.) en labels.nationality + labels.languages.
+- generateFishAudio: usa options.speed (prosody.speed) y options.expression (0-100 → temperature 0-1).
+- Nuevo campo ai_settings.tts_expression (0-100, default 70) → se pasa en envío y preview.
+- Frontend /ai-agent (proveedor Fish): filtros de GÉNERO (Todos/Mujer/Hombre/Sin identificar) y NACIONALIDAD (dropdown con valores únicos), además de la búsqueda por texto.
+- Slider VELOCIDAD ahora aparece para OpenAI y Fish (0.5x-2.0x).
+- Slider EXPRESIÓN (solo Fish): 0-100 con etiqueta Plana/Normal/Expresiva.
+- En el grid de voces Fish se muestra: género (Mujer/Hombre/¿?) + nacionalidad + descripción.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

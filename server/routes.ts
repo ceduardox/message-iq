@@ -857,10 +857,11 @@ async function processAiResponse(data: BufferedMessage) {
         const elevenlabsVoiceId = aiSettings?.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
         const fishVoiceId = aiSettings?.fishVoiceId || "1a79cb2d99c146c69c19f9225ed5deaf";
         const ttsSpeed = aiSettings?.ttsSpeed ? aiSettings.ttsSpeed / 100 : 1.0;
+        const ttsExpression = aiSettings?.ttsExpression ?? 70;
         const ttsInstructions = aiSettings?.ttsInstructions || null;
         console.log("=== SENDING AUDIO ===", ttsProvider, selectedVoice, ttsSpeed);
 
-        const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: aiSettings?.fishApiKey || undefined });
+        const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: aiSettings?.fishApiKey || undefined, expression: ttsExpression });
         if (audioSent) {
           waMessageId = `audio_${Date.now()}`;
           waResponse = { messages: [{ id: waMessageId }] };
@@ -1286,6 +1287,7 @@ interface TtsOptions {
   elevenlabsVoiceId?: string; // ElevenLabs voice ID
   fishVoiceId?: string; // Fish Audio voice/model ID
   fishApiKey?: string; // Fish Audio API key (override from settings)
+  expression?: number; // 0-100: expressiveness (Fish temperature: 0=flat, 100=very expressive)
 }
 
 // Get ElevenLabs API key via Replit connector
@@ -1398,17 +1400,21 @@ function getFishErrorMessage(error: any): string {
 }
 
 // Generate audio buffer using Fish Audio TTS (S2.1 model family)
-async function generateFishAudio(text: string, referenceId: string, apiKeyOverride?: string): Promise<Buffer> {
+async function generateFishAudio(text: string, referenceId: string, apiKeyOverride?: string, options: TtsOptions = {}): Promise<Buffer> {
   const apiKey = apiKeyOverride || (await getFishApiKey());
+  const speed = options.speed ? Math.max(0.5, Math.min(2.0, options.speed)) : 1.0;
+  const expression = options.expression !== undefined
+    ? Math.max(0, Math.min(100, options.expression)) / 100
+    : 0.7;
   try {
     const response = await axios.post(
       "https://api.fish.audio/v1/tts",
       {
         text,
         reference_id: referenceId,
-        temperature: 0.7,
+        temperature: expression,
         top_p: 0.7,
-        prosody: { speed: 1, volume: 0, normalize_loudness: true },
+        prosody: { speed, volume: 0, normalize_loudness: true },
         format: "mp3",
         sample_rate: 44100,
         mp3_bitrate: 128,
@@ -1425,7 +1431,7 @@ async function generateFishAudio(text: string, referenceId: string, apiKeyOverri
         timeout: 60000,
       }
     );
-    console.log("[Fish] TTS success", { referenceId, size: response.data?.byteLength || 0 });
+    console.log("[Fish] TTS success", { referenceId, size: response.data?.byteLength || 0, speed, expression });
     return Buffer.from(response.data);
   } catch (error: any) {
     const message = getFishErrorMessage(error);
@@ -1447,7 +1453,7 @@ async function generateTtsAudioBuffer(
 
   if (isFish) {
     const fishVoiceId = options.fishVoiceId || "1a79cb2d99c146c69c19f9225ed5deaf";
-    const audioBuffer = await generateFishAudio(text, fishVoiceId, options.fishApiKey);
+    const audioBuffer = await generateFishAudio(text, fishVoiceId, options.fishApiKey, options);
     return {
       audioBuffer,
       fileExt: "mp3",
@@ -4599,6 +4605,7 @@ NO uses saludos formales. Se directo y amigable.`
     fishVoiceId: z.string().optional(),
     fishApiKey: z.string().nullable().optional(),
     ttsSpeed: z.number().min(25).max(400).optional(),
+    ttsExpression: z.number().min(0).max(100).optional(),
     ttsInstructions: z.string().nullable().optional(),
     learningMode: z.boolean().optional(),
     followUpEnabled: z.boolean().optional(),
@@ -4626,6 +4633,7 @@ NO uses saludos formales. Se directo y amigable.`
     elevenlabsVoiceId: z.string().optional(),
     fishVoiceId: z.string().optional(),
     speed: z.number().min(25).max(400).optional(),
+    expression: z.number().min(0).max(100).optional(),
     instructions: z.string().nullable().optional(),
     text: z.string().min(1).max(300).optional(),
   });
@@ -4713,18 +4721,40 @@ NO uses saludos formales. Se directo y amigable.`
         }).catch((e: any) => ({ data: { items: [] }, error: getFishErrorMessage(e) })),
       ]);
 
-      const mapVoice = (item: any) => ({
-        voice_id: item?._id || "",
-        name: item?.title || "Sin nombre",
-        source: item?.visibility === "private" ? "library" : "shared" as "library" | "shared",
-        labels: {
-          description: item?.description || item?.tags?.join(", ") || "",
-          gender: "female",
-          accent: (item?.languages || []).join(", ") || "es",
-          use_case: item?.type || "tts",
-        },
-        preview_url: item?.samples?.[0]?.audio || null,
-      });
+      const mapVoice = (item: any) => {
+        const tags: string[] = Array.isArray(item?.tags) ? item.tags : [];
+        const description = String(item?.description || "");
+        const combined = (tags.join(" ") + " " + description).toLowerCase();
+
+        // Detect gender from tags/description
+        let gender = "unknown";
+        if (/\bmale\b|\bman\b|\bmasculino\b|\bhombre\b|\bmiddle-aged\b|\bold\b/.test(combined)) gender = "male";
+        if (/\bfemale\b|\bwoman\b|\bfemenino\b|\bmujer\b|\byoung\b|\bgirl\b/.test(combined)) gender = "female";
+
+        // Detect nationality/accent from description + tags
+        const accentMatches = (description + " " + tags.join(" ")).match(
+          /\b(latinoameric\w*|latin american|mexican|colombian|argentine?\b|chilean|peruvian|venezuelan|ecuadorian|bolivian|uruguayan|paraguayan|spanish|espanol|spain|andaluz|castilian|caribbean|cuban|dominican|puerto rican)\b/gi
+        ) || [];
+        const accent = accentMatches.length > 0 ? accentMatches[0] : ((item?.languages || []).join(", ") || "es");
+
+        const languages: string[] = Array.isArray(item?.languages) ? item.languages : [];
+        const nationality = accent !== (languages.join(", ") || "es") ? accent : (languages[0] || "es");
+
+        return {
+          voice_id: item?._id || "",
+          name: item?.title || "Sin nombre",
+          source: item?.visibility === "private" ? "library" : "shared" as "library" | "shared",
+          labels: {
+            description: description || tags.join(", "),
+            gender,
+            accent,
+            nationality,
+            languages: languages.join(", "),
+            use_case: item?.type || "tts",
+          },
+          preview_url: item?.samples?.[0]?.audio || null,
+        };
+      };
 
       const ownVoices = ((ownRes.data?.items) || []).filter((i: any) => i?.type === "tts" || !i?.type).map(mapVoice);
       const seenIds = new Set(ownVoices.map((v: any) => v.voice_id));
@@ -4899,6 +4929,7 @@ NO uses saludos formales. Se directo y amigable.`
         fishVoiceId: parsed.fishVoiceId,
         fishApiKey: parsed.fishVoiceId ? settings?.fishApiKey || undefined : undefined,
         speed: parsed.speed ? parsed.speed / 100 : 1.0,
+        expression: parsed.expression,
         instructions: parsed.instructions ?? null,
       };
       const generated = await generateTtsAudioBuffer(previewText, voice, options, "preview");

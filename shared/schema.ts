@@ -186,6 +186,7 @@ export const aiSettings = pgTable("ai_settings", {
   fishVoiceId: varchar("fish_voice_id", { length: 100 }), // Fish Audio voice/model ID
   fishApiKey: text("fish_api_key"), // Fish Audio API key (editable from frontend)
   ttsSpeed: integer("tts_speed").default(100), // 25-400, divide by 100 for actual value (0.25x - 4.0x)
+  ttsExpression: integer("tts_expression").default(70), // 0-100: expressiveness (Fish temperature, etc.)
   ttsInstructions: text("tts_instructions"), // Only for realistic voices - describes tone/style
   learningMode: boolean("learning_mode").default(true), // When true, disables fixed commerce flow (legacy)
   learningMessageCount: integer("learning_message_count").default(10), // How many messages to read for learning

@@ -244,6 +244,10 @@ export class DatabaseStorage implements IStorage {
       ALTER TABLE ai_settings
       ADD COLUMN IF NOT EXISTS audio_mode VARCHAR(20) DEFAULT 'first'
     `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS tts_expression INTEGER DEFAULT 70
+    `);
     this.aiSettingsColumnsEnsured = true;
   }
 

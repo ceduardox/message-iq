@@ -54,6 +54,7 @@ interface AiSettings {
   fishVoiceId: string | null;
   fishApiKey: string | null;
   ttsSpeed: number | null;
+  ttsExpression: number | null;
   ttsInstructions: string | null;
   learningMode: boolean | null;
   followUpEnabled: boolean | null;
@@ -145,9 +146,12 @@ export default function AIAgentPage() {
   const [fishVoiceId, setFishVoiceId] = useState("");
   const [fishApiKey, setFishApiKey] = useState("");
   const [showFishApiKey, setShowFishApiKey] = useState(false);
+  const [fishGenderFilter, setFishGenderFilter] = useState("all");
+  const [fishNationalityFilter, setFishNationalityFilter] = useState("all");
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(100);
+  const [ttsExpression, setTtsExpression] = useState(70);
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [followUpMinutes, setFollowUpMinutes] = useState(20);
@@ -439,6 +443,7 @@ export default function AIAgentPage() {
       setFishVoiceId(settings.fishVoiceId || "");
       setFishApiKey(settings.fishApiKey || "");
       setTtsSpeed(settings.ttsSpeed || 100);
+      setTtsExpression(settings.ttsExpression ?? 70);
       setTtsInstructions(settings.ttsInstructions || "");
       setFollowUpEnabled(settings.followUpEnabled || false);
       setFollowUpMinutes(settings.followUpMinutes || 20);
@@ -547,7 +552,7 @@ export default function AIAgentPage() {
 
   const handleSaveConfig = () => {
     console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
-    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
+    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsExpression, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
   };
 
   const playVoicePreview = async () => {
@@ -564,6 +569,8 @@ export default function AIAgentPage() {
           ? {
               provider: "fish",
               fishVoiceId,
+              speed: ttsSpeed,
+              expression: ttsExpression,
               text: "Hola, esta es una prueba de voz para tu CRM.",
             }
           : {
@@ -1346,6 +1353,36 @@ export default function AIAgentPage() {
                       className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
                       data-testid="input-search-voice-fish"
                     />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-slate-400 text-xs">Género</Label>
+                        <Select value={fishGenderFilter} onValueChange={(v) => setFishGenderFilter(v)}>
+                          <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-fish-gender">
+                            <SelectValue placeholder="Todos" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos</SelectItem>
+                            <SelectItem value="female">Mujer</SelectItem>
+                            <SelectItem value="male">Hombre</SelectItem>
+                            <SelectItem value="unknown">Sin identificar</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-slate-400 text-xs">Nacionalidad / acento</Label>
+                        <Select value={fishNationalityFilter} onValueChange={(v) => setFishNationalityFilter(v)}>
+                          <SelectTrigger className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="select-fish-nationality">
+                            <SelectValue placeholder="Todas" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {Array.from(new Set(fishVoices.map((v) => v.labels?.nationality || "es").filter(Boolean))).sort().map((nat) => (
+                              <SelectItem key={nat} value={nat}>{nat}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                     {fishVoicesError ? (
                       <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-center">
                         <p className="text-sm text-red-300">Error al cargar voces. Verifica tu clave FISH_API_KEY en el servidor.</p>
@@ -1359,6 +1396,9 @@ export default function AIAgentPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
                           {fishVoices
                             .filter((voice) => {
+                              const genderMatch = fishGenderFilter === "all" || (voice.labels?.gender || "unknown") === fishGenderFilter;
+                              const natMatch = fishNationalityFilter === "all" || (voice.labels?.nationality || "es") === fishNationalityFilter;
+                              if (!genderMatch || !natMatch) return false;
                               if (!normalizedVoiceSearch) return true;
                               const description = String(voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "");
                               return (
@@ -1390,7 +1430,11 @@ export default function AIAgentPage() {
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-400 font-normal">Latina</span>
                                 )}
                               </div>
-                              <div className="text-xs text-emerald-400 truncate">{voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "Custom"}</div>
+                              <div className="text-xs text-emerald-400 truncate">
+                                {voice.labels?.gender === "female" ? "Mujer" : voice.labels?.gender === "male" ? "Hombre" : "¿?"}
+                                {voice.labels?.nationality ? ` · ${voice.labels.nationality}` : ""}
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate">{voice.labels?.description || voice.labels?.use_case || voice.category || "Custom"}</div>
                             </button>
                           ))}
                         </div>
@@ -1411,7 +1455,7 @@ export default function AIAgentPage() {
                 )}
 
                 <div className="grid gap-4 sm:grid-cols-2 mt-4 pt-4 border-t border-slate-700/50">
-                  {ttsProvider === "openai" && (
+                  {(ttsProvider === "openai" || ttsProvider === "fish") && (
                     <div>
                       <Label htmlFor="ttsSpeed" className="text-slate-300">Velocidad de habla</Label>
                       <div className="flex items-center gap-3">
@@ -1432,6 +1476,31 @@ export default function AIAgentPage() {
                         <span className="text-sm font-medium w-14 text-center text-emerald-400">{(ttsSpeed / 100).toFixed(2)}x</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">0.5x (lento) - 2.0x (rápido)</p>
+                    </div>
+                  )}
+                  {ttsProvider === "fish" && (
+                    <div>
+                      <Label htmlFor="ttsExpression" className="text-slate-300">Expresión</Label>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          id="ttsExpression"
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={ttsExpression}
+                          onChange={(e) => {
+                            setTtsExpression(parseInt(e.target.value));
+                            setConfigEdited(true);
+                          }}
+                          className="flex-1 accent-cyan-500"
+                          data-testid="input-tts-expression"
+                        />
+                        <span className="text-sm font-medium w-14 text-center text-cyan-400">
+                          {ttsExpression <= 30 ? "Plana" : ttsExpression >= 70 ? "Expresiva" : "Normal"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">Fish Audio: temperature 0-1 (más alto = más expresión)</p>
                     </div>
                   )}
                   

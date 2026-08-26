@@ -132,6 +132,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       fish_api_key TEXT,
       audio_mode VARCHAR(20) DEFAULT 'first',
       tts_speed INTEGER DEFAULT 100,
+      tts_expression INTEGER DEFAULT 70,
       tts_instructions TEXT,
       learning_mode BOOLEAN DEFAULT true,
       learning_message_count INTEGER DEFAULT 10,
