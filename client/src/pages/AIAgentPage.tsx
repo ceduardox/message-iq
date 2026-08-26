@@ -912,6 +912,101 @@ export default function AIAgentPage() {
           </div>
         </div>
 
+        {/* Ad Banners Card */}
+        <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/5 to-transparent rounded-2xl" />
+          <div className="relative space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <Megaphone className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white">Publicidad / Banners</h3>
+                  <p className="text-xs text-slate-400">Conecta cada anuncio (ad_id) con lo que dice, para que la IA enganche con el problema</p>
+                </div>
+              </div>
+              <Button
+                onClick={openCreateBanner}
+                data-testid="button-add-ad-banner"
+                className="w-full sm:w-auto bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg shadow-cyan-500/30"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo anuncio
+              </Button>
+            </div>
+
+            {bannersLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : adBanners.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                {adBanners.map((banner) => (
+                  <div
+                    key={banner.id}
+                    className={`p-3 border rounded-xl bg-slate-900/50 ${!banner.isActive ? "opacity-50" : ""}`}
+                    data-testid={`ad-banner-${banner.id}`}
+                  >
+                    <div className="flex flex-col sm:flex-row items-start gap-3">
+                      {banner.imageUrl ? (
+                        <img
+                          src={banner.imageUrl}
+                          alt="Banner"
+                          className="h-12 w-12 rounded object-cover border border-slate-700/60 bg-slate-900 flex-shrink-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="h-12 w-12 rounded bg-slate-800 flex items-center justify-center border border-slate-700/60 flex-shrink-0">
+                          <Megaphone className="h-5 w-5 text-slate-500" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="text-xs bg-black/40 rounded px-1.5 py-0.5 text-cyan-300 break-all">{banner.adId}</code>
+                          <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${banner.isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-600/20 text-slate-400"}`}>
+                            {banner.isActive ? "Activo" : "Inactivo"}
+                          </span>
+                          {banner.segment && (
+                            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400">{banner.segment}</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-300 mt-1">"{banner.problemText}"</p>
+                      </div>
+                      <div className="flex items-center gap-1 mt-1 sm:mt-0">
+                        <Switch
+                          checked={banner.isActive}
+                          onCheckedChange={(checked) => updateBannerMutation.mutate({ id: banner.id, data: { isActive: checked } })}
+                          data-testid={`switch-ad-banner-active-${banner.id}`}
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => openEditBanner(banner)} data-testid={`button-edit-ad-banner-${banner.id}`}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteBannerMutation.mutate(banner.id)}
+                          disabled={deleteBannerMutation.isPending}
+                          data-testid={`button-delete-ad-banner-${banner.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No hay anuncios configurados. Agrega el ad_id de Meta y qué dice cada publicidad para que la IA conecte con el problema.
+              </p>
+            )}
+            <p className="text-xs text-slate-500">
+              Para obtener el ID de un anuncio: Meta Ads Manager → campaña → columna "ID del anuncio". Solo se inyecta a la IA si el banner está <span className="text-emerald-400">Activo</span>.
+            </p>
+          </div>
+        </div>
+
         {/* Interactive Messages Guide */}
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-violet-500/5 to-transparent rounded-2xl" />
@@ -2108,101 +2203,6 @@ export default function AIAgentPage() {
                 No hay logs aún
               </p>
             )}
-          </div>
-
-          {/* Ad Banners Card */}
-          <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/5 to-transparent rounded-2xl" />
-            <div className="relative space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
-                    <Megaphone className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">Publicidad / Banners</h3>
-                    <p className="text-xs text-slate-400">Conecta cada anuncio (ad_id) con lo que dice, para que la IA enganche con el problema</p>
-                  </div>
-                </div>
-                <Button
-                  onClick={openCreateBanner}
-                  data-testid="button-add-ad-banner"
-                  className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white shadow-lg shadow-cyan-500/30"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nuevo anuncio
-                </Button>
-              </div>
-
-              {bannersLoading ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
-              ) : adBanners.length > 0 ? (
-                <div className="space-y-3">
-                  {adBanners.map((banner) => (
-                    <div
-                      key={banner.id}
-                      className={`p-3 border rounded-xl bg-slate-900/50 ${!banner.isActive ? "opacity-50" : ""}`}
-                      data-testid={`ad-banner-${banner.id}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        {banner.imageUrl ? (
-                          <img
-                            src={banner.imageUrl}
-                            alt="Banner"
-                            className="h-12 w-12 rounded object-cover border border-slate-700/60 bg-slate-900"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="h-12 w-12 rounded bg-slate-800 flex items-center justify-center border border-slate-700/60">
-                            <Megaphone className="h-5 w-5 text-slate-500" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <code className="text-xs bg-black/40 rounded px-1.5 py-0.5 text-cyan-300">{banner.adId}</code>
-                            <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${banner.isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-600/20 text-slate-400"}`}>
-                              {banner.isActive ? "Activo" : "Inactivo"}
-                            </span>
-                            {banner.segment && (
-                              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400">{banner.segment}</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-300 mt-1">"{banner.problemText}"</p>
-                        </div>
-                        <div className="flex gap-1 items-center">
-                          <Switch
-                            checked={banner.isActive}
-                            onCheckedChange={(checked) => updateBannerMutation.mutate({ id: banner.id, data: { isActive: checked } })}
-                            data-testid={`switch-ad-banner-active-${banner.id}`}
-                          />
-                          <Button variant="ghost" size="icon" onClick={() => openEditBanner(banner)} data-testid={`button-edit-ad-banner-${banner.id}`}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteBannerMutation.mutate(banner.id)}
-                            disabled={deleteBannerMutation.isPending}
-                            data-testid={`button-delete-ad-banner-${banner.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No hay anuncios configurados. Agrega el ad_id de Meta y qué dice cada publicidad para que la IA conecte con el problema.
-                </p>
-              )}
-              <p className="text-xs text-slate-500">
-                Para obtener el ID de un anuncio: Meta Ads Manager → campaña → columna "ID del anuncio". Solo se inyecta a la IA si el banner está <span className="text-emerald-400">Activo</span>.
-              </p>
-            </div>
           </div>
 
           {/* Push Notification Controls */}
