@@ -69,6 +69,13 @@
 - REGLA FIJA DE PRECIOS: isPriceRelatedResponse() en routes.ts. Si la respuesta contiene palabras de precio/costo/oferta/pago (precio, cuánto cuesta, costo, valor, paga, Bs, $, oferta, promoción, etc.) NUNCA se envía audio, sin importar el modo elegido. Se registra en AUDIO_BLOCKED_PRICE.
 - Previews y flujo de envío pasan fishApiKey desde settings.
 
+### 3.6 PRIMERA RESPUESTA EN AUDIO PARA LEADS NUEVOS (IMPLEMENTADO)
+- Un lead nuevo (conversación recién creada en el webhook) recibe su PRIMERA respuesta SIEMPRE en audio (bienvenida con voz "humana"), salvo la regla de precios.
+- Implementación: flag `isNewConversation` en BufferedMessage (se marca al crear la conversación en el webhook) → se propaga por flushMessageBuffer → processAiResponse → shouldSendAudioForResponse retorna true si isNewConversation.
+- El contador conversationAiResponseCount ahora se INICIALIZA desde el historial real (mensajes out tipo text) para que conversaciones existentes respeten el modo (first/until_second) aunque el servidor se reinicie.
+- Los modos aplican igual: all=todas, first=primera, until_second=2 primeras. Para lead nuevo siempre suena la primera (es "first" implícito) + modo del usuario.
+- IMPORTANTE: el audio de bienvenida requiere audioResponseEnabled activo en /ai-agent y el proveedor/voz configurados.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

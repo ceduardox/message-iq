@@ -63,6 +63,7 @@ interface BufferedMessage {
   conversationId: number;
   from: string;
   name: string;
+  isNewConversation?: boolean;
 }
 const messageBuffers = new Map<string, { messages: BufferedMessage[]; timer: ReturnType<typeof setTimeout> }>();
 const conversationAiResponseCount = new Map<number, number>(); // Tracks how many AI replies per conversation (for audio modes)
@@ -730,6 +731,7 @@ function flushMessageBuffer(waId: string) {
     conversationId: msgs[msgs.length - 1].conversationId,
     from: msgs[0].from,
     name: msgs[0].name,
+    isNewConversation: msgs.some(m => m.isNewConversation),
   };
 
   processAiResponse(combined).catch(err => console.error("Buffered AI error:", err));
@@ -754,6 +756,7 @@ function shouldSendAudioForResponse(
   wasAudioMessage: boolean,
   responseText: string,
   conversationId: number,
+  isNewConversation?: boolean,
 ): boolean {
   // Hard rule: never audio when the response mentions prices.
   if (isPriceRelatedResponse(responseText)) {
@@ -764,7 +767,10 @@ function shouldSendAudioForResponse(
   if (!aiSettings?.audioResponseEnabled) return false;
 
   const mode = aiSettings.audioMode || "first";
-  const replyCount = conversationAiResponseCount.get(conversationId) || 0;
+  const replyCount = conversationAiResponseCount.get(conversationId) ?? 0;
+
+  // New leads: always start with voice for a human welcome (unless price blocked above).
+  if (isNewConversation) return true;
 
   if (mode === "all") return true;
   if (mode === "first") return replyCount === 0;
@@ -790,6 +796,12 @@ async function processAiResponse(data: BufferedMessage) {
     const aiSettings = await storage.getAiSettings();
     const recentMessages = await storage.getMessages(conversationId);
 
+    // Initialize the reply counter from real history if not tracked yet.
+    if (!conversationAiResponseCount.has(conversationId)) {
+      const outboundAiCount = recentMessages.filter((m) => m.direction === "out" && m.type === "text").length;
+      conversationAiResponseCount.set(conversationId, outboundAiCount);
+    }
+
     const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi, advisorName);
 
     if (aiResult && aiResult.needsHuman) {
@@ -804,13 +816,14 @@ async function processAiResponse(data: BufferedMessage) {
     } else if (aiResult && aiResult.response) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
-      const shouldSendAudio = shouldSendAudioForResponse(aiSettings, wasAudioMessage, aiResult.response, conversationId);
+      const shouldSendAudio = shouldSendAudioForResponse(aiSettings, wasAudioMessage, aiResult.response, conversationId, data.isNewConversation);
       if (wasAudioMessage || aiSettings?.audioResponseEnabled) {
         logAudioDebug("AUDIO_RESPONSE_DECISION", {
           conversationId,
           audioResponseEnabled: !!aiSettings?.audioResponseEnabled,
           audioMode: aiSettings?.audioMode || "first",
           aiReplyCount: conversationAiResponseCount.get(conversationId) || 0,
+          isNewConversation: !!data.isNewConversation,
           shouldSendAudio,
           priceBlocked: isPriceRelatedResponse(aiResult.response),
           ttsProvider: aiSettings?.ttsProvider || "openai",
@@ -2945,7 +2958,9 @@ export async function registerRoutes(
 
               // 2. Ensure Conversation Exists (now using correct messageText)
               let conversation = await storage.getConversationByWaId(from);
+              let wasConversationJustCreated = false;
               if (!conversation) {
+                wasConversationJustCreated = true;
                 const incomingAdId = extractAdIdFromIncomingMessage(msg);
                 const adRouting = incomingAdId ? await getNextAgentForAdIdRouting(incomingAdId) : {};
                 const nextAgent = adRouting.agent || await storage.getNextAgentForAssignment();
@@ -3035,6 +3050,7 @@ export async function registerRoutes(
                   conversationId: conversation.id,
                   from,
                   name,
+                  isNewConversation: wasConversationJustCreated,
                 };
 
                 const existing = messageBuffers.get(from);
