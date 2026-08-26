@@ -178,9 +178,12 @@ export const aiSettings = pgTable("ai_settings", {
   maxPromptChars: integer("max_prompt_chars").default(2000), // Max chars in system prompt
   conversationHistory: integer("conversation_history").default(3), // How many previous messages to read
   audioResponseEnabled: boolean("audio_response_enabled").default(false), // Respond with audio when client sends audio
+  audioMode: varchar("audio_mode", { length: 20 }).default("first"), // "all" | "first" | "until_second"
   audioVoice: varchar("audio_voice", { length: 20 }).default("nova"), // TTS voice: nova, alloy, echo, shimmer, coral, sage, ash, ballad, verse
-  ttsProvider: varchar("tts_provider", { length: 20 }).default("openai"), // "openai" or "elevenlabs"
+  ttsProvider: varchar("tts_provider", { length: 20 }).default("openai"), // "openai", "elevenlabs" or "fish"
   elevenlabsVoiceId: varchar("elevenlabs_voice_id", { length: 50 }).default("JBFqnCBsd6RMkjVDRZzb"), // ElevenLabs voice ID
+  fishVoiceId: varchar("fish_voice_id", { length: 100 }), // Fish Audio voice/model ID
+  fishApiKey: text("fish_api_key"), // Fish Audio API key (editable from frontend)
   ttsSpeed: integer("tts_speed").default(100), // 25-400, divide by 100 for actual value (0.25x - 4.0x)
   ttsInstructions: text("tts_instructions"), // Only for realistic voices - describes tone/style
   learningMode: boolean("learning_mode").default(true), // When true, disables fixed commerce flow (legacy)

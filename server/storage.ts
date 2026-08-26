@@ -221,6 +221,18 @@ export class DatabaseStorage implements IStorage {
       ALTER TABLE ai_settings
       ADD COLUMN IF NOT EXISTS follow_up_fixed_message TEXT
     `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS fish_voice_id VARCHAR(100)
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS fish_api_key TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS audio_mode VARCHAR(20) DEFAULT 'first'
+    `);
     this.aiSettingsColumnsEnsured = true;
   }
 

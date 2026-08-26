@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { MessageSquare, Loader2, Sparkles, User, Lock, Zap } from "lucide-react";
+import { MessageSquare, Loader2, Sparkles, User, Lock, Zap, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 
 const floatingAnimation = `
 @keyframes float {
@@ -30,7 +31,8 @@ const floatingAnimation = `
 export default function LoginPage() {
   const { login, isLoggingIn } = useAuth();
   const savedUsername = typeof window !== "undefined" ? localStorage.getItem("login_saved_username") ?? "" : "";
-  
+  const [showPassword, setShowPassword] = useState(false);
+
   const form = useForm<LoginRequest>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -130,11 +132,19 @@ export default function LoginPage() {
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                         <Input 
-                          type="password" 
+                          type={showPassword ? "text" : "password"} 
                           placeholder="••••••••" 
                           {...field} 
-                          className="h-12 pl-12 rounded-xl bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:bg-slate-700 focus:border-emerald-500 focus:ring-emerald-500/20 transition-all"
+                          className="h-12 pl-12 pr-12 rounded-xl bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:bg-slate-700 focus:border-emerald-500 focus:ring-emerald-500/20 transition-all"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-400 transition-colors focus:outline-none"
+                          aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                        >
+                          {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                        </button>
                       </div>
                     </FormControl>
                     <FormMessage />

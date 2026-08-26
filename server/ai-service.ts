@@ -258,7 +258,7 @@ export async function generateAiResponse(
   recentMessages: Message[],
   imageBase64?: string, // Optional: base64 encoded image for vision analysis
   advisorName?: string,
-): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean } | null> {
+): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean; orderStatus?: OrderStatus } | null> {
   try {
     const [settings, allProducts, learnedRules] = await Promise.all([
       storage.getAiSettings(),
@@ -359,8 +359,12 @@ ${currentDateContext}
 - Para enviar botones interactivos (máximo 3 opciones, 20 caracteres cada una) usa: [BOTONES: opción1, opción2, opción3]. Ejemplo: Te paso opciones [BOTONES: Producto A, Producto B, Hablar con asesor]
 - Para enviar una lista interactiva (hasta 10 opciones) usa: [LISTA: título del botón | opción1, opción2, opción3]. Ejemplo: Mira el catálogo [LISTA: Ver productos | Producto A, Producto B, Producto C]
 - IMPORTANTE: Cuando las instrucciones mencionen "botones" o el cliente deba elegir entre opciones, SIEMPRE usa el formato [BOTONES:] o [LISTA:]. NUNCA escribas las opciones como texto plano con asteriscos o viñetas.
-- IMPORTANTE: Cuando el cliente confirme el pedido con TODOS los datos (producto, cantidad, dirección/ubicación), escribe [PEDIDO_LISTO] al final de tu respuesta para marcar que hay un pedido listo para entregar.
-- Un pedido está listo cuando tienes: producto, cantidad, y dirección de entrega (ubicación GPS o dirección escrita)
+- IMPORTANTE: Puedes mover la conversacion a la columna de CIERRE EN PROCESO con el formato [ESTADO: pending] (al final de la respuesta, se quita del mensaje enviado). Usalo cuando la llamada o cita con el Asesor Educativo YA se realizo y el proceso de cierre esta en curso:
+  - [ESTADO: pending]: cierre en proceso (la llamada/cita ya paso).
+- IMPORTANTE: NUNCA uses [ESTADO: ready] ni [ESTADO: delivered]. Esas dos columnas (por cerrar y cerrado) las mueve manualmente el equipo humano del CRM, no la IA.
+- IMPORTANTE: No inventes movimientos de columna si no hay suficiente avance; deja que el flujo natural de la conversacion lo determine.
+- IMPORTANTE: NUNCA uses [PEDIDO_LISTO]. Ese marcador es de un negocio anterior y no aplica a IQx. Para cerrar el proceso de una llamada/cita usa [ESTADO: pending].
+- Un cierre esta "en proceso" cuando la llamada o cita con el Asesor Educativo ya se realizo y solo falta el cierre comercial.
 - Si NO puedes responder la pregunta con la información disponible, escribe exactamente [NECESITO_HUMANO] y no respondas nada más.
 - Si el cliente pide que lo llamen, menciona llamada telefónica, o detectas que una llamada cerraría la venta (NEUROVENTA), escribe [LLAMAR] al final. Recuerda: ya tienes su número de WhatsApp, NO le pidas número.
 ${learnedRulesContext}
@@ -449,9 +453,21 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       cleanResponse = cleanResponse.replace(imageMatch[0], "").trim();
     }
 
-    // Check if order is ready (AI detected complete order with all data)
-    const orderReady = cleanResponse.includes("[PEDIDO_LISTO]");
-    if (orderReady) {
+    // Check for explicit column/status marker: [ESTADO: pending|ready|delivered|ninguno]
+    // Allows the AI to move the conversation between CRM columns based on the conversation.
+    const statusMatch = cleanResponse.match(/\[ESTADO:\s*(pending|ready|delivered|ninguno)\]/i);
+    let orderStatus: OrderStatus = null;
+    let orderReady = false;
+    if (statusMatch) {
+      const rawStatus = statusMatch[1].toLowerCase();
+      orderStatus = rawStatus === "ninguno" ? null : (rawStatus as OrderStatus);
+      cleanResponse = cleanResponse.replace(statusMatch[0], "").trim();
+      console.log("=== STATUS MARKER DETECTED ===", { conversationId, orderStatus });
+    }
+
+    // Backward-compatible: [PEDIDO_LISTO] maps to "ready"
+    if (cleanResponse.includes("[PEDIDO_LISTO]")) {
+      orderReady = true;
       cleanResponse = cleanResponse.replace(/\[PEDIDO_LISTO\]/gi, "").trim();
       console.log("=== ORDER READY DETECTED ===", { conversationId });
     }
@@ -478,7 +494,7 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       success: true,
     }).catch(err => console.error("AI log error:", err));
 
-    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall };
+    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall, orderStatus };
   } catch (error: any) {
     console.error("AI Error:", error);
     

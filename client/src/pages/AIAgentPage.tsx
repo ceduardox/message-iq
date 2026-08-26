@@ -26,7 +26,9 @@ import {
   X,
   Check,
   MessageSquare,
-  Clock
+  Clock,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 interface AiSettings {
@@ -41,9 +43,12 @@ interface AiSettings {
   maxPromptChars: number | null;
   conversationHistory: number | null;
   audioResponseEnabled: boolean | null;
+  audioMode: string | null;
   audioVoice: string | null;
   ttsProvider: string | null;
   elevenlabsVoiceId: string | null;
+  fishVoiceId: string | null;
+  fishApiKey: string | null;
   ttsSpeed: number | null;
   ttsInstructions: string | null;
   learningMode: boolean | null;
@@ -119,9 +124,13 @@ export default function AIAgentPage() {
   const [maxPromptChars, setMaxPromptChars] = useState(2000);
   const [conversationHistory, setConversationHistory] = useState(3);
   const [audioResponseEnabled, setAudioResponseEnabled] = useState(false);
+  const [audioMode, setAudioMode] = useState("first");
   const [audioVoice, setAudioVoice] = useState("nova");
   const [ttsProvider, setTtsProvider] = useState("openai");
   const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState("JBFqnCBsd6RMkjVDRZzb");
+  const [fishVoiceId, setFishVoiceId] = useState("");
+  const [fishApiKey, setFishApiKey] = useState("");
+  const [showFishApiKey, setShowFishApiKey] = useState(false);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState("");
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(100);
@@ -188,6 +197,12 @@ export default function AIAgentPage() {
   const { data: elevenLabsVoices = [], isLoading: elVoicesLoading, isError: elVoicesError } = useQuery<ElevenLabsVoice[]>({
     queryKey: ["/api/elevenlabs/voices"],
     enabled: ttsProvider === "elevenlabs" && audioResponseEnabled,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: fishVoices = [], isLoading: fishVoicesLoading, isError: fishVoicesError } = useQuery<ElevenLabsVoice[]>({
+    queryKey: ["/api/fish/voices"],
+    enabled: ttsProvider === "fish" && audioResponseEnabled,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -301,9 +316,12 @@ export default function AIAgentPage() {
       setMaxPromptChars(settings.maxPromptChars || 2000);
       setConversationHistory(settings.conversationHistory || 3);
       setAudioResponseEnabled(settings.audioResponseEnabled || false);
+      setAudioMode(settings.audioMode || "first");
       setAudioVoice(settings.audioVoice || "nova");
       setTtsProvider(settings.ttsProvider || "openai");
       setElevenlabsVoiceId(settings.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb");
+      setFishVoiceId(settings.fishVoiceId || "");
+      setFishApiKey(settings.fishApiKey || "");
       setTtsSpeed(settings.ttsSpeed || 100);
       setTtsInstructions(settings.ttsInstructions || "");
       setFollowUpEnabled(settings.followUpEnabled || false);
@@ -413,7 +431,7 @@ export default function AIAgentPage() {
 
   const handleSaveConfig = () => {
     console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
-    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioVoice, ttsProvider, elevenlabsVoiceId, ttsSpeed, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
+    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
   };
 
   const playVoicePreview = async () => {
@@ -424,6 +442,12 @@ export default function AIAgentPage() {
           ? {
               provider: "elevenlabs",
               elevenlabsVoiceId,
+              text: "Hola, esta es una prueba de voz para tu CRM.",
+            }
+          : ttsProvider === "fish"
+          ? {
+              provider: "fish",
+              fishVoiceId,
               text: "Hola, esta es una prueba de voz para tu CRM.",
             }
           : {
@@ -964,7 +988,7 @@ export default function AIAgentPage() {
               <div className="space-y-1">
                 <Label htmlFor="audioResponse" className="text-slate-300">Responder con Audio</Label>
                 <p className="text-xs text-slate-500">
-                  Cuando el cliente envía un audio, la IA responde también con audio
+                  Activa la voz en las respuestas de la IA
                 </p>
               </div>
               <Switch
@@ -977,6 +1001,39 @@ export default function AIAgentPage() {
                 data-testid="switch-audio-response"
               />
             </div>
+
+            {audioResponseEnabled && (
+              <div className="space-y-3 p-4 border border-slate-700/50 rounded-xl bg-slate-800/30">
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Cuándo usar audio</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { value: "all", label: "Todas las respuestas", desc: "La IA responde con voz en cada mensaje" },
+                      { value: "first", label: "Solo primera respuesta", desc: "Voz solo en el primer mensaje de la conversación" },
+                      { value: "until_second", label: "Hasta la segunda respuesta", desc: "Voz en las 2 primeras respuestas" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => { setAudioMode(option.value); setConfigEdited(true); }}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          audioMode === option.value
+                            ? "border-emerald-500 bg-emerald-500/20 shadow-lg shadow-emerald-500/10"
+                            : "border-slate-600/50 bg-slate-800/50 hover:border-emerald-500/40"
+                        }`}
+                        data-testid={`audio-mode-${option.value}`}
+                      >
+                        <div className="font-semibold text-sm text-white">{option.label}</div>
+                        <div className="text-xs text-slate-400">{option.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-yellow-400/80">
+                    Regla fija: si la respuesta habla de precios o costos, NO se envía audio (se envía texto), sin importar la opción elegida.
+                  </p>
+                </div>
+              </div>
+            )}
             
             {audioResponseEnabled && (
               <div className="space-y-3">
@@ -1007,6 +1064,19 @@ export default function AIAgentPage() {
                   >
                     <div className="font-semibold text-sm text-white">ElevenLabs</div>
                     <div className="text-xs text-slate-400">Voces ultra-realistas</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTtsProvider("fish"); setConfigEdited(true); }}
+                    className={`flex-1 p-3 rounded-xl border-2 text-center transition-all ${
+                      ttsProvider === "fish"
+                        ? "border-emerald-500 bg-emerald-500/20 shadow-lg shadow-emerald-500/20"
+                        : "border-slate-600/50 bg-slate-800/50 hover:border-emerald-500/50"
+                    }`}
+                    data-testid="provider-fish"
+                  >
+                    <div className="font-semibold text-sm text-white">Fish Audio</div>
+                    <div className="text-xs text-slate-400">Voces realistas (S2.1)</div>
                   </button>
                 </div>
 
@@ -1117,14 +1187,113 @@ export default function AIAgentPage() {
 	                        className="border-violet-500/40 hover:bg-violet-500/10"
 	                        data-testid="button-preview-elevenlabs-voice"
 		                      >
-		                        {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-		                        Probar voz seleccionada
-		                      </Button>
+	                        {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+	                        Probar voz seleccionada
+	                      </Button>
                       </>
 	                    )}
 	                  </>
 	                )}
-                
+
+                {ttsProvider === "fish" && (
+                  <>
+                    <Label className="font-medium text-slate-300">Clave API de Fish Audio</Label>
+                    <p className="text-xs text-slate-500">Se guarda en el CRM (no en variables del servidor). Si ya existe FISH_API_KEY en el entorno, tiene prioridad.</p>
+                    <div className="relative">
+                      <Input
+                        type={showFishApiKey ? "text" : "password"}
+                        placeholder="sk-fish-..."
+                        value={fishApiKey}
+                        onChange={(e) => {
+                          setFishApiKey(e.target.value);
+                          setConfigEdited(true);
+                        }}
+                        className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500 pr-12"
+                        data-testid="input-fish-api-key"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowFishApiKey((prev) => !prev)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-400 transition-colors focus:outline-none"
+                        aria-label={showFishApiKey ? "Ocultar clave" : "Mostrar clave"}
+                      >
+                        {showFishApiKey ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                    <Label className="font-medium text-slate-300">Voz de Fish Audio</Label>
+                    <p className="text-xs text-slate-500">Selecciona una voz realista de tu cuenta Fish Audio (S2.1)</p>
+                    <Input
+                      type="text"
+                      placeholder="Buscar voz Fish..."
+                      value={voiceSearchQuery}
+                      onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                      className="bg-slate-800/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                      data-testid="input-search-voice-fish"
+                    />
+                    {fishVoicesError ? (
+                      <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-center">
+                        <p className="text-sm text-red-300">Error al cargar voces. Verifica tu clave FISH_API_KEY en el servidor.</p>
+                      </div>
+                    ) : fishVoicesLoading || fishVoices.length === 0 ? (
+                      <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-center">
+                        <p className="text-sm text-emerald-300">Cargando voces de Fish Audio...</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                          {fishVoices
+                            .filter((voice) => {
+                              if (!normalizedVoiceSearch) return true;
+                              const description = String(voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "");
+                              return (
+                                voice.name.toLowerCase().includes(normalizedVoiceSearch) ||
+                                description.toLowerCase().includes(normalizedVoiceSearch) ||
+                                voice.voice_id.toLowerCase().includes(normalizedVoiceSearch)
+                              );
+                            })
+                            .map((voice) => (
+                            <button
+                              key={voice.voice_id}
+                              type="button"
+                              onClick={() => {
+                                setFishVoiceId(voice.voice_id);
+                                setConfigEdited(true);
+                              }}
+                              className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                fishVoiceId === voice.voice_id
+                                  ? "border-emerald-500 bg-emerald-500/20 shadow-lg shadow-emerald-500/20"
+                                  : voice.source === "shared"
+                                    ? "border-pink-500/30 bg-pink-500/5 hover:border-emerald-500/60"
+                                    : "border-slate-600/50 bg-slate-800/50 hover:border-emerald-500/50"
+                              }`}
+                              data-testid={`voice-fish-${voice.voice_id}`}
+                            >
+                              <div className="font-semibold text-sm text-white flex items-center gap-1.5">
+                                {voice.name}
+                                {voice.source === "shared" && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-400 font-normal">Latina</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-emerald-400 truncate">{voice.labels?.description || voice.labels?.accent || voice.labels?.use_case || voice.category || "Custom"}</div>
+                            </button>
+                          ))}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={playVoicePreview}
+                          disabled={previewPlaying}
+                          className="border-emerald-500/40 hover:bg-emerald-500/10"
+                          data-testid="button-preview-fish-voice"
+                        >
+                          {previewPlaying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          Probar voz seleccionada
+                        </Button>
+                      </>
+                    )}
+                  </>
+                )}
+
                 <div className="grid gap-4 sm:grid-cols-2 mt-4 pt-4 border-t border-slate-700/50">
                   {ttsProvider === "openai" && (
                     <div>

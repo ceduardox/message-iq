@@ -65,6 +65,7 @@ interface BufferedMessage {
   name: string;
 }
 const messageBuffers = new Map<string, { messages: BufferedMessage[]; timer: ReturnType<typeof setTimeout> }>();
+const conversationAiResponseCount = new Map<number, number>(); // Tracks how many AI replies per conversation (for audio modes)
 interface IncomingPushState {
   lastSentAt: number;
   pendingCount: number;
@@ -734,6 +735,45 @@ function flushMessageBuffer(waId: string) {
   processAiResponse(combined).catch(err => console.error("Buffered AI error:", err));
 }
 
+// Detect if a response talks about prices (rule: never use audio for price responses)
+function isPriceRelatedResponse(text: string): boolean {
+  const priceKeywords = [
+    "precio", "precios", "cuánto cuesta", "cuanto cuesta", "cuanto vale", "cuánto vale",
+    "costo", "costos", "cuesta", "cuestan", "valor", "vale ", "pagar", "pago",
+    "bs", "boliviano", "bolivianos", "ofertas", "oferta", "promoción", "promocion",
+    "promo", "descuento", "tarifa", "usd", "$", "us$", "bs.",
+  ];
+  const lower = (text || "").toLowerCase();
+  return priceKeywords.some((keyword) => lower.includes(keyword));
+}
+
+// Decide whether to send an audio response based on the configured mode.
+// Modes: "all" (always audio), "first" (audio only for first AI reply), "until_second" (audio for first 2 replies).
+function shouldSendAudioForResponse(
+  aiSettings: any,
+  wasAudioMessage: boolean,
+  responseText: string,
+  conversationId: number,
+): boolean {
+  // Hard rule: never audio when the response mentions prices.
+  if (isPriceRelatedResponse(responseText)) {
+    logAudioDebug("AUDIO_BLOCKED_PRICE", { conversationId, textPreview: responseText.slice(0, 80) });
+    return false;
+  }
+
+  if (!aiSettings?.audioResponseEnabled) return false;
+
+  const mode = aiSettings.audioMode || "first";
+  const replyCount = conversationAiResponseCount.get(conversationId) || 0;
+
+  if (mode === "all") return true;
+  if (mode === "first") return replyCount === 0;
+  if (mode === "until_second") return replyCount < 2;
+
+  // Legacy default: only when client sent an audio message.
+  return wasAudioMessage;
+}
+
 async function processAiResponse(data: BufferedMessage) {
   const { conversationId, messageForAi, from, name, imageBase64ForAi, wasAudioMessage } = data;
   const conversation = await storage.getConversation(conversationId);
@@ -764,12 +804,15 @@ async function processAiResponse(data: BufferedMessage) {
     } else if (aiResult && aiResult.response) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
-      const shouldSendAudio = wasAudioMessage && aiSettings?.audioResponseEnabled;
-      if (wasAudioMessage) {
+      const shouldSendAudio = shouldSendAudioForResponse(aiSettings, wasAudioMessage, aiResult.response, conversationId);
+      if (wasAudioMessage || aiSettings?.audioResponseEnabled) {
         logAudioDebug("AUDIO_RESPONSE_DECISION", {
           conversationId,
           audioResponseEnabled: !!aiSettings?.audioResponseEnabled,
+          audioMode: aiSettings?.audioMode || "first",
+          aiReplyCount: conversationAiResponseCount.get(conversationId) || 0,
           shouldSendAudio,
+          priceBlocked: isPriceRelatedResponse(aiResult.response),
           ttsProvider: aiSettings?.ttsProvider || "openai",
           audioVoice: aiSettings?.audioVoice || "nova",
         });
@@ -799,11 +842,12 @@ async function processAiResponse(data: BufferedMessage) {
         const ttsProvider = aiSettings?.ttsProvider || "openai";
         const selectedVoice = aiSettings?.audioVoice || "nova";
         const elevenlabsVoiceId = aiSettings?.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
+        const fishVoiceId = aiSettings?.fishVoiceId || "1a79cb2d99c146c69c19f9225ed5deaf";
         const ttsSpeed = aiSettings?.ttsSpeed ? aiSettings.ttsSpeed / 100 : 1.0;
         const ttsInstructions = aiSettings?.ttsInstructions || null;
         console.log("=== SENDING AUDIO ===", ttsProvider, selectedVoice, ttsSpeed);
 
-        const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId });
+        const audioSent = await sendAudioResponse(from, aiResult.response, selectedVoice, { speed: ttsSpeed, instructions: ttsInstructions, provider: ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: aiSettings?.fishApiKey || undefined });
         if (audioSent) {
           waMessageId = `audio_${Date.now()}`;
           waResponse = { messages: [{ id: waMessageId }] };
@@ -834,12 +878,29 @@ async function processAiResponse(data: BufferedMessage) {
         rawJson: waResponse,
       });
 
+      // Track AI reply count for audio modes (all/first/until_second).
+      const nextReplyCount = (conversationAiResponseCount.get(conversationId) || 0) + 1;
+      conversationAiResponseCount.set(conversationId, nextReplyCount);
+
       const updateData: any = {
         lastMessage: aiResult.response,
         lastMessageTimestamp: new Date(),
       };
 
-      if (aiResult.orderReady) {
+      if (aiResult.orderStatus !== undefined) {
+        updateData.orderStatus = aiResult.orderStatus;
+        if (aiResult.orderStatus === "ready") {
+          console.log("=== MARKING ORDER AS READY (status marker) ===", conversationId);
+          sendPushNotification(
+            "Pedido Listo para Enviar",
+            `${name}: Pedido completo, listo para despachar`,
+            { conversationId: conversationId.toString(), waId: from, event: "order_ready" },
+            getConversationPushOptions(conversation)
+          );
+        } else if (aiResult.orderStatus) {
+          console.log("=== MARKING STATUS FROM AI ===", conversationId, aiResult.orderStatus);
+        }
+      } else if (aiResult.orderReady) {
         updateData.orderStatus = 'ready';
         console.log("=== MARKING ORDER AS READY ===", conversationId);
         sendPushNotification(
@@ -1208,8 +1269,10 @@ async function transcribeWhatsAppAudio(mediaId: string, mimeType?: string): Prom
 interface TtsOptions {
   speed?: number; // 0.25 - 4.0, default 1.0
   instructions?: string | null; // Only for realistic voices
-  provider?: string; // "openai" or "elevenlabs"
+  provider?: string; // "openai", "elevenlabs" or "fish"
   elevenlabsVoiceId?: string; // ElevenLabs voice ID
+  fishVoiceId?: string; // Fish Audio voice/model ID
+  fishApiKey?: string; // Fish Audio API key (override from settings)
 }
 
 // Get ElevenLabs API key via Replit connector
@@ -1297,6 +1360,67 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
   throw new Error(`ElevenLabs TTS failed. ${attemptErrors.join(" | ")}`);
 }
 
+// Fish Audio API key (env first, then ai_settings.fishApiKey stored from frontend)
+async function getFishApiKey(): Promise<string> {
+  const envKey = process.env.FISH_API_KEY;
+  if (envKey && envKey.trim().length > 0) {
+    return envKey.trim();
+  }
+  try {
+    const settings = await storage.getAiSettings();
+    const dbKey = settings?.fishApiKey?.trim();
+    if (dbKey) return dbKey;
+  } catch (err) {
+    console.warn("[Fish] Could not read fishApiKey from settings:", (err as any)?.message || err);
+  }
+  throw new Error("FISH_API_KEY is not configured");
+}
+
+function getFishErrorMessage(error: any): string {
+  const data = error?.response?.data;
+  if (!data) return error?.message || "Unknown Fish Audio error";
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  if (typeof data === "string") return data;
+  return data?.message || data?.detail?.message || data?.error || JSON.stringify(data);
+}
+
+// Generate audio buffer using Fish Audio TTS (S2.1 model family)
+async function generateFishAudio(text: string, referenceId: string, apiKeyOverride?: string): Promise<Buffer> {
+  const apiKey = apiKeyOverride || (await getFishApiKey());
+  try {
+    const response = await axios.post(
+      "https://api.fish.audio/v1/tts",
+      {
+        text,
+        reference_id: referenceId,
+        temperature: 0.7,
+        top_p: 0.7,
+        prosody: { speed: 1, volume: 0, normalize_loudness: true },
+        format: "mp3",
+        sample_rate: 44100,
+        mp3_bitrate: 128,
+        latency: "normal",
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+          model: "s2.1-pro-free",
+        },
+        responseType: "arraybuffer",
+        timeout: 60000,
+      }
+    );
+    console.log("[Fish] TTS success", { referenceId, size: response.data?.byteLength || 0 });
+    return Buffer.from(response.data);
+  } catch (error: any) {
+    const message = getFishErrorMessage(error);
+    console.error("[Fish] TTS failed", { referenceId, message });
+    throw new Error(`Fish Audio TTS failed: ${message}`);
+  }
+}
+
 async function generateTtsAudioBuffer(
   text: string,
   voice: string = "nova",
@@ -1305,7 +1429,18 @@ async function generateTtsAudioBuffer(
 ): Promise<{ audioBuffer: Buffer; fileExt: "mp3" | "opus"; contentType: string }> {
   const provider = options.provider || "openai";
   const isElevenLabs = provider === "elevenlabs";
+  const isFish = provider === "fish";
   const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (isFish) {
+    const fishVoiceId = options.fishVoiceId || "1a79cb2d99c146c69c19f9225ed5deaf";
+    const audioBuffer = await generateFishAudio(text, fishVoiceId, options.fishApiKey);
+    return {
+      audioBuffer,
+      fileExt: "mp3",
+      contentType: "audio/mpeg",
+    };
+  }
 
   if (isElevenLabs) {
     const elVoiceId = options.elevenlabsVoiceId || "JBFqnCBsd6RMkjVDRZzb";
@@ -1383,6 +1518,7 @@ async function sendAudioResponse(phoneNumber: string, text: string, voice: strin
       textLength: text.length,
       hasOpenAI: !!process.env.OPENAI_API_KEY,
       hasElevenLabs: !!process.env.ELEVENLABS_API_KEY,
+      hasFish: !!process.env.FISH_API_KEY,
     });
     const generated = await generateTtsAudioBuffer(text, voice, options, "whatsapp");
     const sourceAudioBuffer = generated.audioBuffer;
@@ -4424,9 +4560,12 @@ NO uses saludos formales. Se directo y amigable.`
     maxPromptChars: z.number().min(500).max(20000).optional(),
     conversationHistory: z.number().min(1).max(20).optional(),
     audioResponseEnabled: z.boolean().optional(),
+    audioMode: z.enum(["all", "first", "until_second"]).optional(),
     audioVoice: z.string().optional(),
-    ttsProvider: z.enum(["openai", "elevenlabs"]).optional(),
+    ttsProvider: z.enum(["openai", "elevenlabs", "fish"]).optional(),
     elevenlabsVoiceId: z.string().optional(),
+    fishVoiceId: z.string().optional(),
+    fishApiKey: z.string().nullable().optional(),
     ttsSpeed: z.number().min(25).max(400).optional(),
     ttsInstructions: z.string().nullable().optional(),
     learningMode: z.boolean().optional(),
@@ -4450,9 +4589,10 @@ NO uses saludos formales. Se directo y amigable.`
     content: z.string().min(1),
   });
   const ttsPreviewSchema = z.object({
-    provider: z.enum(["openai", "elevenlabs"]),
+    provider: z.enum(["openai", "elevenlabs", "fish"]),
     voice: z.string().optional(),
     elevenlabsVoiceId: z.string().optional(),
+    fishVoiceId: z.string().optional(),
     speed: z.number().min(25).max(400).optional(),
     instructions: z.string().nullable().optional(),
     text: z.string().min(1).max(300).optional(),
@@ -4519,6 +4659,55 @@ NO uses saludos formales. Se directo y amigable.`
     } catch (error: any) {
       console.error("Error fetching ElevenLabs voices:", error.message);
       res.status(500).json({ message: "Error fetching ElevenLabs voices" });
+    }
+  });
+
+  // Get Fish Audio voices (public Spanish models + user's own models)
+  app.get("/api/fish/voices", requireAuth, async (_req, res) => {
+    try {
+      const apiKey = await getFishApiKey();
+      const pageSize = 100;
+
+      const [ownRes, esRes] = await Promise.all([
+        axios.get("https://api.fish.audio/model", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          params: { page_size: pageSize, page_number: 1, self: true },
+          timeout: 20000,
+        }).catch((e: any) => ({ data: { items: [] }, error: getFishErrorMessage(e) })),
+        axios.get("https://api.fish.audio/model", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          params: { page_size: pageSize, page_number: 1, language: "es", sort_by: "task_count" },
+          timeout: 20000,
+        }).catch((e: any) => ({ data: { items: [] }, error: getFishErrorMessage(e) })),
+      ]);
+
+      const mapVoice = (item: any) => ({
+        voice_id: item?._id || "",
+        name: item?.title || "Sin nombre",
+        source: item?.visibility === "private" ? "library" : "shared" as "library" | "shared",
+        labels: {
+          description: item?.description || item?.tags?.join(", ") || "",
+          gender: "female",
+          accent: (item?.languages || []).join(", ") || "es",
+          use_case: item?.type || "tts",
+        },
+        preview_url: item?.samples?.[0]?.audio || null,
+      });
+
+      const ownVoices = ((ownRes.data?.items) || []).filter((i: any) => i?.type === "tts" || !i?.type).map(mapVoice);
+      const seenIds = new Set(ownVoices.map((v: any) => v.voice_id));
+      const sharedVoices = ((esRes.data?.items) || []).filter((i: any) => i?.type === "tts" || !i?.type).filter((i: any) => !seenIds.has(i?._id)).map(mapVoice);
+
+      const totalVoices = ownVoices.length + sharedVoices.length;
+      if (totalVoices === 0) {
+        const errMsg = (ownRes as any).error || (esRes as any).error || "";
+        console.warn("[Fish] No voices returned", errMsg ? { errMsg } : undefined);
+      }
+
+      res.json([...ownVoices, ...sharedVoices]);
+    } catch (error: any) {
+      console.error("Error fetching Fish voices:", error.message);
+      res.status(500).json({ message: "Error fetching Fish Audio voices" });
     }
   });
 
@@ -4671,9 +4860,12 @@ NO uses saludos formales. Se directo y amigable.`
         parsed.text?.trim() ||
         "Hola, esta es una prueba de voz para tu CRM de WhatsApp.";
       const voice = parsed.voice || "nova";
+      const settings = await storage.getAiSettings();
       const options: TtsOptions = {
         provider: parsed.provider,
         elevenlabsVoiceId: parsed.elevenlabsVoiceId,
+        fishVoiceId: parsed.fishVoiceId,
+        fishApiKey: parsed.fishVoiceId ? settings?.fishApiKey || undefined : undefined,
         speed: parsed.speed ? parsed.speed / 100 : 1.0,
         instructions: parsed.instructions ?? null,
       };
