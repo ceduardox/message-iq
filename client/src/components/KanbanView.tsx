@@ -470,9 +470,9 @@ const tabConfig: { key: TabType; label: string; shortLabel: string; icon: typeof
   { key: "humano", label: "Interaccion Humana", shortLabel: "Humano", icon: AlertCircle },
   { key: "nuevo", label: "Esperando Confirmaci.", shortLabel: "Nuevos", icon: Clock },
   { key: "llamar", label: "Llamar", shortLabel: "Llamar", icon: Phone },
-  { key: "proceso", label: "Pedido en Proceso", shortLabel: "Proceso", icon: Package },
-  { key: "listo", label: "Listo para Enviar", shortLabel: "Listo", icon: CheckCircle },
-  { key: "entregado", label: "Enviados y Entregados", shortLabel: "Enviado", icon: Truck },
+  { key: "proceso", label: "Cierre en Proceso", shortLabel: "Proceso", icon: Package },
+  { key: "listo", label: "Por Cerrar", shortLabel: "Por Cerrar", icon: CheckCircle },
+  { key: "entregado", label: "Cerrado", shortLabel: "Cerrado", icon: Truck },
 ];
 
 export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, columnVisibleLimit, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
@@ -657,9 +657,9 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
     humano: { items: humano, title: "Interaccion Humana" },
     nuevo: { items: nuevos, title: "Esperando Confirmaci." },
     llamar: { items: llamar, title: "Llamar" },
-    proceso: { items: enProceso, title: "Pedido en Proceso" },
-    listo: { items: listos, title: "Listo para Enviar" },
-    entregado: { items: entregados, title: "Enviados y Entregados" },
+    proceso: { items: enProceso, title: "Cierre en Proceso" },
+    listo: { items: listos, title: "Por Cerrar" },
+    entregado: { items: entregados, title: "Cerrado" },
   };
 
   const getTabColor = (tab: TabType, isActive: boolean) => {
@@ -1036,7 +1036,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             unreadIds={unreadIds}
           />
           <KanbanColumn
-            title="Pedido en Proceso"
+            title="Cierre en Proceso"
             items={enProceso}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1054,7 +1054,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             unreadIds={unreadIds}
           />
           <KanbanColumn
-            title="Listo para Enviar"
+            title="Por Cerrar"
             items={listos}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1072,7 +1072,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             unreadIds={unreadIds}
           />
           <KanbanColumn
-            title="Enviados y Entregados"
+            title="Cerrado"
             items={entregados}
             activeId={activeId}
             onSelect={handleSelectConversation}

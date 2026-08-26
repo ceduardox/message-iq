@@ -100,6 +100,19 @@
 - Slider EXPRESIÓN (solo Fish): 0-100 con etiqueta Plana/Normal/Expresiva.
 - En el grid de voces Fish se muestra: género (Mujer/Hombre/¿?) + nacionalidad + descripción.
 
+### 3.9 NOMBRES DE COLUMNAS ACTUALIZADOS (IMPLEMENTADO)
+- Según lo acordado (sección 4):
+  - pending → "Cierre en Proceso" (antes "Pedido en Proceso")
+  - ready → "Por Cerrar" (antes "Listo para Enviar"/"Listo para entregar")
+  - delivered → "Cerrado" (antes "Entregado"/"Enviados y Entregados")
+- Archivos: KanbanView.tsx (tabConfig, columnData, títulos de columnas), ChatArea.tsx (dropdown de estado), ConversationList.tsx (ORDER_STATUS_CONFIG), AnalyticsPage.tsx (gráficas y StatCards).
+- En el dropdown de ChatArea "Sin pedido" → "Sin estado".
+
+### 3.10 UX MÓVIL: header del chat + composer (IMPLEMENTADO)
+- ChatArea header: ahora UNA sola fila en móvil (antes dos filas: info + botones). Avatar + nombre/waId a la izquierda; acciones a la derecha con scroll horizontal (overflow-x-auto) si no caben.
+- Composer (input area): padding-bottom extra en móvil (env(safe-area-inset-bottom)) para que no quede oculto bajo el menú/nav inferior.
+- En PC el header se mantiene como estaba (badges visibles, botones normales).
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

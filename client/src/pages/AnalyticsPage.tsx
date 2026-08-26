@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversations } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -249,16 +249,16 @@ export default function AnalyticsPage() {
   const pieData = [
     { name: "Humano", value: stats.humano, color: "#ef4444" },
     { name: "Llamar", value: stats.llamar, color: "#10b981" },
-    { name: "Listo", value: stats.listo, color: "#06b6d4" },
-    { name: "Entregado", value: stats.entregado, color: "#64748b" },
+    { name: "Por Cerrar", value: stats.listo, color: "#06b6d4" },
+    { name: "Cerrado", value: stats.entregado, color: "#64748b" },
     { name: "Nuevos", value: stats.nuevos, color: "#8b5cf6" },
   ].filter(d => d.value > 0);
 
   const barData = [
     { name: "Humano", value: stats.humano, fill: "#ef4444" },
     { name: "Llamar", value: stats.llamar, fill: "#10b981" },
-    { name: "Listo", value: stats.listo, fill: "#06b6d4" },
-    { name: "Entregado", value: stats.entregado, fill: "#64748b" },
+    { name: "Por Cerrar", value: stats.listo, fill: "#06b6d4" },
+    { name: "Cerrado", value: stats.entregado, fill: "#64748b" },
     { name: "Nuevos", value: stats.nuevos, fill: "#8b5cf6" },
   ];
 
@@ -607,8 +607,8 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <StatCard icon={AlertCircle} label="Humano" value={stats.humano} color="text-red-400" gradient="bg-gradient-to-br from-red-500 to-rose-600" />
           <StatCard icon={Phone} label="Llamar" value={stats.llamar} color="text-emerald-400" gradient="bg-gradient-to-br from-emerald-500 to-teal-600" />
-          <StatCard icon={CheckCircle} label="Listo" value={stats.listo} color="text-cyan-400" gradient="bg-gradient-to-br from-cyan-500 to-blue-600" />
-          <StatCard icon={Truck} label="Entregado" value={stats.entregado} color="text-slate-400" gradient="bg-gradient-to-br from-slate-500 to-slate-600" />
+          <StatCard icon={CheckCircle} label="Por Cerrar" value={stats.listo} color="text-cyan-400" gradient="bg-gradient-to-br from-cyan-500 to-blue-600" />
+          <StatCard icon={Truck} label="Cerrado" value={stats.entregado} color="text-slate-400" gradient="bg-gradient-to-br from-slate-500 to-slate-600" />
           <StatCard icon={Users} label="Nuevos" value={stats.nuevos} color="text-violet-400" gradient="bg-gradient-to-br from-violet-500 to-purple-600" />
         </div>
 

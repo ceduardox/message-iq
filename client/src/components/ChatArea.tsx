@@ -1332,9 +1332,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     <div className="flex flex-col h-full max-h-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
       <style dangerouslySetInnerHTML={{ __html: recordingWaveCss }} />
       {/* Chat Header */}
-      <header className="flex-shrink-0 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/30 flex flex-col md:flex-row md:items-center md:justify-between px-3 md:px-4 py-2 md:py-1.5 z-20">
-        <div className="flex items-start md:items-center gap-3 flex-1 min-w-0">
-          <Avatar className="h-10 w-10 flex-shrink-0">
+      <header className="flex-shrink-0 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/30 flex items-center justify-between gap-2 px-2 md:px-4 py-1.5 md:py-1.5 z-20">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Avatar className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0">
             <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${conversation.contactName || conversation.waId}`} />
             <AvatarFallback>{conversation.waId.slice(0, 2)}</AvatarFallback>
           </Avatar>
@@ -1344,38 +1344,20 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 {conversation.contactName || conversation.waId}
               </h3>
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <div className="mt-0.5 flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => void copyToClipboard(getWaMeLink(), "URL copiada al portapapeles")}
-                className="text-xs text-muted-foreground hover:text-emerald-500 transition-colors text-left block"
+                className="text-xs text-muted-foreground hover:text-emerald-500 transition-colors text-left block truncate"
                 data-testid="button-copy-wa-link"
                 title="Copiar enlace wa.me"
               >
                 +{conversation.waId}
               </button>
-              <div className="flex items-center gap-1.5 md:hidden">
-                {currentLabels.slice(0, 2).map((label) => (
-                  <Badge
-                    key={label.id}
-                    className={cn("text-[9px] leading-none px-1.5 py-0 cursor-help", LABEL_COLORS.find(c => c.name === label.color)?.bg)}
-                    title={label.name}
-                    onClick={() => showFullLabelName(label.name)}
-                  >
-                    {toCompactLabel(label.name)}
-                  </Badge>
-                ))}
-                {conversation.reminderAt && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
-                    <Clock className="h-2.5 w-2.5 mr-1" />
-                    {reminderBadgeText}
-                  </Badge>
-                )}
-              </div>
             </div>
           </div>
         </div>
-        <div className="mt-1.5 w-full md:mt-0 md:w-auto md:ml-2">
+        <div className="flex items-center gap-0.5 flex-shrink-0 max-w-[55%] md:max-w-none md:ml-2">
         <div className="hidden md:flex items-center justify-end gap-1 flex-row-reverse mb-1">
           {conversation.reminderAt && (
             <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/90 text-white">
@@ -1394,7 +1376,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             </Badge>
           ))}
         </div>
-        <div className="flex items-center justify-center gap-1 overflow-x-auto md:justify-end md:gap-0 md:overflow-visible">
+        <div className="flex items-center justify-center gap-0.5 overflow-x-auto md:justify-end md:gap-0 md:overflow-visible">
         {onClose && (
           <Button
             variant="ghost"
@@ -1824,20 +1806,20 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>
               <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />
-              Sin pedido
+              Sin estado
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>
               <Package className="h-4 w-4 mr-2 text-yellow-600" />
-              Pedido en proceso
+              Cierre en proceso
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>
               <PackageCheck className="h-4 w-4 mr-2 text-green-600" />
-              Listo para entregar
+              Por cerrar
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>
               <Truck className="h-4 w-4 mr-2 text-blue-600" />
-              Entregado
+              Cerrado
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2182,7 +2164,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       />
 
       {/* Input Area */}
-      <div className="p-1.5 md:p-2 bg-[#f0f2f5] dark:bg-[#202c33] z-20 flex-shrink-0 overflow-x-hidden">
+      <div className="p-1.5 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] md:p-2 bg-[#f0f2f5] dark:bg-[#202c33] z-20 flex-shrink-0 overflow-x-hidden">
         {showImageInput && !imageUrl && (
           <div className="mb-2 px-2">
             <Input placeholder="URL de imagen..." value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} className="text-sm" />

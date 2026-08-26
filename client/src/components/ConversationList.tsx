@@ -32,9 +32,9 @@ const LABEL_COLORS: Record<string, string> = {
 };
 
 const ORDER_STATUS_CONFIG: Record<string, { icon: typeof Package; label: string; className: string; bgColor: string }> = {
-  pending: { icon: Package, label: "Pedido en proceso", className: "text-yellow-600", bgColor: "bg-yellow-100 border-yellow-300" },
-  ready: { icon: PackageCheck, label: "Listo para entregar", className: "text-green-600", bgColor: "bg-green-100 border-green-300" },
-  delivered: { icon: Truck, label: "Entregado", className: "text-blue-600", bgColor: "bg-blue-100 border-blue-300" },
+  pending: { icon: Package, label: "Cierre en proceso", className: "text-yellow-600", bgColor: "bg-yellow-100 border-yellow-300" },
+  ready: { icon: PackageCheck, label: "Por cerrar", className: "text-green-600", bgColor: "bg-green-100 border-green-300" },
+  delivered: { icon: Truck, label: "Cerrado", className: "text-blue-600", bgColor: "bg-blue-100 border-blue-300" },
 };
 
 export function ConversationList({ 
