@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -16,6 +16,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -1376,7 +1380,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             </Badge>
           ))}
         </div>
-        <div className="flex items-center justify-center gap-0.5 overflow-x-auto md:justify-end md:gap-0 md:overflow-visible">
+        <div className="hidden md:flex items-center justify-center gap-0 md:justify-end md:gap-0 md:overflow-visible">
         {onClose && (
           <Button
             variant="ghost"
@@ -1823,6 +1827,136 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
+
+        {/* Mobile actions menu (3-dot) */}
+        <div className="md:hidden flex items-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="flex-shrink-0 h-8 w-8" data-testid="button-mobile-actions" title="Opciones">
+                <EllipsisVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={4} className="bg-popover text-popover-foreground border border-border/60">
+              {onClose && (
+                <>
+                  <DropdownMenuItem onClick={onClose} data-testid="mobile-action-close">
+                    <X className="h-4 w-4 mr-2" />
+                    Cerrar chat
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {isAdmin && agentsData.length > 0 && (
+                <>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <UserRoundCog className="h-4 w-4 mr-2" />
+                      Reasignar agente
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
+                        <DropdownMenuItem onClick={() => reassignMutation.mutate(null)}>Sin agente</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {agentsData.map((agent) => (
+                          <DropdownMenuItem key={agent.id} onClick={() => reassignMutation.mutate(agent.id)} className={cn(conversation.assignedAgentId === agent.id && "font-bold")}>
+                            {agent.name} {conversation.assignedAgentId === agent.id ? "(actual)" : ""}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {ownedLabels.length > 0 && (
+                <>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Tag className="h-4 w-4 mr-2" />
+                      Etiquetas
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
+                        <DropdownMenuItem onClick={() => setLabelMutation.mutate([])}>
+                          <span className={cn("mr-2 inline-flex", currentLabelIds.length === 0 ? "text-emerald-500" : "text-transparent")}>
+                            <Check className="h-3.5 w-3.5" />
+                          </span>
+                          Sin etiqueta
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {ownedLabels.map((label) => (
+                          <DropdownMenuItem key={label.id} onClick={() => toggleConversationLabel(label.id)}>
+                            <span className={cn("mr-2 inline-flex", currentLabelIds.includes(label.id) ? "text-emerald-500" : "text-transparent")}>
+                              <Check className="h-3.5 w-3.5" />
+                            </span>
+                            <div className={cn("w-3 h-3 rounded-full mr-2", LABEL_COLORS.find(c => c.name === label.color)?.bg)} />
+                            {label.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {canToggleConversationAi && (
+                <DropdownMenuItem onClick={() => toggleAiMutation.mutate(!conversation.aiDisabled)} data-testid="mobile-action-ai">
+                  {conversation.aiDisabled ? <Bot className="h-4 w-4 mr-2" /> : <BotOff className="h-4 w-4 mr-2" />}
+                  {conversation.aiDisabled ? "Activar IA" : "Desactivar IA"}
+                </DropdownMenuItem>
+              )}
+              {conversation.needsHumanAttention && (
+                <DropdownMenuItem onClick={() => clearAttentionMutation.mutate()} className="text-red-500 focus:text-red-500">
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Quitar alerta
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => toggleShouldCallMutation.mutate(!conversation.shouldCall)} data-testid="mobile-action-call">
+                <Phone className={cn("h-4 w-4 mr-2", conversation.shouldCall && "text-green-500")} />
+                {conversation.shouldCall ? "Quitar marca de llamar" : "Marcar para llamar"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Package className="h-4 w-4 mr-2" />
+                  Estado
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent className="bg-popover text-popover-foreground border border-border/60">
+                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>Sin estado</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>Cierre en proceso</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>Por cerrar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>Cerrado</DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
+              <DropdownMenuItem onClick={openReminderEditor}>
+                <Clock className="h-4 w-4 mr-2 text-amber-500" />
+                {conversation.reminderAt ? "Editar recordatorio" : "Agregar recordatorio"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowLearnModal(true)} data-testid="mobile-action-learn">
+                <Lightbulb className="h-4 w-4 mr-2" />
+                Aprender de esta conversación
+              </DropdownMenuItem>
+              {isAdmin && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (confirm("¿Eliminar esta conversación y todos sus mensajes?")) {
+                        deleteConversationMutation.mutate();
+                      }
+                    }}
+                    className="text-red-500 focus:text-red-500"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar conversación
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         </div>
       </header>

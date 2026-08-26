@@ -118,6 +118,22 @@
 - Fix: se definieron `--popover` / `--popover-foreground` en :root (claro) y .dark (oscuro).
 - Además, en AIAgentPage (página oscura forzada, independiente del tema global), todos los SelectContent ahora usan `className="bg-slate-800 border-slate-600/70 text-white"` para garantizar texto visible.
 
+### 3.12 HEADER DEL CHAT EN MÓVIL: MENÚ DE 3 PUNTOS (IMPLEMENTADO - sustituye el scroll)
+- En móvil (md:hidden), el header del chat ahora muestra un botón "⋮" (EllipsisVertical) que despliega TODAS las acciones en un menú responsive:
+  - Cerrar chat
+  - Reasignar agente (submenú, solo admin)
+  - Etiquetas (submenú con las etiquetas del agente)
+  - Activar/desactivar IA
+  - Quitar alerta (si hay atención humana)
+  - Marcar/quitar para llamar
+  - Estado (submenú: Sin estado / Cierre en proceso / Por cerrar / Cerrado)
+  - Agregar/editar recordatorio
+  - Aprender de esta conversación
+  - Eliminar conversación (solo admin, con confirmación)
+- En PC (md+), se mantienen los botones de iconos normales como estaban.
+- Se eliminó el scroll horizontal (overflow-x-auto) del header en móvil.
+- NOTA: usa los mismos handlers/mutations que los botones desktop (reassignMutation, toggleConversationLabel, toggleAiMutation, toggleShouldCallMutation, setOrderStatusMutation, openReminderEditor, setShowLearnModal, deleteConversationMutation).
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)
