@@ -156,6 +156,13 @@
 - El endpoint /api/media/:mediaId ya sirve el media (usa el mediaId de Meta para descargar la URL y hacer stream).
 - Resultado: el reproductor de audio aparece en el chat tanto para audios recibidos como enviados por la IA.
 
+### 3.16 FIX: MODOS DE AUDIO (first/until_second) NO RESPETABAN EL LÍMITE (IMPLEMENTADO)
+- Problema: con modo "first" la IA seguía respondiendo con audio en TODAS las respuestas.
+- Causa raíz: el contador de respuestas IA era un Map en memoria (conversationAiResponseCount) que se perdía al reiniciar el servidor o en multi-instancia, y al reinicializar contaba solo mensajes out type="text" (pero los audios de la IA se guardan type="audio") → siempre quedaba en 0 → siempre "primera respuesta".
+- Fix: se eliminó el Map en memoria. Ahora `aiAudioReplyCount` se calcula DESDE LA BD en cada respuesta: `recentMessages.filter(m => m.direction==="out" && m.type==="audio").length`.
+- Lógica: first = audioReplyCount===0, until_second = audioReplyCount<2, all = siempre. Sobrevive reinicios y multi-instancia.
+- Los logs AUDIO_RESPONSE_DECISION ahora muestran aiAudioReplyCount.
+
 ## 4. Flujo comercial definido por el usuario (IMPORTANTE)
 
 ### 4.1 Flujo de conversión (test como gancho)

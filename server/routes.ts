@@ -66,7 +66,6 @@ interface BufferedMessage {
   isNewConversation?: boolean;
 }
 const messageBuffers = new Map<string, { messages: BufferedMessage[]; timer: ReturnType<typeof setTimeout> }>();
-const conversationAiResponseCount = new Map<number, number>(); // Tracks how many AI replies per conversation (for audio modes)
 interface IncomingPushState {
   lastSentAt: number;
   pendingCount: number;
@@ -751,12 +750,14 @@ function isPriceRelatedResponse(text: string): boolean {
 
 // Decide whether to send an audio response based on the configured mode.
 // Modes: "all" (always audio), "first" (audio only for first AI reply), "until_second" (audio for first 2 replies).
+// The audioCount is the number of outbound AI audio messages already persisted for this conversation (from DB).
 function shouldSendAudioForResponse(
   aiSettings: any,
   wasAudioMessage: boolean,
   responseText: string,
   conversationId: number,
   isNewConversation?: boolean,
+  audioReplyCount = 0,
 ): boolean {
   // Hard rule: never audio when the response mentions prices.
   if (isPriceRelatedResponse(responseText)) {
@@ -767,14 +768,13 @@ function shouldSendAudioForResponse(
   if (!aiSettings?.audioResponseEnabled) return false;
 
   const mode = aiSettings.audioMode || "first";
-  const replyCount = conversationAiResponseCount.get(conversationId) ?? 0;
 
   // New leads: always start with voice for a human welcome (unless price blocked above).
   if (isNewConversation) return true;
 
   if (mode === "all") return true;
-  if (mode === "first") return replyCount === 0;
-  if (mode === "until_second") return replyCount < 2;
+  if (mode === "first") return audioReplyCount === 0;
+  if (mode === "until_second") return audioReplyCount < 2;
 
   // Legacy default: only when client sent an audio message.
   return wasAudioMessage;
@@ -796,11 +796,8 @@ async function processAiResponse(data: BufferedMessage) {
     const aiSettings = await storage.getAiSettings();
     const recentMessages = await storage.getMessages(conversationId);
 
-    // Initialize the reply counter from real history if not tracked yet.
-    if (!conversationAiResponseCount.has(conversationId)) {
-      const outboundAiCount = recentMessages.filter((m) => m.direction === "out" && m.type === "text").length;
-      conversationAiResponseCount.set(conversationId, outboundAiCount);
-    }
+    // Count AI audio responses already persisted for this conversation (DB-backed, survives restarts).
+    const aiAudioReplyCount = recentMessages.filter((m) => m.direction === "out" && m.type === "audio").length;
 
     const aiResult = await generateAiResponse(conversationId, messageForAi, recentMessages, imageBase64ForAi, advisorName);
 
@@ -816,13 +813,13 @@ async function processAiResponse(data: BufferedMessage) {
     } else if (aiResult && aiResult.response) {
       await storage.updateConversation(conversationId, { needsHumanAttention: false });
 
-      const shouldSendAudio = shouldSendAudioForResponse(aiSettings, wasAudioMessage, aiResult.response, conversationId, data.isNewConversation);
+      const shouldSendAudio = shouldSendAudioForResponse(aiSettings, wasAudioMessage, aiResult.response, conversationId, data.isNewConversation, aiAudioReplyCount);
       if (wasAudioMessage || aiSettings?.audioResponseEnabled) {
         logAudioDebug("AUDIO_RESPONSE_DECISION", {
           conversationId,
           audioResponseEnabled: !!aiSettings?.audioResponseEnabled,
           audioMode: aiSettings?.audioMode || "first",
-          aiReplyCount: conversationAiResponseCount.get(conversationId) || 0,
+          aiAudioReplyCount,
           isNewConversation: !!data.isNewConversation,
           shouldSendAudio,
           priceBlocked: isPriceRelatedResponse(aiResult.response),
@@ -897,10 +894,6 @@ async function processAiResponse(data: BufferedMessage) {
         status: "sent",
         rawJson: waResponse,
       });
-
-      // Track AI reply count for audio modes (all/first/until_second).
-      const nextReplyCount = (conversationAiResponseCount.get(conversationId) || 0) + 1;
-      conversationAiResponseCount.set(conversationId, nextReplyCount);
 
       const updateData: any = {
         lastMessage: aiResult.response,
