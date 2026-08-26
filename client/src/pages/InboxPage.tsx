@@ -254,66 +254,66 @@ export default function InboxPage() {
         </div>
       )}
       <BrandFooter className="hidden md:block border-t border-slate-800 bg-slate-950/80 px-4 py-2" />
-      {/* Mobile Bottom Navigation - Futuristic */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-emerald-500/20 flex justify-around items-center py-2 px-1 z-50">
+      {/* Mobile Bottom Navigation - iOS light style */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/85 backdrop-blur-2xl border-t border-slate-200/70 dark:bg-slate-900/90 dark:border-slate-800 flex justify-around items-center py-1.5 px-1 z-50">
         <Link href="/">
-          <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${location === '/' ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
+          <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${location === '/' ? 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/15' : 'text-slate-500 dark:text-slate-400'}`}>
             <LayoutGrid className="h-5 w-5" />
             <span className="text-[10px] mt-0.5 font-medium">Inbox</span>
           </button>
         </Link>
         <Link href={iaHref}>
-          <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${location === iaHref ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
+          <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${location === iaHref ? 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/15' : 'text-slate-500 dark:text-slate-400'}`}>
             <Bot className="h-5 w-5" />
             <span className="text-[10px] mt-0.5 font-medium">IA</span>
           </button>
         </Link>
         <Link href="/analytics">
-          <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${location === '/analytics' ? 'text-cyan-400 bg-cyan-500/20' : 'text-slate-500'}`}>
+          <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${location === '/analytics' ? 'text-cyan-600 bg-cyan-500/10 dark:text-cyan-400 dark:bg-cyan-500/15' : 'text-slate-500 dark:text-slate-400'}`}>
             <BarChart3 className="h-5 w-5" />
             <span className="text-[10px] mt-0.5 font-medium">Stats</span>
           </button>
         </Link>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className={`flex flex-col items-center px-3 py-1.5 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access' || location === '/bulk-send') ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-500'}`}>
+            <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${(location === '/reminders' || location === '/push-settings' || location === '/follow-up' || location === '/agents' || location === '/access' || location === '/bulk-send') ? 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/15' : 'text-slate-500 dark:text-slate-400'}`}>
               <EllipsisVertical className="h-5 w-5" />
               <span className="text-[10px] mt-0.5 font-medium">Mas</span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="end" className="mb-2 w-48 bg-slate-900 border-slate-700 text-slate-200">
-            <DropdownMenuItem onClick={() => setLocation("/reminders")} className="focus:bg-slate-800">
-              <Clock className="h-4 w-4 mr-2 text-amber-400" />
+          <DropdownMenuContent side="top" align="end" className="mb-2 w-48 bg-white border-slate-200 text-slate-700 shadow-xl dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
+            <DropdownMenuItem onClick={() => setLocation("/reminders")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+              <Clock className="h-4 w-4 mr-2 text-amber-500 dark:text-amber-400" />
               Recordatorios
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/bulk-send")} className="focus:bg-slate-800">
-              <Send className="h-4 w-4 mr-2 text-emerald-300" />
+            <DropdownMenuItem onClick={() => setLocation("/bulk-send")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+              <Send className="h-4 w-4 mr-2 text-emerald-600 dark:text-emerald-400" />
               Envio masivo
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setLocation("/push-settings")} className="focus:bg-slate-800">
-              <Bell className="h-4 w-4 mr-2 text-emerald-400" />
+            <DropdownMenuItem onClick={() => setLocation("/push-settings")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+              <Bell className="h-4 w-4 mr-2 text-emerald-600 dark:text-emerald-400" />
               Push
             </DropdownMenuItem>
             {isAdmin && (
-              <DropdownMenuItem onClick={() => setLocation("/follow-up")} className="focus:bg-slate-800">
-                <ClipboardList className="h-4 w-4 mr-2 text-emerald-400" />
+              <DropdownMenuItem onClick={() => setLocation("/follow-up")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+                <ClipboardList className="h-4 w-4 mr-2 text-emerald-600 dark:text-emerald-400" />
                 Seguimiento
               </DropdownMenuItem>
             )}
             {isAdmin && (
-              <DropdownMenuItem onClick={() => setLocation("/agents")} className="focus:bg-slate-800">
-                <Users className="h-4 w-4 mr-2 text-violet-400" />
+              <DropdownMenuItem onClick={() => setLocation("/agents")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+                <Users className="h-4 w-4 mr-2 text-violet-600 dark:text-violet-400" />
                 Agentes
               </DropdownMenuItem>
             )}
             {isPrimaryAdmin && (
-              <DropdownMenuItem onClick={() => setLocation("/access")} className="focus:bg-slate-800">
-                <KeyRound className="h-4 w-4 mr-2 text-amber-400" />
+              <DropdownMenuItem onClick={() => setLocation("/access")} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+                <KeyRound className="h-4 w-4 mr-2 text-amber-500 dark:text-amber-400" />
                 Accesos
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={() => logout()} className="focus:bg-slate-800">
-              <LogOut className="h-4 w-4 mr-2 text-red-400" />
+            <DropdownMenuItem onClick={() => logout()} className="focus:bg-slate-100 dark:focus:bg-slate-800">
+              <LogOut className="h-4 w-4 mr-2 text-red-500 dark:text-red-400" />
               Salir
             </DropdownMenuItem>
           </DropdownMenuContent>
