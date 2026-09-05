@@ -61,6 +61,7 @@ interface AiSettings {
   followUpMinutes: number | null;
   followUpStage2Enabled: boolean | null;
   followUpStage2Message: string | null;
+  followUpStage2Hours: number | null;
 }
 
 interface PromptProfiles {
@@ -159,6 +160,7 @@ export default function AIAgentPage() {
   const [followUpMinutes, setFollowUpMinutes] = useState(20);
   const [followUpStage2Enabled, setFollowUpStage2Enabled] = useState(true);
   const [followUpStage2Message, setFollowUpStage2Message] = useState("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
+  const [followUpStage2Hours, setFollowUpStage2Hours] = useState(5);
   const [configEdited, setConfigEdited] = useState(false);
 
   const openAiModelOptions = [
@@ -453,6 +455,7 @@ export default function AIAgentPage() {
       setFollowUpMinutes(settings.followUpMinutes || 20);
       setFollowUpStage2Enabled(settings.followUpStage2Enabled !== false);
       setFollowUpStage2Message(settings.followUpStage2Message || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
+      setFollowUpStage2Hours(Math.min(6, Math.max(1, Number(settings.followUpStage2Hours) || 5)));
     }
   }, [settings, promptProfiles, promptEdited, configEdited]);
 
@@ -558,7 +561,7 @@ export default function AIAgentPage() {
 
   const handleSaveConfig = () => {
     console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
-    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsExpression, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes, followUpStage2Enabled, followUpStage2Message: followUpStage2Message.trim() || null });
+    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsExpression, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes, followUpStage2Enabled, followUpStage2Message: followUpStage2Message.trim() || null, followUpStage2Hours });
   };
 
   const playVoicePreview = async () => {
@@ -1671,8 +1674,8 @@ export default function AIAgentPage() {
                 <div className="pt-3 border-t border-slate-700/50 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <Label className="text-slate-300">Segundo reenganche (5h después)</Label>
-                      <p className="text-xs text-slate-500">Se envía solo 1 vez si el cliente sigue sin responder</p>
+                      <Label className="text-slate-300">Segundo reenganche</Label>
+                      <p className="text-xs text-slate-500">Se envía solo 1 vez si el cliente sigue sin responder • Nunca de 00:00 a 06:00 (La Paz) ni fuera de 24h</p>
                     </div>
                     <Switch
                       checked={followUpStage2Enabled}
@@ -1685,6 +1688,23 @@ export default function AIAgentPage() {
                   </div>
                   {followUpStage2Enabled && (
                     <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-slate-300 text-xs">Esperar</Label>
+                        <Select
+                          value={String(followUpStage2Hours)}
+                          onValueChange={(v) => { setFollowUpStage2Hours(parseInt(v)); setConfigEdited(true); }}
+                        >
+                          <SelectTrigger className="w-[130px] bg-slate-900/50 border-slate-600/50 text-white" data-testid="select-stage2-hours">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-800 border-slate-600/70 text-white">
+                            {[1,2,3,4,5,6].map((h) => (
+                              <SelectItem key={h} value={String(h)}>{h} hora{h>1?"s":""}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-xs text-slate-500">después del 1er reenganche</span>
+                      </div>
                       <Textarea
                         value={followUpStage2Message}
                         onChange={(e) => {

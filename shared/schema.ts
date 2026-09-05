@@ -198,6 +198,7 @@ export const aiSettings = pgTable("ai_settings", {
   followUpFixedMessage: text("follow_up_fixed_message"),
   followUpStage2Enabled: boolean("follow_up_stage2_enabled").default(true),
   followUpStage2Message: text("follow_up_stage2_message").default("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"),
+  followUpStage2Hours: integer("follow_up_stage2_hours").default(5),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

@@ -56,6 +56,7 @@ interface FollowUpSettings {
   followUpFixedMessage: string | null;
   followUpStage2Enabled: boolean | null;
   followUpStage2Message: string | null;
+  followUpStage2Hours: number | null;
 }
 
 export default function FollowUpPage() {
@@ -76,6 +77,7 @@ export default function FollowUpPage() {
   const [followUpFixedMessage, setFollowUpFixedMessage] = useState("");
   const [followUpStage2Enabled, setFollowUpStage2Enabled] = useState(true);
   const [followUpStage2Message, setFollowUpStage2Message] = useState("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
+  const [followUpStage2Hours, setFollowUpStage2Hours] = useState(5);
   const [settingsEdited, setSettingsEdited] = useState(false);
 
   const { data: settings } = useQuery<FollowUpSettings>({
@@ -92,6 +94,7 @@ export default function FollowUpPage() {
     setFollowUpFixedMessage(settings.followUpFixedMessage || "");
     setFollowUpStage2Enabled(settings.followUpStage2Enabled !== false);
     setFollowUpStage2Message(settings.followUpStage2Message || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
+    setFollowUpStage2Hours(Math.min(6, Math.max(1, Number(settings.followUpStage2Hours) || 5)));
   }, [settings, settingsEdited]);
 
   const { data: conversations = [], isLoading, refetch } = useQuery<FollowUpConversation[]>({
@@ -140,6 +143,7 @@ export default function FollowUpPage() {
         followUpFixedMessage: followUpMessageMode === "fixed" ? (followUpFixedMessage.trim() || null) : null,
         followUpStage2Enabled,
         followUpStage2Message: followUpStage2Message.trim() || null,
+        followUpStage2Hours,
       });
     },
     onSuccess: () => {
@@ -440,8 +444,8 @@ export default function FollowUpPage() {
                 <div className="space-y-3 pt-4 border-t">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <Label>Segundo reenganche (5h después)</Label>
-                      <p className="text-sm text-muted-foreground">Si sigue sin responder, se envía este mensaje (1 vez)</p>
+                      <Label>Segundo reenganche</Label>
+                      <p className="text-sm text-muted-foreground">Si sigue sin responder, se envía 1 vez • No de 00:00-06:00 (La Paz) ni fuera de 24h</p>
                     </div>
                     <Switch
                       checked={followUpStage2Enabled}
@@ -454,6 +458,20 @@ export default function FollowUpPage() {
                   </div>
                   {followUpStage2Enabled && (
                     <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs">Esperar</Label>
+                        <select
+                          value={String(followUpStage2Hours)}
+                          onChange={(e) => { setFollowUpStage2Hours(parseInt(e.target.value)); setSettingsEdited(true); }}
+                          className="h-9 rounded-md border bg-background px-3 text-sm"
+                          data-testid="select-stage2-hours-followup"
+                        >
+                          {[1,2,3,4,5,6].map((h) => (
+                            <option key={h} value={String(h)}>{h} hora{h>1?"s":""}</option>
+                          ))}
+                        </select>
+                        <span className="text-xs text-muted-foreground">después del 1er reenganche</span>
+                      </div>
                       <Textarea
                         value={followUpStage2Message}
                         onChange={(e) => {

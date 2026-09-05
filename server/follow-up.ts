@@ -85,7 +85,9 @@ async function checkAndSendFollowUps() {
   const checkIntervalMs = checkIntervalMinutes * 60 * 1000;
   if (lastFollowUpSweepAt && now - lastFollowUpSweepAt < checkIntervalMs) return;
   lastFollowUpSweepAt = now;
-  const catalogAfterMs = 5 * 60 * 60 * 1000; // 5h
+  const stage2HoursRaw = (settings as any).followUpStage2Hours ?? 5;
+  const stage2Hours = Math.min(6, Math.max(1, Number(stage2HoursRaw) || 5));
+  const catalogAfterMs = stage2Hours * 60 * 60 * 1000;
   const cutoff = new Date(now - waitMinutes * 60 * 1000);
   const window24hStart = new Date(now - 24 * 60 * 60 * 1000);
 
@@ -174,10 +176,16 @@ async function checkAndSendFollowUps() {
         continue;
       }
 
-      // Stage 2: configurable follow-up (5h after stage1, only once) - admin can choose text / botones / lista
+      // Stage 2: configurable follow-up (1-6h after stage1, only once) - admin can choose text / botones / lista
       if (settings.followUpStage2Enabled === false) continue;
       const lastFollowUpTs = new Date(conv.lastFollowUpAt).getTime();
       if (now - lastFollowUpTs < catalogAfterMs) continue;
+      if (now - lastInboundTs > 24 * 60 * 60 * 1000 - 60 * 1000) continue;
+      const hourBolivia = Number(new Date().toLocaleString("en-US", { timeZone: "America/La_Paz", hour: "numeric", hour12: false }));
+      if (hourBolivia >= 0 && hourBolivia < 6) {
+        console.log(`[FollowUp] Stage2 skipped for ${conv.id} - madrugada ${hourBolivia}h (00-06 America/La_Paz)`);
+        continue;
+      }
 
       const alreadySentCatalog = msgs.some((m) => {
         if (m.direction !== "out" || !m.waMessageId || !m.createdAt) return false;

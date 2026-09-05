@@ -4712,6 +4712,7 @@ NO uses saludos formales. Se directo y amigable.`
     followUpFixedMessage: z.string().nullable().optional(),
     followUpStage2Enabled: z.boolean().optional(),
     followUpStage2Message: z.string().nullable().optional(),
+    followUpStage2Hours: z.number().min(1).max(6).optional(),
   });
 
   const promptProfilesUpdateSchema = z.object({

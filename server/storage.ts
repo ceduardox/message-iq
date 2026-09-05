@@ -256,6 +256,10 @@ export class DatabaseStorage implements IStorage {
       ALTER TABLE ai_settings
       ADD COLUMN IF NOT EXISTS follow_up_stage2_message TEXT DEFAULT 'Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook'
     `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS follow_up_stage2_hours INTEGER DEFAULT 5
+    `);
     this.aiSettingsColumnsEnsured = true;
   }
 
