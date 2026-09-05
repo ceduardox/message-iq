@@ -174,7 +174,8 @@ async function checkAndSendFollowUps() {
         continue;
       }
 
-      // Stage 2: catalog buttons follow-up (5h after stage1, only once)
+      // Stage 2: configurable follow-up (5h after stage1, only once) - admin can choose text / botones / lista
+      if (settings.followUpStage2Enabled === false) continue;
       const lastFollowUpTs = new Date(conv.lastFollowUpAt).getTime();
       if (now - lastFollowUpTs < catalogAfterMs) continue;
 
@@ -185,7 +186,8 @@ async function checkAndSendFollowUps() {
       if (alreadySentCatalog) continue;
 
       const catalogMessage =
-        "Si gusta, le muestro opciones segun lo que busca. [BOTONES: Ver catalogo, Ver precios, Hablar con asesor]";
+        settings.followUpStage2Message?.trim() ||
+        "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook";
 
       try {
         await sendAiResponseFn(conv.waId, catalogMessage);

@@ -59,6 +59,8 @@ interface AiSettings {
   learningMode: boolean | null;
   followUpEnabled: boolean | null;
   followUpMinutes: number | null;
+  followUpStage2Enabled: boolean | null;
+  followUpStage2Message: string | null;
 }
 
 interface PromptProfiles {
@@ -155,6 +157,8 @@ export default function AIAgentPage() {
   const [ttsInstructions, setTtsInstructions] = useState("");
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [followUpMinutes, setFollowUpMinutes] = useState(20);
+  const [followUpStage2Enabled, setFollowUpStage2Enabled] = useState(true);
+  const [followUpStage2Message, setFollowUpStage2Message] = useState("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
   const [configEdited, setConfigEdited] = useState(false);
 
   const openAiModelOptions = [
@@ -447,6 +451,8 @@ export default function AIAgentPage() {
       setTtsInstructions(settings.ttsInstructions || "");
       setFollowUpEnabled(settings.followUpEnabled || false);
       setFollowUpMinutes(settings.followUpMinutes || 20);
+      setFollowUpStage2Enabled(settings.followUpStage2Enabled !== false);
+      setFollowUpStage2Message(settings.followUpStage2Message || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
     }
   }, [settings, promptProfiles, promptEdited, configEdited]);
 
@@ -552,7 +558,7 @@ export default function AIAgentPage() {
 
   const handleSaveConfig = () => {
     console.log("Saving config:", { maxTokens, temperature, model, maxPromptChars, conversationHistory });
-    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsExpression, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes });
+    updateSettingsMutation.mutate({ aiProvider, maxTokens, temperature, model, maxPromptChars, conversationHistory, audioResponseEnabled, audioMode, audioVoice, ttsProvider, elevenlabsVoiceId, fishVoiceId, fishApiKey: fishApiKey.trim() || null, ttsSpeed, ttsExpression, ttsInstructions: ttsInstructions || null, followUpEnabled, followUpMinutes, followUpStage2Enabled, followUpStage2Message: followUpStage2Message.trim() || null });
   };
 
   const playVoicePreview = async () => {
@@ -1643,8 +1649,8 @@ export default function AIAgentPage() {
             </div>
 
             {followUpEnabled && (
-              <div className="space-y-2 p-4 border border-slate-700/50 rounded-xl bg-slate-800/30">
-                <Label className="text-slate-300">Minutos de espera antes de re-enganchar</Label>
+              <div className="space-y-3 p-4 border border-slate-700/50 rounded-xl bg-slate-800/30">
+                <Label className="text-slate-300">Minutos de espera antes de re-enganchar (Stage 1)</Label>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
@@ -1661,6 +1667,44 @@ export default function AIAgentPage() {
                   <span className="text-emerald-400 font-bold min-w-[4rem] text-center">{followUpMinutes} min</span>
                 </div>
                 <p className="text-xs text-slate-500">Máximo 1 re-enganche por conversación. Solo dentro de las 72h de Meta.</p>
+
+                <div className="pt-3 border-t border-slate-700/50 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label className="text-slate-300">Segundo reenganche (5h después)</Label>
+                      <p className="text-xs text-slate-500">Se envía solo 1 vez si el cliente sigue sin responder</p>
+                    </div>
+                    <Switch
+                      checked={followUpStage2Enabled}
+                      onCheckedChange={(checked) => {
+                        setFollowUpStage2Enabled(checked);
+                        setConfigEdited(true);
+                      }}
+                      data-testid="switch-follow-up-stage2-enabled"
+                    />
+                  </div>
+                  {followUpStage2Enabled && (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={followUpStage2Message}
+                        onChange={(e) => {
+                          setFollowUpStage2Message(e.target.value);
+                          setConfigEdited(true);
+                        }}
+                        rows={3}
+                        placeholder="Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"
+                        className="bg-slate-900/50 border-slate-600/50 text-white placeholder:text-slate-500"
+                        data-testid="textarea-follow-up-stage2-message"
+                      />
+                      <div className="flex gap-2 flex-wrap">
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"); setConfigEdited(true); }} data-testid="button-stage2-preset-text" className="text-xs border-slate-600 text-slate-300">Solo texto</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("¿Quiere que le muestre opciones? [BOTONES: Ver info, TikTok, Facebook]"); setConfigEdited(true); }} data-testid="button-stage2-preset-botones" className="text-xs border-cyan-600 text-cyan-300">Con botones</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("Conoce más de IQeXponencial: [LISTA: Ver más | Web oficial, TikTok testimonios, Facebook testimonios]"); setConfigEdited(true); }} data-testid="button-stage2-preset-lista" className="text-xs border-violet-600 text-violet-300">Con lista</Button>
+                      </div>
+                      <p className="text-xs text-slate-400">Tips: usa <code className="bg-black/30 px-1 rounded">[BOTONES: Op1, Op2, Op3]</code> (máx 3, 20 chars c/u) o <code className="bg-black/30 px-1 rounded">[LISTA: Título | Op1, Op2...]</code> (máx 10). Si dejas solo texto, se envía solo texto.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

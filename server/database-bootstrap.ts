@@ -142,6 +142,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
       follow_up_batch_size INTEGER DEFAULT 10,
       follow_up_message_mode VARCHAR(20) DEFAULT 'ai',
       follow_up_fixed_message TEXT,
+      follow_up_stage2_enabled BOOLEAN DEFAULT true,
+      follow_up_stage2_message TEXT DEFAULT 'Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook',
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);

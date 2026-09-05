@@ -54,6 +54,8 @@ interface FollowUpSettings {
   followUpBatchSize: number | null;
   followUpMessageMode: string | null;
   followUpFixedMessage: string | null;
+  followUpStage2Enabled: boolean | null;
+  followUpStage2Message: string | null;
 }
 
 export default function FollowUpPage() {
@@ -72,6 +74,8 @@ export default function FollowUpPage() {
   const [followUpBatchSize, setFollowUpBatchSize] = useState(10);
   const [followUpMessageMode, setFollowUpMessageMode] = useState<"ai" | "fixed">("ai");
   const [followUpFixedMessage, setFollowUpFixedMessage] = useState("");
+  const [followUpStage2Enabled, setFollowUpStage2Enabled] = useState(true);
+  const [followUpStage2Message, setFollowUpStage2Message] = useState("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
   const [settingsEdited, setSettingsEdited] = useState(false);
 
   const { data: settings } = useQuery<FollowUpSettings>({
@@ -86,6 +90,8 @@ export default function FollowUpPage() {
     setFollowUpBatchSize(settings.followUpBatchSize || 10);
     setFollowUpMessageMode(settings.followUpMessageMode === "fixed" ? "fixed" : "ai");
     setFollowUpFixedMessage(settings.followUpFixedMessage || "");
+    setFollowUpStage2Enabled(settings.followUpStage2Enabled !== false);
+    setFollowUpStage2Message(settings.followUpStage2Message || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook");
   }, [settings, settingsEdited]);
 
   const { data: conversations = [], isLoading, refetch } = useQuery<FollowUpConversation[]>({
@@ -132,6 +138,8 @@ export default function FollowUpPage() {
         followUpBatchSize,
         followUpMessageMode,
         followUpFixedMessage: followUpMessageMode === "fixed" ? (followUpFixedMessage.trim() || null) : null,
+        followUpStage2Enabled,
+        followUpStage2Message: followUpStage2Message.trim() || null,
       });
     },
     onSuccess: () => {
@@ -405,7 +413,7 @@ export default function FollowUpPage() {
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Esto solo afecta el primer mensaje automático. El segundo seguimiento con botones sigue igual.
+                    Esto solo afecta el primer mensaje automático.
                   </p>
                 </div>
 
@@ -428,6 +436,43 @@ export default function FollowUpPage() {
                     </p>
                   </div>
                 )}
+
+                <div className="space-y-3 pt-4 border-t">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label>Segundo reenganche (5h después)</Label>
+                      <p className="text-sm text-muted-foreground">Si sigue sin responder, se envía este mensaje (1 vez)</p>
+                    </div>
+                    <Switch
+                      checked={followUpStage2Enabled}
+                      onCheckedChange={(checked) => {
+                        setFollowUpStage2Enabled(checked);
+                        setSettingsEdited(true);
+                      }}
+                      data-testid="switch-follow-up-stage2-enabled"
+                    />
+                  </div>
+                  {followUpStage2Enabled && (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={followUpStage2Message}
+                        onChange={(e) => {
+                          setFollowUpStage2Message(e.target.value);
+                          setSettingsEdited(true);
+                        }}
+                        className="min-h-[90px]"
+                        placeholder="Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"
+                        data-testid="textarea-follow-up-stage2-message"
+                      />
+                      <div className="flex gap-2 flex-wrap">
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"); setSettingsEdited(true); }} data-testid="button-stage2-text">Solo texto</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("¿Quiere que le muestre opciones? [BOTONES: Ver info, TikTok, Facebook]"); setSettingsEdited(true); }} data-testid="button-stage2-botones">Con botones</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setFollowUpStage2Message("Conoce más de IQeXponencial: [LISTA: Ver más | Web oficial, TikTok testimonios, Facebook testimonios]"); setSettingsEdited(true); }} data-testid="button-stage2-lista">Con lista</Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Usa <code className="bg-muted px-1 rounded">[BOTONES: Op1, Op2, Op3]</code> (máx 3) o <code className="bg-muted px-1 rounded">[LISTA: Título | Op1, Op2]</code> (máx 10). Solo texto = sin corchetes.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

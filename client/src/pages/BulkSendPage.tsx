@@ -11,10 +11,17 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -92,7 +99,13 @@ export default function BulkSendPage() {
   const [numbersInput, setNumbersInput] = useState("");
   const [numbers, setNumbers] = useState<string[]>([]);
   const [messageText, setMessageText] = useState("");
+  const [templateName, setTemplateName] = useState("");
   const [videoCaption, setVideoCaption] = useState("");
+  const { data: templatesData } = useQuery<{ templates: Array<{ name: string; language: string; category: string }> }>({
+    queryKey: ["/api/templates"],
+    enabled: true,
+  });
+  const approvedTemplates = templatesData?.templates ?? [];
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [delaySecondsInput, setDelaySecondsInput] = useState("1");
   const [sending, setSending] = useState(false);
@@ -112,6 +125,7 @@ export default function BulkSendPage() {
   );
   const hasMessage = messageText.trim().length > 0;
   const hasVideo = Boolean(videoFile);
+  const hasTemplate = templateName.trim().length > 0;
   const videoTooLarge = videoFile ? videoFile.size > MAX_VIDEO_BYTES : false;
   const delaySeconds = useMemo(() => {
     const parsed = Number(delaySecondsInput);
@@ -119,8 +133,9 @@ export default function BulkSendPage() {
     return Math.min(Math.max(Math.round(parsed), MIN_DELAY_SECONDS), MAX_DELAY_SECONDS);
   }, [delaySecondsInput]);
 
-  const totalOperations =
-    validNumbers.length * (Number(hasMessage) + Number(hasVideo));
+  const totalOperations = hasTemplate
+    ? validNumbers.length
+    : validNumbers.length * (Number(hasMessage) + Number(hasVideo));
   const progressTotal = progress.total || totalOperations;
   const progressValue =
     progressTotal > 0 ? Math.round((progress.done / progressTotal) * 100) : 0;
@@ -201,6 +216,22 @@ export default function BulkSendPage() {
     return payload?.messageId as string | undefined;
   };
 
+  const sendTemplateMessage = async (to: string, template: string) => {
+    const res = await fetch("/api/send-template", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, templateName: template }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const details = payload?.error?.details || payload?.message || "Error al enviar plantilla";
+      throw new Error(details);
+    }
+    const payload = await res.json().catch(() => ({}));
+    return payload?.messageId as string | undefined;
+  };
+
   const sendVideoMessage = async (to: string, file: File, caption: string) => {
     const formData = new FormData();
     formData.append("video", file);
@@ -257,8 +288,9 @@ export default function BulkSendPage() {
       toast({ title: "Agrega al menos un numero valido" });
       return;
     }
-    if (!hasMessage && !hasVideo) {
-      toast({ title: "Escribe un mensaje o agrega un video" });
+    const useTemplate = templateName.trim().length > 0;
+    if (!hasMessage && !hasVideo && !useTemplate) {
+      toast({ title: "Escribe un mensaje, agrega un video o indica una plantilla" });
       return;
     }
     if (videoTooLarge) {
@@ -267,21 +299,29 @@ export default function BulkSendPage() {
     }
 
     const textToSend = messageText.trim();
+    const templateToSend = templateName.trim();
     const captionToSend = videoCaption.trim();
-    const operations: Array<{ to: string; kind: "text" | "video" }> = [];
+    const operations: Array<{ to: string; kind: "text" | "video" | "template" }> = [];
     const numbersToSend = [...validNumbers];
 
     for (const to of numbersToSend) {
-      if (hasMessage) operations.push({ to, kind: "text" });
-      if (hasVideo) operations.push({ to, kind: "video" });
+      if (useTemplate) operations.push({ to, kind: "template" });
+      else {
+        if (hasMessage) operations.push({ to, kind: "text" });
+        if (hasVideo) operations.push({ to, kind: "video" });
+      }
     }
 
     setResults(() => {
       const next: Record<string, RecipientResult> = {};
       for (const to of validNumbers) {
         next[to] = {
-          ...(hasMessage ? { text: { status: "pending" } } : {}),
-          ...(hasVideo ? { video: { status: "pending" } } : {}),
+          ...(useTemplate
+            ? { text: { status: "pending" } }
+            : {
+                ...(hasMessage ? { text: { status: "pending" } } : {}),
+                ...(hasVideo ? { video: { status: "pending" } } : {}),
+              }),
         };
       }
       return next;
@@ -298,7 +338,10 @@ export default function BulkSendPage() {
 
       for (const op of opsForTarget) {
         try {
-          if (op.kind === "text") {
+          if (op.kind === "template") {
+            const messageId = await sendTemplateMessage(op.to, templateToSend);
+            markResult(op.to, "text", "success", undefined, messageId, "sent");
+          } else if (op.kind === "text") {
             const messageId = await sendTextMessage(op.to, textToSend);
             markResult(op.to, op.kind, "success", undefined, messageId, "sent");
           } else {
@@ -308,7 +351,7 @@ export default function BulkSendPage() {
           }
           successCount += 1;
         } catch (error: any) {
-          markResult(op.to, op.kind, "error", error?.message || "Error desconocido");
+          markResult(op.to, op.kind === "template" ? "text" : op.kind, "error", error?.message || "Error desconocido");
           errorCount += 1;
         } finally {
           setProgress((prev) => ({ total: prev.total, done: prev.done + 1 }));
@@ -454,6 +497,33 @@ export default function BulkSendPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="bulk-template" className="text-slate-200">
+                  Plantilla de Meta (opcional, sin variables)
+                </Label>
+                <Select value={templateName} onValueChange={setTemplateName} disabled={sending}>
+                  <SelectTrigger id="bulk-template" className="bg-slate-950/70 border-slate-700 text-slate-100">
+                    <SelectValue placeholder={approvedTemplates.length ? "Selecciona una plantilla aprobada..." : "Sin plantillas aprobadas en Meta"} />
+                  </SelectTrigger>
+                  <SelectContent className="!bg-slate-900 !border-slate-700 !text-slate-100">
+                    {approvedTemplates.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-slate-400">
+                        No hay plantillas aprobadas. Crea una en Meta Business Manager.
+                      </div>
+                    ) : (
+                      approvedTemplates.map((tpl) => (
+                        <SelectItem key={`${tpl.name}-${tpl.language}`} value={tpl.name} className="text-slate-100">
+                          {tpl.name} ({tpl.language})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-slate-500">
+                  Si seleccionas una plantilla, se envia a todos aunque no hayan escrito antes (permite usar el formulario de los padres). Deja vacio para mensaje libre.
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="bulk-message" className="text-slate-200">
                   Mensaje de texto
                 </Label>
@@ -461,10 +531,10 @@ export default function BulkSendPage() {
                   id="bulk-message"
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Escribe el mensaje que se enviara a todos."
+                  placeholder={hasTemplate ? "El contenido lo define la plantilla seleccionada." : "Escribe el mensaje que se enviara a todos."}
                   rows={5}
                   className="bg-slate-950/70 border-slate-700 text-slate-100 placeholder:text-slate-500"
-                  disabled={sending}
+                  disabled={sending || hasTemplate}
                 />
               </div>
 
@@ -497,7 +567,7 @@ export default function BulkSendPage() {
                   type="file"
                   accept="video/mp4,video/quicktime,video/3gpp,video/*"
                   onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                  disabled={sending}
+                  disabled={sending || hasTemplate}
                   className="bg-slate-950/70 border-slate-700 text-slate-200"
                 />
                 {videoFile ? (
@@ -541,7 +611,7 @@ export default function BulkSendPage() {
                   onChange={(e) => setVideoCaption(e.target.value)}
                   placeholder="Texto corto para acompanar el video."
                   className="bg-slate-950/70 border-slate-700 text-slate-100 placeholder:text-slate-500"
-                  disabled={sending || !videoFile}
+                  disabled={sending || !videoFile || hasTemplate}
                 />
               </div>
             </CardContent>
@@ -556,21 +626,27 @@ export default function BulkSendPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                 <div className="text-xs text-slate-500">Destinatarios validos</div>
                 <div className="text-2xl font-semibold text-white">{validNumbers.length}</div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs text-slate-500">Plantillas</div>
+                <div className="text-2xl font-semibold text-white">
+                  {hasTemplate ? validNumbers.length : 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                 <div className="text-xs text-slate-500">Mensajes</div>
                 <div className="text-2xl font-semibold text-white">
-                  {hasMessage ? validNumbers.length : 0}
+                  {hasTemplate ? 0 : (hasMessage ? validNumbers.length : 0)}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
                 <div className="text-xs text-slate-500">Videos</div>
                 <div className="text-2xl font-semibold text-white">
-                  {hasVideo ? validNumbers.length : 0}
+                  {hasTemplate ? 0 : (hasVideo ? validNumbers.length : 0)}
                 </div>
               </div>
             </div>

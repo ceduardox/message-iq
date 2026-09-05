@@ -78,6 +78,24 @@ const recordingWaveCss = `
 }
 `;
 
+const getMessageDate = (msg: Message): Date => {
+  if (msg.timestamp && /^\d+$/.test(String(msg.timestamp))) return new Date(parseInt(String(msg.timestamp)) * 1000);
+  if ((msg as any).createdAt) return new Date((msg as any).createdAt);
+  return new Date();
+};
+
+const formatDateSeparator = (date: Date): string => {
+  const now = new Date();
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  const n = new Date(now);
+  n.setHours(0,0,0,0);
+  const diff = (n.getTime() - d.getTime()) / 86400000;
+  if (diff === 0) return "HOY";
+  if (diff === 1) return "AYER";
+  return d.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" }).toUpperCase();
+};
+
 export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -1974,10 +1992,21 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           setLongPressPressingMessageId(null);
         }}
       >
-        {messages.map((msg) => {
+        {messages.map((msg, idx) => {
           const isOut = msg.direction === "out";
+          const msgDate = getMessageDate(msg);
+          const prevDate = idx > 0 ? getMessageDate(messages[idx - 1]) : null;
+          const showSeparator = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
           return (
-            <div key={msg.id} className={cn("flex w-full", isOut ? "justify-end" : "justify-start")}>
+            <div key={msg.id} className="contents">
+              {showSeparator && (
+                <div className="flex justify-center my-2 sticky top-0 z-[1]">
+                  <span className="bg-[#e5ddd5] dark:bg-[#182533] text-[#54656f] dark:text-[#8696a0] text-[12.5px] font-medium px-3 py-1 rounded-lg shadow-sm border border-black/5 dark:border-white/5">
+                    {formatDateSeparator(msgDate)}
+                  </span>
+                </div>
+              )}
+              <div className={cn("flex w-full", isOut ? "justify-end" : "justify-start")}>
               <div
                 className={cn(
                   "relative max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm transition-transform duration-150",
@@ -2210,6 +2239,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                   )}
                 </div>
               </div>
+            </div>
             </div>
           );
         })}

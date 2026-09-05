@@ -1962,7 +1962,7 @@ function isBlockedLegacyInteractiveResponse(text: string): boolean {
 }
 
 // Helper to send messages via Graph API
-async function sendToWhatsApp(to: string, type: 'text' | 'image' | 'interactive', content: any) {
+async function sendToWhatsApp(to: string, type: 'text' | 'image' | 'interactive' | 'template', content: any) {
   const token = process.env.META_ACCESS_TOKEN;
   const phoneId = process.env.WA_PHONE_NUMBER_ID;
 
@@ -1995,6 +1995,14 @@ async function sendToWhatsApp(to: string, type: 'text' | 'image' | 'interactive'
     }
   } else if (type === 'interactive') {
     payload.interactive = content.interactive;
+  } else if (type === 'template') {
+    payload.template = {
+      name: content.templateName,
+      language: { code: content.language || 'es' },
+      ...(content.components && content.components.length
+        ? { components: content.components }
+        : {}),
+    };
   }
 
   const sanitizedPayload = repairMojibakeDeep(payload);
@@ -3341,6 +3349,95 @@ export async function registerRoutes(
     }
   });
 
+  // List approved Meta WhatsApp templates (for the bulk-send dropdown)
+  app.get("/api/templates", requireAuth, async (req, res) => {
+    try {
+      const token = process.env.META_TEMPLATES_TOKEN || process.env.META_ACCESS_TOKEN;
+      const wabaId = process.env.WABA_ID;
+      if (!token || !wabaId) {
+        return res.status(400).json({ message: "Meta templates config missing (META_TEMPLATES_TOKEN / WABA_ID)" });
+      }
+      const url = `https://graph.facebook.com/v24.0/${wabaId}/message_templates?limit=100&fields=name,status,language,category`;
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 15000,
+      });
+      const data = response.data?.data ?? [];
+      const templates = data
+        .filter((t: any) => t?.name && t?.status === "APPROVED")
+        .map((t: any) => ({
+          name: t.name,
+          language: t.language,
+          category: t.category || "",
+        }));
+      res.json({ templates });
+    } catch (error: any) {
+      console.error("List templates error:", error.response?.data || error.message);
+      res.status(500).json({ message: "Error listing templates" });
+    }
+  });
+
+  // Send an approved Meta WhatsApp template (can reach users who have not opted in to chat)
+  app.post("/api/send-template", requireAuth, async (req, res) => {
+    try {
+      const { to, templateName, language, components } = req.body ?? {};
+      if (typeof to !== "string" || !to.trim()) {
+        return res.status(400).json({ message: "to is required" });
+      }
+      if (typeof templateName !== "string" || !templateName.trim()) {
+        return res.status(400).json({ message: "templateName is required" });
+      }
+
+      const waResponse = await sendToWhatsApp(to.trim(), "template", {
+        templateName: templateName.trim(),
+        language: typeof language === "string" && language.trim() ? language.trim() : "es",
+        components: Array.isArray(components) ? components : [],
+      });
+      const waMessageId = waResponse.messages?.[0]?.id;
+
+      let conversation = await storage.getConversationByWaId(to.trim());
+      if (!conversation) {
+        conversation = await storage.createConversation({
+          waId: to.trim(),
+          contactName: to.trim(),
+          lastMessage: `[plantilla] ${templateName.trim()}`,
+          lastMessageTimestamp: new Date(),
+        });
+      } else {
+        await storage.updateConversation(conversation.id, {
+          lastMessage: `[plantilla] ${templateName.trim()}`,
+          lastMessageTimestamp: new Date(),
+        });
+      }
+
+      await storage.createMessage({
+        conversationId: conversation.id,
+        waMessageId: waMessageId || `template_${Date.now()}`,
+        direction: "out",
+        type: "template",
+        text: `[plantilla] ${templateName.trim()}`,
+        mediaId: null,
+        mimeType: null,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+        rawJson: waResponse,
+      });
+
+      res.json({ success: true, messageId: waMessageId });
+    } catch (error: any) {
+      console.error("Send template error:", error.response?.data || error.message);
+      const errorData = error.response?.data?.error || {};
+      res.status(500).json({
+        message: "Failed to send template",
+        error: {
+          code: errorData.code || error.response?.status || "unknown",
+          type: errorData.type || "api_error",
+          details: errorData.message || error.message || "Unknown error",
+        },
+      });
+    }
+  });
+
   app.get("/api/messages/status/:id", requireAuth, async (req, res) => {
     try {
       const messageId = String(req.params.id || "").trim();
@@ -4613,6 +4710,8 @@ NO uses saludos formales. Se directo y amigable.`
     followUpBatchSize: z.number().min(1).max(100).optional(),
     followUpMessageMode: z.enum(["ai", "fixed"]).optional(),
     followUpFixedMessage: z.string().nullable().optional(),
+    followUpStage2Enabled: z.boolean().optional(),
+    followUpStage2Message: z.string().nullable().optional(),
   });
 
   const promptProfilesUpdateSchema = z.object({
