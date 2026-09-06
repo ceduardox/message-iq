@@ -4375,6 +4375,35 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  app.post("/api/conversations/:id/reengage", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const conv = await storage.getConversation(id);
+    if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
+    const settings = await storage.getAiSettings();
+    const msg = settings?.followUpStage2Message?.trim() || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook";
+    try {
+      await sendAiResponseToWhatsApp(conv.waId, msg);
+      await storage.createMessage({
+        conversationId: conv.id,
+        waMessageId: `manual_reengage_${Date.now()}_${conv.id}`,
+        direction: "out",
+        type: "text",
+        text: msg,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+      });
+      await storage.updateConversation(conv.id, {
+        lastMessage: msg,
+        lastMessageTimestamp: new Date(),
+        lastFollowUpAt: new Date(),
+      });
+      res.json({ success: true, message: msg });
+    } catch (err: any) {
+      console.error("[Reengage] manual failed:", err?.message);
+      res.status(500).json({ message: err?.message || "Error al enviar reenganche" });
+    }
+  });
+
   // Get follow-up conversations (those where we sent last message and customer didn't respond)
   app.get("/api/follow-up", requireAuth, async (req, res) => {
     const { timeFilter } = req.query; // 'today', 'yesterday', 'before_yesterday'

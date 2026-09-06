@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -902,6 +902,28 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     },
   });
 
+  const sendReengageMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/conversations/${conversation.id}/reengage`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al enviar reenganche");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Reenganche enviado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const createLabelMutation = useMutation({
     mutationFn: async (data: { name: string; color: string }) => {
       const res = await fetch("/api/labels", {
@@ -1696,6 +1718,21 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           <Phone className="h-4 w-4" />
         </Button>
 
+        {/* Manual Reengage - ignora hora/24h */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="flex-shrink-0 h-7 w-7"
+          onClick={() => {
+            if (confirm("¿Enviar reenganche ahora? Ignora horario y ventana 24h.")) sendReengageMutation.mutate();
+          }}
+          disabled={sendReengageMutation.isPending}
+          title="Enviar reenganche manual (ignora hora)"
+          data-testid="button-reengage"
+        >
+          {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+        </Button>
+
         {isAdmin && (
           <Button
             variant="ghost"
@@ -1934,6 +1971,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               <DropdownMenuItem onClick={() => toggleShouldCallMutation.mutate(!conversation.shouldCall)} data-testid="mobile-action-call">
                 <Phone className={cn("h-4 w-4 mr-2", conversation.shouldCall && "text-green-500")} />
                 {conversation.shouldCall ? "Quitar marca de llamar" : "Marcar para llamar"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { if (confirm("¿Enviar reenganche ahora? Ignora horario y ventana 24h.")) sendReengageMutation.mutate(); }} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage">
+                {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Megaphone className="h-4 w-4 mr-2" />}
+                Enviar reenganche
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
