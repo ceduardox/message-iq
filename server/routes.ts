@@ -4377,15 +4377,35 @@ export async function registerRoutes(
 
   app.post("/api/conversations/:id/reengage", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
+    const stage = Number(req.body?.stage) === 1 ? 1 : 2;
     const conv = await storage.getConversation(id);
     if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
     const settings = await storage.getAiSettings();
-    const msg = settings?.followUpStage2Message?.trim() || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook";
+    let msg = "";
+    let waPrefix = "";
+    if (stage === 1) {
+      const fixedMsg = (settings as any)?.followUpFixedMessage?.trim() || "";
+      const mode = (settings as any)?.followUpMessageMode === "fixed" ? "fixed" : "ai";
+      if (mode === "fixed" && fixedMsg) {
+        msg = fixedMsg;
+      } else {
+        const msgs = await storage.getMessages(conv.id);
+        const recent = msgs.slice(-10);
+        const waitMin = (settings as any)?.followUpMinutes || 20;
+        const result = await generateAiResponse(conv.id, `[SISTEMA: Seguimiento manual Stage1 inmediato. Genera UN mensaje corto de reenganche, natural y no invasivo. No saludes de nuevo.]`, recent);
+        msg = result?.response?.trim() || fixedMsg || "Hola, quedo atento por si desea que le confirme informacion.";
+      }
+      waPrefix = `manual_reengage_stage1_${Date.now()}_${conv.id}`;
+    } else {
+      msg = (settings as any)?.followUpStage2Message?.trim() || "Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook";
+      waPrefix = `manual_reengage_stage2_${Date.now()}_${conv.id}`;
+    }
+    if (!msg) return res.status(400).json({ message: "Mensaje de reenganche vacío" });
     try {
       await sendAiResponseToWhatsApp(conv.waId, msg);
       await storage.createMessage({
         conversationId: conv.id,
-        waMessageId: `manual_reengage_${Date.now()}_${conv.id}`,
+        waMessageId: waPrefix,
         direction: "out",
         type: "text",
         text: msg,
@@ -4397,7 +4417,7 @@ export async function registerRoutes(
         lastMessageTimestamp: new Date(),
         lastFollowUpAt: new Date(),
       });
-      res.json({ success: true, message: msg });
+      res.json({ success: true, message: msg, stage });
     } catch (err: any) {
       console.error("[Reengage] manual failed:", err?.message);
       res.status(500).json({ message: err?.message || "Error al enviar reenganche" });

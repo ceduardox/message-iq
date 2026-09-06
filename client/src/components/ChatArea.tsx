@@ -902,12 +902,14 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     },
   });
 
+  const [showReengageDialog, setShowReengageDialog] = useState(false);
   const sendReengageMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (stage: 1 | 2) => {
       const res = await fetch(`/api/conversations/${conversation.id}/reengage`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -915,9 +917,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, stage) => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      toast({ title: "Reenganche enviado" });
+      toast({ title: stage === 1 ? "1er reenganche enviado" : "2do reenganche enviado" });
+      setShowReengageDialog(false);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1718,20 +1721,36 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           <Phone className="h-4 w-4" />
         </Button>
 
-        {/* Manual Reengage - ignora hora/24h */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="flex-shrink-0 h-7 w-7"
-          onClick={() => {
-            if (confirm("¿Enviar reenganche ahora? Ignora horario y ventana 24h.")) sendReengageMutation.mutate();
-          }}
-          disabled={sendReengageMutation.isPending}
-          title="Enviar reenganche manual (ignora hora)"
-          data-testid="button-reengage"
-        >
-          {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
-        </Button>
+        {/* Manual Reengage - elige 1er o 2do */}
+        <Dialog open={showReengageDialog} onOpenChange={setShowReengageDialog}>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="flex-shrink-0 h-7 w-7"
+              title="Enviar reenganche manual - elige 1er o 2do"
+              data-testid="button-reengage"
+            >
+              <Megaphone className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Enviar reenganche</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">Elige cuál mensaje enviar (ignora horario y ventana 24h).</p>
+            <div className="grid gap-3 pt-2">
+              <Button onClick={() => sendReengageMutation.mutate(1)} disabled={sendReengageMutation.isPending} data-testid="button-reengage-stage1" className="justify-start">
+                {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                1er reenganche (hasta 60 min - inmediato)
+              </Button>
+              <Button onClick={() => sendReengageMutation.mutate(2)} disabled={sendReengageMutation.isPending} variant="outline" data-testid="button-reengage-stage2" className="justify-start">
+                {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Megaphone className="h-4 w-4 mr-2" />}
+                2do reenganche (después - con botones/lista)
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {isAdmin && (
           <Button
@@ -1972,9 +1991,13 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 <Phone className={cn("h-4 w-4 mr-2", conversation.shouldCall && "text-green-500")} />
                 {conversation.shouldCall ? "Quitar marca de llamar" : "Marcar para llamar"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { if (confirm("¿Enviar reenganche ahora? Ignora horario y ventana 24h.")) sendReengageMutation.mutate(); }} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage">
-                {sendReengageMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Megaphone className="h-4 w-4 mr-2" />}
-                Enviar reenganche
+              <DropdownMenuItem onClick={() => sendReengageMutation.mutate(1)} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage-1">
+                <Send className="h-4 w-4 mr-2" />
+                Reenganche 1 (60 min)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => sendReengageMutation.mutate(2)} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage-2">
+                <Megaphone className="h-4 w-4 mr-2" />
+                Reenganche 2 (con lista)
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
