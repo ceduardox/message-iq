@@ -2964,9 +2964,31 @@ export async function registerRoutes(
                   messageForAi = `[El cliente selecciono una opcion interactiva]`;
                 }
                 console.log("=== INTERACTIVE REPLY ===", messageText);
+              } else if ((msg as any).text?.body) {
+                messageText = (msg as any).text.body;
+                messageForAi = (msg as any).text.body;
+                console.log("=== FALLBACK TEXT BODY ===", messageText);
+              } else if ((msg as any).button?.text) {
+                messageText = (msg as any).button.text;
+                messageForAi = (msg as any).button.text;
+                console.log("=== BUTTON TEXT ===", messageText);
+              } else if ((msg as any).contacts) {
+                const c = (msg as any).contacts?.[0];
+                messageText = c ? `[Contacto: ${c.name?.formatted_name || c.name?.first_name || ''}]` : `[${msg.type}]`;
+                messageForAi = messageText;
+              } else if ((msg as any).reaction) {
+                messageText = `[Reaccion: ${(msg as any).reaction.emoji || ''}]`;
+                messageForAi = messageText;
               } else {
-                messageText = `[${msg.type}]`;
-                messageForAi = `[El cliente envio un mensaje de tipo: ${msg.type}]`;
+                const genericText = (msg as any).text?.body || (msg as any).button?.text || (msg as any).otp?.code || (msg as any).template?.body || null;
+                if (genericText) {
+                  messageText = genericText;
+                  messageForAi = genericText;
+                } else {
+                  console.log("=== UNSUPPORTED TYPE ===", msg.type, JSON.stringify(msg).slice(0,500));
+                  messageText = `[${msg.type}]`;
+                  messageForAi = `[El cliente envio un mensaje de tipo: ${msg.type}]`;
+                }
               }
 
               // 2. Ensure Conversation Exists (now using correct messageText)
