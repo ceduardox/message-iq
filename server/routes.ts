@@ -4446,6 +4446,37 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/otp-preview", requireAdmin, async (_req, res) => {
+    const countRes: any = await db.execute(sql`SELECT COUNT(*)::int AS total FROM messages WHERE text LIKE '[%]' AND raw_json IS NOT NULL AND type NOT IN ('image','audio','video','sticker','location','document','interactive','contacts','reaction')`);
+    const total = countRes.rows?.[0]?.total ?? countRes[0]?.total ?? 0;
+    const sample: any = await db.execute(sql`
+      SELECT id, type, text, 
+             COALESCE(raw_json->'text'->>'body', raw_json->'button'->>'text', raw_json->'otp'->>'code', left(raw_json::text, 400)) AS decoded
+      FROM messages
+      WHERE text LIKE '[%]' AND raw_json IS NOT NULL AND type NOT IN ('image','audio','video','sticker','location','document','interactive','contacts','reaction')
+      ORDER BY id DESC LIMIT 5
+    `);
+    res.json({ total, sample: sample.rows ?? sample });
+  });
+
+  app.post("/api/admin/otp-recover", requireAdmin, async (req, res) => {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || Number(req.body?.limit) || 20));
+    const result: any = await db.execute(sql`
+      UPDATE messages
+      SET text = COALESCE(raw_json->'text'->>'body', raw_json->'button'->>'text', raw_json->'otp'->>'code')
+      WHERE id IN (
+        SELECT id FROM messages
+        WHERE text LIKE '[%]' AND raw_json IS NOT NULL
+          AND COALESCE(raw_json->'text'->>'body', raw_json->'button'->>'text', raw_json->'otp'->>'code') IS NOT NULL
+          AND type NOT IN ('image','audio','video','sticker','location','document','interactive','contacts','reaction')
+        ORDER BY id DESC LIMIT ${limit}
+      )
+      RETURNING id, text
+    `);
+    const updated = result.rowCount ?? result.rows?.length ?? 0;
+    res.json({ updated, limit });
+  });
+
   // Get follow-up conversations (those where we sent last message and customer didn't respond)
   app.get("/api/follow-up", requireAuth, async (req, res) => {
     const { timeFilter } = req.query; // 'today', 'yesterday', 'before_yesterday'
