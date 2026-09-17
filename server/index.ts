@@ -7,8 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 // Force the CRM timezone so all date/hour logic (citas, agenda) matches Bolivia,
-// regardless of the container's default timezone (usually UTC).
-process.env.TZ = process.env.TZ || "America/La_Paz";
+// regardless of the container / platform timezone (usually UTC).
+process.env.TZ = "America/La_Paz";
 
 const app = express();
 
