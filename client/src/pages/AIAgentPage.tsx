@@ -139,7 +139,7 @@ export default function AIAgentPage() {
   const [temperature, setTemperature] = useState(70);
   const [aiProvider, setAiProvider] = useState<"openai" | "gemini" | "deepseek">("openai");
   const [model, setModel] = useState("gpt-4o-mini");
-  const [maxPromptChars, setMaxPromptChars] = useState(2000);
+  const [maxPromptChars, setMaxPromptChars] = useState(30000);
   const [conversationHistory, setConversationHistory] = useState(3);
   const [audioResponseEnabled, setAudioResponseEnabled] = useState(false);
   const [audioMode, setAudioMode] = useState("first");
@@ -444,7 +444,7 @@ export default function AIAgentPage() {
       const provider = settings.aiProvider === "gemini" ? "gemini" : settings.aiProvider === "deepseek" ? "deepseek" : "openai";
       setAiProvider(provider);
       setModel(settings.model || getDefaultModelForProvider(provider));
-      setMaxPromptChars(settings.maxPromptChars || 2000);
+      setMaxPromptChars(settings.maxPromptChars || 30000);
       setConversationHistory(settings.conversationHistory || 3);
       setAudioResponseEnabled(settings.audioResponseEnabled || false);
       setAudioMode(settings.audioMode || "first");
@@ -1191,16 +1191,16 @@ export default function AIAgentPage() {
                   id="maxPromptChars"
                   type="number"
                   min={500}
-                  max={20000}
+                  max={60000}
                   value={maxPromptChars}
                   onChange={(e) => {
-                    setMaxPromptChars(parseInt(e.target.value) || 2000);
+                    setMaxPromptChars(parseInt(e.target.value) || 30000);
                     setConfigEdited(true);
                   }}
                   data-testid="input-max-prompt-chars"
                   className="bg-slate-800/50 border-slate-600/50 text-white"
                 />
-                <p className="text-xs text-slate-500 mt-1">500-20000. Límite de texto en instrucciones</p>
+                <p className="text-xs text-slate-500 mt-1">500-60000. Límite de texto en instrucciones</p>
               </div>
               <div>
                 <Label htmlFor="conversationHistory" className="text-slate-300">Mensajes de contexto</Label>
