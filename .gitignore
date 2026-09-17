@@ -9,3 +9,5 @@ vite.config.ts.*
 !.env.example
 railway_dump.sql
 tmp-iqx-preview/
+.local-*.log
+.local-*.err.log
