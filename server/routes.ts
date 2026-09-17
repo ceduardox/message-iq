@@ -5169,8 +5169,8 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   const promptProfilesUpdateSchema = z.object({
-    primaryPrompt: z.string().max(20000),
-    secondaryPrompt: z.string().max(20000),
+    primaryPrompt: z.string().max(60000),
+    secondaryPrompt: z.string().max(60000),
     activeSlot: z.enum(["primary", "secondary"]),
   });
 
