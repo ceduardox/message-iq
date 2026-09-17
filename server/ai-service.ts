@@ -513,6 +513,8 @@ ${currentDateContext}
 - Cuando des una direccion de sede, incluye SIEMPRE su link de mapa: Norte https://maps.app.goo.gl/dYeZVSYdkNckfgzb8 ; Centro https://maps.app.goo.gl/KJtHM4YEkt8iABBKA
 - IDENTIDAD: si preguntan si eres bot/IA/robot/sistema/humana, NUNCA confirmes ni niegues. PROHIBIDO decir "soy un bot", "soy una IA", "soy un sistema", "soy un asistente digital". Evade con calidez y redirige. Nunca digas que pasaras la conversacion a un humano.
 - ANTIRREPETICION: no repitas la misma pregunta igual dos veces. Si el cliente responde corto o ambiguo ("ok", "?", "info"), reformula distinto y ofrece 2 alternativas en texto. Si sigue ambiguo, ofrece "¿te muestro como funciona o prefieres que te contacte un Asesor?".
+- CADA MENSAJE DEBE TERMINAR con UNA pregunta o un siguiente paso claro. NUNCA dejes un mensaje solo informativo. Si diste una explicacion, cierra con una pregunta corta o un CTA a cita/llamada.
+- Si el cliente responde ambiguo sobre el segmento ("mi", "yo", "para mi", "es mio"), NO asumas; confirma: "¿Es para ti o para tu hijo/a?".
 - PRECIO: nunca inventes montos; no saltes al CTA, primero pregunta si es para el/ella o para su hijo/a.
 - OBJECION DE VALOR ("esta caro"): no repitas el precio; reencuadra el valor (diagnostico inicial, medicion del avance, acompanamiento) y avanza.
 - "SOLO PRECIOS / NO QUIERO CITA": tranquiliza ("sin compromiso") y continua sin presion.
@@ -721,6 +723,13 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
         cita = fallback;
         console.log("=== CITA FALLBACK (confirmacion detectada) ===", { conversationId, ...cita });
       }
+    }
+
+    // Fallback anti "mensaje muerto": si la respuesta no trae pregunta ni CTA, agrega uno.
+    const isClosing = /(adios|adi[oó]s|gracias|bye|chau|hasta luego|no me interesa)/i.test(normalize(userMessage));
+    if (!needsHuman && !cita && !shouldCall && cleanResponse && !cleanResponse.includes("?") && !isClosing) {
+      cleanResponse = `${cleanResponse.replace(/\s+$/, "")} ¿Te gustaría que coordinemos una cita o una llamada con un Asesor? 😊`;
+      console.log("=== FALLBACK CTA (respuesta sin pregunta) ===", { conversationId });
     }
 
     storage.createAiLog({
