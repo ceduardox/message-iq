@@ -13,6 +13,7 @@ RUN npm prune --omit=dev
 
 ENV NODE_ENV=production
 ENV PORT=5000
+ENV TZ=America/La_Paz
 
 EXPOSE 5000
 

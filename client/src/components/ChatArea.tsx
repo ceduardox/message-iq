@@ -2300,7 +2300,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                     data-testid={`badge-call-${msg.id}`}
                   >
                     <Phone className="h-3.5 w-3.5" />
-                    Llamada agendada
+                    {conversation.reminderNote && conversation.reminderNote.startsWith("LLAMADA")
+                      ? conversation.reminderNote
+                      : "Llamada agendada"}
                   </span>
                 ) : isOut && /\b\d{1,2}:\d{2}\b/.test(msg.text || "") ? (
                   <button

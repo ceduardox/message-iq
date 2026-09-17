@@ -229,6 +229,60 @@ async function requestDeepSeekCompletion(params: {
   return { responseText, tokensUsed, providerUsed: "deepseek" as const };
 }
 
+// Best-effort parse of a Spanish day/time phrase (e.g. "viernes 18 a las 9:00",
+// "mañana 15:30") into a concrete Date, using the CRM timezone.
+function parseSpanishDateTime(text: string): Date | null {
+  if (!text) return null;
+  const norm = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  let hour: number | null = null;
+  let minute = 0;
+  const hhmm = norm.match(/(\d{1,2})[:.](\d{2})\s*(am|pm|a\.?\s?m\.?|p\.?\s?m\.?)?/);
+  if (hhmm) {
+    hour = parseInt(hhmm[1], 10);
+    minute = parseInt(hhmm[2], 10);
+    if (/p\.?\s?m/.test(hhmm[3] || "") && hour < 12) hour += 12;
+    if (/a\.?\s?m/.test(hhmm[3] || "") && hour === 12) hour = 0;
+  } else {
+    const hOnly = norm.match(/(?:a\s+las?\s*)?(\d{1,2})\s*(am|pm|a\.?\s?m\.?|p\.?\s?m\.?)/);
+    if (hOnly) {
+      hour = parseInt(hOnly[1], 10);
+      if (/p\.?\s?m/.test(hOnly[2]) && hour < 12) hour += 12;
+      if (/a\.?\s?m/.test(hOnly[2]) && hour === 12) hour = 0;
+    }
+  }
+  if (hour === null || hour > 23 || minute > 59) return null;
+
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+
+  const dayMap: Record<string, number> = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6 };
+
+  if (/pasado\s+manana/.test(norm)) {
+    date.setDate(date.getDate() + 2);
+  } else if (/\bmanana\b/.test(norm) && !/por la manana|de la manana|en la manana/.test(norm)) {
+    date.setDate(date.getDate() + 1);
+  } else {
+    const wd = Object.keys(dayMap).find((k) => new RegExp(`\\b${k}\\b`).test(norm));
+    if (wd) {
+      const target = dayMap[wd];
+      let diff = (target - date.getDay() + 7) % 7;
+      if (diff === 0 && date.getTime() < now.getTime()) diff = 7; // today but already past -> next week
+      date.setDate(date.getDate() + diff);
+    } else {
+      const dm = norm.match(/\b(\d{1,2})\b(?:\s+de\s+\w+)?/);
+      if (dm) {
+        const dnum = parseInt(dm[1], 10);
+        if (dnum >= 1 && dnum <= 31) {
+          date.setDate(dnum);
+          if (date.getTime() < now.getTime()) date.setMonth(date.getMonth() + 1);
+        }
+      }
+    }
+  }
+  return date;
+}
+
 // Deterministic safety net: if the AI offered concrete times in its previous message
 // and the client replies with a short confirmation, book the matching slot.
 function detectSlotConfirmation(
@@ -406,7 +460,7 @@ export async function generateAiResponse(
   recentMessages: Message[],
   imageBase64?: string, // Optional: base64 encoded image for vision analysis
   advisorName?: string,
-): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean; orderStatus?: OrderStatus; cita?: { sede: string; startAt: string } } | null> {
+): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean; orderStatus?: OrderStatus; cita?: { sede: string; startAt: string }; callAt?: string } | null> {
   try {
     const [settings, allProducts, learnedRules] = await Promise.all([
       storage.getAiSettings(),
@@ -727,6 +781,16 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
     // A confirmed presencial cita supersedes the call flag.
     if (cita) shouldCall = false;
 
+    // If a call was agreed, try to extract the day/time from the reply text.
+    let callAt: string | undefined;
+    if (shouldCall && !cita) {
+      const parsed = parseSpanishDateTime(cleanResponse) || parseSpanishDateTime(responseText);
+      if (parsed && parsed.getTime() > Date.now() - 60 * 1000) {
+        callAt = parsed.toISOString();
+        console.log("=== CALL DATETIME DETECTED ===", { conversationId, callAt });
+      }
+    }
+
     // Fallback: short confirmation ("si", "la primera") after the AI offered times.
     if (!cita && !needsHuman) {
       const lastOut = [...recentMessages].reverse().find((m) => m.direction === "out");
@@ -752,7 +816,7 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       success: true,
     }).catch(err => console.error("AI log error:", err));
 
-    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall, orderStatus, cita: needsHuman ? undefined : cita };
+    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall, orderStatus, cita: needsHuman ? undefined : cita, callAt: needsHuman ? undefined : callAt };
   } catch (error: any) {
     console.error("AI Error:", error);
     

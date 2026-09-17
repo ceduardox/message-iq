@@ -540,6 +540,54 @@ function getPushTargetUrl(data?: Record<string, string>) {
   return `${DEFAULT_PUBLIC_BASE_URL}/`;
 }
 
+// Postgres `timestamp` (sin zona) + el query-builder de drizzle serializa los Date como UTC,
+// lo que desfasa la hora de Bolivia (-4h). Escribimos la hora local de Bolivia explícitamente.
+function toLaPazWallClock(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/La_Paz",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || "00";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+async function writeReminderRaw(
+  id: number,
+  reminderAt: Date | null,
+  note: string | null,
+  color: string | null,
+  done: boolean,
+): Promise<void> {
+  if (reminderAt) {
+    const wall = toLaPazWallClock(reminderAt);
+    await db.execute(sql`
+      UPDATE conversations
+      SET reminder_at = ${wall}::timestamp,
+          reminder_note = ${note},
+          reminder_color = ${color},
+          reminder_done = ${done},
+          reminder_updated_at = NOW()
+      WHERE id = ${id}
+    `);
+  } else {
+    await db.execute(sql`
+      UPDATE conversations
+      SET reminder_at = NULL,
+          reminder_note = NULL,
+          reminder_color = NULL,
+          reminder_done = false,
+          reminder_updated_at = NULL
+      WHERE id = ${id}
+    `);
+  }
+}
+
 function getConversationAdvisorName(assignedAgentName?: string | null) {
   const normalized = (assignedAgentName || "").trim();
   return normalized || DEFAULT_ADVISOR_NAME;
@@ -927,9 +975,24 @@ async function processAiResponse(data: BufferedMessage) {
       if (aiResult.shouldCall) {
         updateData.shouldCall = true;
         console.log("=== MARKING FOR CALL (NEUROVENTA) ===", conversationId);
+        if (aiResult.callAt) {
+          const callDate = new Date(aiResult.callAt);
+          if (!Number.isNaN(callDate.getTime())) {
+            await writeReminderRaw(
+              conversationId,
+              callDate,
+              `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: "America/La_Paz", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              null,
+              false,
+            );
+            console.log("=== CALL REMINDER SET ===", conversationId, callDate.toISOString());
+          }
+        }
         sendPushNotification(
           "Llamar al Cliente",
-          `${name}: Alta probabilidad de compra - llamar ahora`,
+          aiResult.callAt
+            ? `${name}: llamada agendada ${new Date(aiResult.callAt).toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+            : `${name}: Alta probabilidad de compra - llamar ahora`,
           { conversationId: conversationId.toString(), waId: from, event: "should_call" },
           getConversationPushOptions(conversation)
         );
@@ -4228,26 +4291,16 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Invalid reminder date" });
     }
 
-    const updated = await storage.updateConversation(id, {
-      reminderAt,
-      reminderNote,
-      reminderColor,
-      reminderDone,
-      reminderUpdatedAt: reminderAt ? new Date() : null,
-    });
+    await writeReminderRaw(id, reminderAt, reminderNote, reminderColor, reminderDone);
+    const updated = await storage.getConversation(id);
     res.json(updated);
   });
 
   // Delete reminder from conversation
   app.delete("/api/conversations/:id/reminder", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
-    const updated = await storage.updateConversation(id, {
-      reminderAt: null,
-      reminderNote: null,
-      reminderColor: null,
-      reminderDone: false,
-      reminderUpdatedAt: null,
-    });
+    await writeReminderRaw(id, null, null, null, false);
+    const updated = await storage.getConversation(id);
     res.json(updated);
   });
 
@@ -4699,8 +4752,21 @@ export async function registerRoutes(
           citaInfo = { clash: true, sede, startAt: start.toISOString() };
         }
       }
-      await storage.updateConversation(conv.id, { lastMessage: aiResult.response, lastMessageTimestamp: new Date(), needsHumanAttention: false, shouldCall: !!aiResult.shouldCall } as any);
-      res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, orderStatus: aiResult.orderStatus ?? null });
+      const simUpdate: any = { lastMessage: aiResult.response, lastMessageTimestamp: new Date(), needsHumanAttention: false, shouldCall: !!aiResult.shouldCall };
+      await storage.updateConversation(conv.id, simUpdate);
+      if (aiResult.shouldCall && !aiResult.cita && aiResult.callAt) {
+        const callDate = new Date(aiResult.callAt);
+        if (!Number.isNaN(callDate.getTime())) {
+          await writeReminderRaw(
+            conv.id,
+            callDate,
+            `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: "America/La_Paz", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            null,
+            false,
+          );
+        }
+      }
+      res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, callAt: aiResult.callAt ?? null, orderStatus: aiResult.orderStatus ?? null });
     } catch (err: any) {
       console.error("[DevSim] error:", err?.message);
       res.status(500).json({ message: err?.message || "Error simulando mensaje" });
