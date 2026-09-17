@@ -35,7 +35,7 @@ const BLOCKED_LEGACY_BUTTON_SETS = [
   ["azucar y peso", "dolor y estres", "dolor articular"],
   ["solo diabetes", "diabetes peso"],
 ];
-const DEFAULT_ADVISOR_NAME = "Isabella";
+const DEFAULT_ADVISOR_NAME = "Lexi";
 const upsertSubadminSchema = z.object({
   name: z.string().trim().min(1).max(100),
   username: z.string().trim().min(1).max(50),
@@ -4477,6 +4477,236 @@ export async function registerRoutes(
     res.json({ updated, limit });
   });
 
+  // === CITAS: disponibilidad + slots + reserva (KISS, separado de recordatorios) ===
+  const CITA_MINUTES = 60;
+  const VALID_SEDES = ["centro", "norte"];
+  const normalizeSede = (v: any) => {
+    const s = String(v || "centro").toLowerCase();
+    return VALID_SEDES.includes(s) ? s : "centro";
+  };
+
+  app.get("/api/availabilities", requireAuth, async (_req, res) => {
+    const rows: any = await db.execute(sql`SELECT id, agent_id AS "agentId", weekday, start_time AS "startTime", end_time AS "endTime", sede, is_active AS "isActive" FROM agent_availability ORDER BY weekday, start_time`);
+    res.json(rows.rows ?? rows);
+  });
+
+  app.post("/api/availabilities", requireAdmin, async (req, res) => {
+    const parsed = z.object({
+      agentId: z.number().nullable().optional(),
+      weekday: z.number().min(0).max(6),
+      startTime: z.string().regex(/^\d{2}:\d{2}$/),
+      endTime: z.string().regex(/^\d{2}:\d{2}$/),
+      sede: z.enum(["centro", "norte"]).optional(),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Datos inválidos", details: parsed.error.errors });
+    const { agentId, weekday, startTime, endTime, sede } = parsed.data;
+    if (startTime >= endTime) return res.status(400).json({ message: "Hora inicio debe ser menor a fin" });
+    const rows: any = await db.execute(sql`
+      INSERT INTO agent_availability (agent_id, weekday, start_time, end_time, sede)
+      VALUES (${agentId ?? null}, ${weekday}, ${startTime}, ${endTime}, ${sede || "centro"})
+      RETURNING id
+    `);
+    res.json({ success: true, id: rows.rows?.[0]?.id ?? rows[0]?.id });
+  });
+
+  app.delete("/api/availabilities/:id", requireAdmin, async (req, res) => {
+    await db.execute(sql`DELETE FROM agent_availability WHERE id = ${parseInt(req.params.id)}`);
+    res.json({ success: true });
+  });
+
+  app.get("/api/slots", requireAuth, async (req, res) => {
+    const dateStr = String(req.query.date || "").slice(0, 10);
+    const sede = normalizeSede(req.query.sede);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ message: "date YYYY-MM-DD requerida" });
+    const day = new Date(dateStr + "T12:00:00");
+    if (Number.isNaN(day.getTime())) return res.status(400).json({ message: "Fecha inválida" });
+    const weekday = day.getDay();
+    const avail: any = await db.execute(sql`SELECT start_time AS "startTime", end_time AS "endTime" FROM agent_availability WHERE weekday = ${weekday} AND sede = ${sede} AND is_active IS DISTINCT FROM false`);
+    const list = avail.rows ?? avail;
+    const dayStart = new Date(dateStr + "T00:00:00");
+    const dayEnd = new Date(dateStr + "T23:59:59");
+    const busy: any = await db.execute(sql`SELECT start_at AS "startAt", end_at AS "endAt" FROM citas WHERE sede = ${sede} AND estado != 'cancelada' AND start_at >= ${dayStart} AND start_at <= ${dayEnd}`);
+    const busyList = (busy.rows ?? busy).map((b: any) => ({ s: new Date(b.startAt).getTime(), e: new Date(b.endAt).getTime() }));
+    const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    const slots: Array<{ startAt: string; endAt: string; sede: string }> = [];
+    for (const a of list) {
+      const s = toMin(a.startTime);
+      const e = toMin(a.endTime);
+      for (let m = s; m + CITA_MINUTES <= e; m += CITA_MINUTES) {
+        const st = new Date(day); st.setHours(Math.floor(m / 60), m % 60, 0, 0);
+        const en = new Date(st.getTime() + CITA_MINUTES * 60000);
+        const overlap = busyList.some((b: any) => st.getTime() < b.e && en.getTime() > b.s);
+        if (!overlap) slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede });
+      }
+    }
+    res.json({ date: dateStr, sede, slots });
+  });
+
+  app.get("/api/conversations/:id/cita", requireAuth, async (req, res) => {
+    const rows: any = await db.execute(sql`
+      SELECT id, sede,
+             to_char(start_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "startAt",
+             to_char(end_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "endAt",
+             estado
+      FROM citas
+      WHERE conversation_id = ${parseInt(req.params.id)} AND estado != 'cancelada'
+      ORDER BY start_at DESC LIMIT 1
+    `);
+    res.json({ cita: (rows.rows ?? rows)[0] || null });
+  });
+
+  app.get("/api/citas", requireAuth, async (req, res) => {
+    const dateStr = String(req.query.date || "").slice(0, 10);
+    let rows: any;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      rows = await db.execute(sql`
+        SELECT c.id, c.conversation_id AS "conversationId", c.agent_id AS "agentId", c.sede,
+               to_char(c.start_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "startAt",
+               to_char(c.end_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "endAt",
+               c.estado, c.note,
+               conv.contact_name AS "contactName", conv.wa_id AS "waId"
+        FROM citas c LEFT JOIN conversations conv ON conv.id = c.conversation_id
+        WHERE c.start_at >= ${new Date(dateStr + "T00:00:00")} AND c.start_at <= ${new Date(dateStr + "T23:59:59")}
+        ORDER BY c.start_at
+      `);
+    } else {
+      rows = await db.execute(sql`
+        SELECT c.id, c.conversation_id AS "conversationId", c.agent_id AS "agentId", c.sede,
+               to_char(c.start_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "startAt",
+               to_char(c.end_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "endAt",
+               c.estado, c.note,
+               conv.contact_name AS "contactName", conv.wa_id AS "waId"
+        FROM citas c LEFT JOIN conversations conv ON conv.id = c.conversation_id
+        WHERE c.start_at >= NOW() - INTERVAL '1 day'
+        ORDER BY c.start_at LIMIT 100
+      `);
+    }
+    res.json(rows.rows ?? rows);
+  });
+
+  app.post("/api/citas", requireAuth, async (req, res) => {
+    const parsed = z.object({
+      conversationId: z.number(),
+      sede: z.enum(["centro", "norte"]).optional(),
+      startAt: z.string().datetime(),
+      agentId: z.number().nullable().optional(),
+      note: z.string().max(300).optional().nullable(),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Datos inválidos", details: parsed.error.errors });
+    const sede = parsed.data.sede || "centro";
+    const start = new Date(parsed.data.startAt);
+    if (Number.isNaN(start.getTime())) return res.status(400).json({ message: "Fecha inválida" });
+    const end = new Date(start.getTime() + CITA_MINUTES * 60000);
+    const clash: any = await db.execute(sql`
+      SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
+      AND start_at < ${end} AND end_at > ${start} LIMIT 1
+    `);
+    if ((clash.rows ?? clash).length > 0) return res.status(409).json({ message: "Horario ya ocupado en esa sede" });
+    const conv = await storage.getConversation(parsed.data.conversationId);
+    if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
+    const ins: any = await db.execute(sql`
+      INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
+      VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
+      RETURNING id
+    `);
+    const citaId = ins.rows?.[0]?.id ?? ins[0]?.id;
+    const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+    await storage.updateConversation(conv.id, {
+      reminderAt: start,
+      reminderNote: `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+      reminderDone: false,
+      reminderUpdatedAt: new Date(),
+    } as any);
+    res.json({ success: true, id: citaId, startAt: start, endAt: end, sede });
+  });
+
+  app.patch("/api/citas/:id", requireAuth, async (req, res) => {
+    const parsed = z.object({ estado: z.enum(["reservada", "confirmada", "asistio", "cancelada"]) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Estado inválido" });
+    await db.execute(sql`UPDATE citas SET estado = ${parsed.data.estado} WHERE id = ${parseInt(req.params.id)}`);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/citas/:id", requireAuth, async (req, res) => {
+    const rows: any = await db.execute(sql`SELECT conversation_id AS "conversationId", start_at AS "startAt" FROM citas WHERE id = ${parseInt(req.params.id)}`);
+    const row = (rows.rows ?? rows)[0];
+    await db.execute(sql`DELETE FROM citas WHERE id = ${parseInt(req.params.id)}`);
+    if (row) {
+      const conv = await storage.getConversation(row.conversationId);
+      if (conv && conv.reminderAt && new Date(conv.reminderAt).getTime() === new Date(row.startAt).getTime()) {
+        await storage.updateConversation(conv.id, { reminderAt: null, reminderNote: null, reminderDone: false, reminderUpdatedAt: null } as any);
+      }
+    }
+    res.json({ success: true });
+  });
+
+  // DEV-ONLY: simulate an incoming WhatsApp message so you can see Lexi reply + book in the browser.
+  // Disabled unless ENABLE_DEV_SIMULATOR=true (never set in production).
+  app.post("/api/dev/simulate-message", requireAuth, async (req, res) => {
+    if (process.env.ENABLE_DEV_SIMULATOR !== "true") {
+      return res.status(404).json({ message: "Not found" });
+    }
+    const parsed = z.object({ conversationId: z.number(), message: z.string().min(1).max(1000) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Datos inválidos" });
+    const conv = await storage.getConversation(parsed.data.conversationId);
+    if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
+    try {
+      await storage.createMessage({
+        conversationId: conv.id,
+        waMessageId: `dev_in_${Date.now()}_${conv.id}`,
+        direction: "in",
+        type: "text",
+        text: parsed.data.message,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "received",
+      });
+      const recent = await storage.getMessages(conv.id);
+      const aiResult = await generateAiResponse(conv.id, parsed.data.message, recent);
+      if (!aiResult) return res.json({ response: "(sin respuesta: IA desactivada o proveedor caído)" });
+      if (!aiResult.response) return res.json({ response: "(el cliente queda para atención humana)" });
+      await storage.createMessage({
+        conversationId: conv.id,
+        waMessageId: `dev_out_${Date.now()}_${conv.id}`,
+        direction: "out",
+        type: "text",
+        text: aiResult.response,
+        timestamp: Math.floor(Date.now() / 1000).toString(),
+        status: "sent",
+      });
+      let citaInfo: any = null;
+      if (aiResult.cita) {
+        const start = new Date(aiResult.cita.startAt);
+        const end = new Date(start.getTime() + CITA_MINUTES * 60000);
+        const sede = aiResult.cita.sede;
+        const clash: any = await db.execute(sql`
+          SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
+          AND start_at < ${end} AND end_at > ${start} LIMIT 1
+        `);
+        if ((clash.rows ?? clash).length === 0) {
+          await db.execute(sql`
+            INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
+            VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', 'Agendada por IA (sim)')
+          `);
+          const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+          await storage.updateConversation(conv.id, {
+            reminderAt: start,
+            reminderNote: `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            reminderDone: false,
+            reminderUpdatedAt: new Date(),
+          } as any);
+          citaInfo = { sede, startAt: start.toISOString(), endAt: end.toISOString(), sedeLabel };
+        } else {
+          citaInfo = { clash: true, sede, startAt: start.toISOString() };
+        }
+      }
+      await storage.updateConversation(conv.id, { lastMessage: aiResult.response, lastMessageTimestamp: new Date(), needsHumanAttention: false, shouldCall: !!aiResult.shouldCall } as any);
+      res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, orderStatus: aiResult.orderStatus ?? null });
+    } catch (err: any) {
+      console.error("[DevSim] error:", err?.message);
+      res.status(500).json({ message: err?.message || "Error simulando mensaje" });
+    }
+  });
+
   // Get follow-up conversations (those where we sent last message and customer didn't respond)
   app.get("/api/follow-up", requireAuth, async (req, res) => {
     const { timeFilter } = req.query; // 'today', 'yesterday', 'before_yesterday'
@@ -4791,7 +5021,7 @@ NO uses saludos formales. Se directo y amigable.`
     catalog: z.string().nullable().optional(),
     maxTokens: z.number().min(50).max(500).optional(),
     temperature: z.number().min(0).max(100).optional(),
-    aiProvider: z.enum(["openai", "gemini"]).optional(),
+    aiProvider: z.enum(["openai", "gemini", "deepseek"]).optional(),
     model: z.string().optional(),
     maxPromptChars: z.number().min(500).max(20000).optional(),
     conversationHistory: z.number().min(1).max(20).optional(),

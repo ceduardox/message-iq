@@ -297,3 +297,36 @@ export const adBanners = pgTable("ad_banners", {
 export const insertAdBannerSchema = createInsertSchema(adBanners).omit({ id: true, createdAt: true });
 export type AdBanner = typeof adBanners.$inferSelect;
 export type InsertAdBanner = z.infer<typeof insertAdBannerSchema>;
+
+// === CITAS (diagnóstico gratuito) — separado de recordatorios ===
+
+export const agentAvailability = pgTable("agent_availability", {
+  id: serial("id").primaryKey(),
+  agentId: integer("agent_id").references(() => agents.id),
+  weekday: integer("weekday").notNull(), // 0=domingo .. 6=sabado
+  startTime: varchar("start_time", { length: 5 }).notNull(), // "09:00"
+  endTime: varchar("end_time", { length: 5 }).notNull(), // "12:00"
+  sede: varchar("sede", { length: 20 }).notNull().default("centro"), // "centro" | "norte"
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentAvailabilitySchema = createInsertSchema(agentAvailability).omit({ id: true, createdAt: true });
+export type AgentAvailability = typeof agentAvailability.$inferSelect;
+export type InsertAgentAvailability = z.infer<typeof insertAgentAvailabilitySchema>;
+
+export const citas = pgTable("citas", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").references(() => conversations.id).notNull(),
+  agentId: integer("agent_id").references(() => agents.id),
+  sede: varchar("sede", { length: 20 }).notNull().default("centro"), // "centro" | "norte"
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
+  estado: varchar("estado", { length: 20 }).notNull().default("reservada"), // reservada|confirmada|asistio|cancelada
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCitaSchema = createInsertSchema(citas).omit({ id: true, createdAt: true });
+export type Cita = typeof citas.$inferSelect;
+export type InsertCita = z.infer<typeof insertCitaSchema>;

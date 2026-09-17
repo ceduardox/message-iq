@@ -137,7 +137,7 @@ export default function AIAgentPage() {
   // AI config state
   const [maxTokens, setMaxTokens] = useState(120);
   const [temperature, setTemperature] = useState(70);
-  const [aiProvider, setAiProvider] = useState<"openai" | "gemini">("openai");
+  const [aiProvider, setAiProvider] = useState<"openai" | "gemini" | "deepseek">("openai");
   const [model, setModel] = useState("gpt-4o-mini");
   const [maxPromptChars, setMaxPromptChars] = useState(2000);
   const [conversationHistory, setConversationHistory] = useState(3);
@@ -169,14 +169,19 @@ export default function AIAgentPage() {
     { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
   ];
   const geminiModelOptions = [
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash (rapido)" },
-    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite (economico)" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro (mas completo)" },
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (rapido)" },
+    { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite (economico)" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (mas completo)" },
   ];
-  const modelOptions = aiProvider === "gemini" ? geminiModelOptions : openAiModelOptions;
+  const deepseekModelOptions = [
+    { value: "deepseek-flash", label: "DeepSeek Flash (rapido, economico)" },
+    { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (mas inteligente)" },
+  ];
+  const modelOptions =
+    aiProvider === "gemini" ? geminiModelOptions : aiProvider === "deepseek" ? deepseekModelOptions : openAiModelOptions;
 
-  const getDefaultModelForProvider = (provider: "openai" | "gemini") =>
-    provider === "gemini" ? "gemini-2.0-flash" : "gpt-4o-mini";
+  const getDefaultModelForProvider = (provider: "openai" | "gemini" | "deepseek") =>
+    provider === "gemini" ? "gemini-2.5-flash" : provider === "deepseek" ? "deepseek-flash" : "gpt-4o-mini";
   
   // Product form state
   const [newName, setNewName] = useState("");
@@ -436,7 +441,7 @@ export default function AIAgentPage() {
     if (settings && !configEdited) {
       setMaxTokens(settings.maxTokens || 120);
       setTemperature(settings.temperature || 70);
-      const provider = settings.aiProvider === "gemini" ? "gemini" : "openai";
+      const provider = settings.aiProvider === "gemini" ? "gemini" : settings.aiProvider === "deepseek" ? "deepseek" : "openai";
       setAiProvider(provider);
       setModel(settings.model || getDefaultModelForProvider(provider));
       setMaxPromptChars(settings.maxPromptChars || 2000);
@@ -1102,7 +1107,7 @@ export default function AIAgentPage() {
               </div>
               <div>
                 <Label className="text-slate-300">Proveedor de respuesta</Label>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-3 gap-2 mt-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1133,7 +1138,23 @@ export default function AIAgentPage() {
                     data-testid="provider-response-gemini"
                   >
                     <div className="font-semibold text-sm text-white">Gemini</div>
-                    <div className="text-xs text-slate-400">Test con rollback rapido</div>
+                    <div className="text-xs text-slate-400">Prueba rapida</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAiProvider("deepseek");
+                      setConfigEdited(true);
+                    }}
+                    className={`rounded-xl border-2 p-3 text-left transition-all ${
+                      aiProvider === "deepseek"
+                        ? "border-violet-500 bg-violet-500/15 shadow-lg shadow-violet-500/10"
+                        : "border-slate-600/50 bg-slate-800/50 hover:border-violet-500/40"
+                    }`}
+                    data-testid="provider-response-deepseek"
+                  >
+                    <div className="font-semibold text-sm text-white">DeepSeek</div>
+                    <div className="text-xs text-slate-400">V4 Flash / Pro</div>
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">Solo cambia la IA que redacta. El audio sigue aparte.</p>
@@ -1157,7 +1178,11 @@ export default function AIAgentPage() {
                   ))}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
-                  {aiProvider === "gemini" ? "Modelo de Gemini para testeo" : "Modelo de OpenAI a usar"}
+                  {aiProvider === "gemini"
+                    ? "Modelo de Gemini para testeo"
+                    : aiProvider === "deepseek"
+                      ? "Modelo de DeepSeek a usar (v4 flash)"
+                      : "Modelo de OpenAI a usar"}
                 </p>
               </div>
               <div>

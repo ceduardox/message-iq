@@ -294,6 +294,25 @@ export default function RemindersPage() {
     return reminderGroups.all;
   }, [filter, reminderGroups]);
 
+  const listGroups = useMemo(() => {
+    const startToday = startOfDay(new Date());
+    const map = new Map<string, { label: string; isToday: boolean; isPast: boolean; items: ReminderConversation[] }>();
+    for (const r of visibleReminders) {
+      const d = startOfDay(r.reminderDate);
+      const key = dayKey(d);
+      const diff = Math.round((d.getTime() - startToday.getTime()) / 86400000);
+      const label =
+        diff === 0 ? "Hoy"
+        : diff === 1 ? "Mañana"
+        : diff === -1 ? "Ayer"
+        : d.toLocaleDateString("es-BO", { weekday: "long", day: "2-digit", month: "long" });
+      const entry = map.get(key) || { label, isToday: diff === 0, isPast: d.getTime() < startToday.getTime(), items: [] };
+      entry.items.push(r);
+      map.set(key, entry);
+    }
+    return Array.from(map.entries()).map(([key, v]) => ({ key, ...v }));
+  }, [visibleReminders]);
+
   const remindersByDay = useMemo(() => {
     const grouped = new Map<string, ReminderConversation[]>();
     for (const reminder of visibleReminders) {
@@ -367,81 +386,90 @@ export default function RemindersPage() {
 
   const dayHeight = 24 * HOUR_ROW_HEIGHT;
 
-  const renderReminderCard = (conv: ReminderConversation, compact = false) => (
-    <Card
-      key={conv.id}
-      data-testid={`reminder-card-${conv.id}`}
-      className={cn(
-        "border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]",
-        compact ? "ring-1 ring-emerald-500/15" : "hover:border-slate-600/80 transition-colors",
-      )}
-    >
-      <CardHeader className={compact ? "pb-2 pt-4" : "pb-2"}>
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <CardTitle className={cn("text-sm sm:text-base text-slate-100", conv.reminderDone && "line-through decoration-2 decoration-red-400 opacity-75")}>
-            {conv.contactName || conv.waId}
-          </CardTitle>
-          <Badge variant="outline" className="border-amber-400/70 bg-amber-500/10 text-amber-300 font-semibold">
-            {compact ? formatTimeOnly(conv.reminderAt) : formatReminder(conv.reminderAt)}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <p className={cn("text-xs sm:text-sm text-slate-300 break-words", conv.reminderDone && "line-through decoration-2 decoration-red-400 opacity-75")}>
-          {conv.reminderNote?.trim() || "Sin nota"}
-        </p>
-        {conv.reminderDone && (
-          <Badge className="mt-2 bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">Completado</Badge>
+  const renderReminderCard = (conv: ReminderConversation, compact = false) => {
+    const reminderColor = normalizeReminderColor(conv.reminderColor);
+    const done = Boolean(conv.reminderDone);
+    return (
+      <div
+        key={conv.id}
+        data-testid={`reminder-card-${conv.id}`}
+        className={cn(
+          "relative overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/60 shadow-lg backdrop-blur-sm transition-colors",
+          done ? "opacity-80" : "hover:border-slate-600/80",
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link href={`/?conversationId=${conv.id}`}>
+      >
+        {/* color accent bar */}
+        <span className="absolute left-0 top-0 h-full w-1.5" style={{ backgroundColor: reminderColor }} />
+        <div className="pl-4 pr-3 py-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-950/60 text-center">
+              <span className="text-sm font-bold leading-none tabular-nums text-slate-100">{formatTimeOnly(conv.reminderAt)}</span>
+              <span className="mt-0.5 text-[9px] uppercase text-slate-500">{conv.reminderDate.toLocaleDateString("es-BO", { day: "2-digit", month: "short" })}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={cn("truncate text-sm font-semibold text-slate-100", done && "line-through decoration-2 decoration-red-400 opacity-70")}>
+                {conv.contactName || conv.waId}
+              </p>
+              <p className={cn("mt-0.5 line-clamp-2 text-xs text-slate-400", done && "line-through decoration-red-400 opacity-70")}>
+                {conv.reminderNote?.trim() || "Sin nota"}
+              </p>
+              {done && (
+                <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                  <Check className="h-3 w-3" /> Completado
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <Link href={`/?conversationId=${conv.id}`} className="flex-1">
+              <Button
+                size="sm"
+                className="h-9 w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-xs font-medium text-white"
+                data-testid={`button-open-chat-${conv.id}`}
+              >
+                Ver chat
+              </Button>
+            </Link>
             <Button
               variant="outline"
-              size="sm"
-              className="h-8 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm border-slate-500/80 bg-slate-800/70 text-slate-100 hover:bg-slate-700/80"
-              data-testid={`button-open-chat-${conv.id}`}
+              size="icon"
+              className={cn(
+                "h-9 w-9 border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
+                done && "bg-emerald-500/25",
+              )}
+              onClick={() => toggleReminderDoneMutation.mutate({ conversationId: conv.id, reminderDone: !done })}
+              title={done ? "Reabrir" : "Completar"}
+              data-testid={`button-toggle-reminder-done-${conv.id}`}
             >
-              Ver chat
+              <Check className="h-4 w-4" />
             </Button>
-          </Link>
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-8 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm border-emerald-500/50 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
-              conv.reminderDone && "bg-emerald-500/25",
-            )}
-            onClick={() => toggleReminderDoneMutation.mutate({ conversationId: conv.id, reminderDone: !Boolean(conv.reminderDone) })}
-            data-testid={`button-toggle-reminder-done-${conv.id}`}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            {conv.reminderDone ? "Reabrir" : "Completar"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm border-cyan-500/50 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
-            onClick={() => openEditReminder(conv)}
-            data-testid={`button-edit-reminder-${conv.id}`}
-          >
-            <Pencil className="h-4 w-4 mr-1" />
-            Editar
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => clearReminderMutation.mutate(conv.id)}
-            disabled={clearReminderMutation.isPending}
-            className="h-8 px-2 sm:h-9"
-            data-testid={`button-clear-reminder-${conv.id}`}
-            title="Eliminar recordatorio"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+              onClick={() => openEditReminder(conv)}
+              title="Editar"
+              data-testid={`button-edit-reminder-${conv.id}`}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+              onClick={() => clearReminderMutation.mutate(conv.id)}
+              disabled={clearReminderMutation.isPending}
+              title="Eliminar recordatorio"
+              data-testid={`button-clear-reminder-${conv.id}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </CardContent>
-    </Card>
-  );
+      </div>
+    );
+  };
 
   const renderAgendaEvent = (
     item: AgendaItem,
@@ -567,139 +595,90 @@ export default function RemindersPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 p-4">
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <Link href="/">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-slate-300 hover:text-white hover:bg-slate-800/70"
-              data-testid="button-back-reminders"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold tracking-tight">Recordatorios</h1>
-          <Link href="/follow-up">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70"
-              data-testid="button-go-followup"
-            >
-              <ClipboardList className="h-4 w-4 mr-2" />
-              Seguimiento
-            </Button>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-slate-300 hover:text-white hover:bg-slate-800/70"
-            onClick={() => refetch()}
-            data-testid="button-refresh-reminders-page"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <div className="ml-auto flex items-center gap-2 flex-wrap">
-            <Button
-              variant={view === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("list")}
-              className={cn(
-                view === "list"
-                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400"
-                  : "border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70",
-              )}
-              data-testid="button-reminders-view-list"
-            >
-              <List className="h-4 w-4 mr-2" /> Lista
-            </Button>
-            <Button
-              variant={view === "calendar" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("calendar")}
-              className={cn(
-                view === "calendar"
-                  ? "bg-cyan-500 hover:bg-cyan-600 text-white border-cyan-400"
-                  : "border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70",
-              )}
-              data-testid="button-reminders-view-calendar"
-            >
-              <CalendarDays className="h-4 w-4 mr-2" /> Calendario
-            </Button>
-            <Button
-              variant={view === "agenda" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("agenda")}
-              className={cn(
-                view === "agenda"
-                  ? "bg-violet-500 hover:bg-violet-600 text-white border-violet-400"
-                  : "border-slate-600/70 bg-slate-900/40 text-slate-100 hover:bg-slate-800/70",
-              )}
-              data-testid="button-reminders-view-agenda"
-            >
-              <Rows3 className="h-4 w-4 mr-2" /> Agenda
-            </Button>
-          </div>
-        </div>
-
-        <Card className="mb-5 border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]">
-          <CardContent className="pt-4">
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                variant={filter === "all" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("all")}
-                className={cn(
-                  filter === "all"
-                    ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400"
-                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
-                )}
-                data-testid="filter-reminders-all"
-              >
-                <Calendar className="h-4 w-4 mr-2" /> Todos ({reminderGroups.all.length})
+        <div className="sticky top-0 z-20 -mx-3 mb-4 border-b border-slate-700/50 bg-slate-900/90 px-3 pt-2.5 backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <Link href="/">
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-300 hover:bg-slate-800/70" data-testid="button-back-reminders">
+                <ArrowLeft className="h-5 w-5" />
               </Button>
-              <Button
-                variant={filter === "overdue" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("overdue")}
-                className={cn(
-                  filter === "overdue"
-                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-400"
-                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
-                )}
-                data-testid="filter-reminders-overdue"
-              >
-                <AlertCircle className="h-4 w-4 mr-2" /> Vencidos ({reminderGroups.overdue.length})
-              </Button>
-              <Button
-                variant={filter === "today" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("today")}
-                className={cn(
-                  filter === "today"
-                    ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-400"
-                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
-                )}
-                data-testid="filter-reminders-today"
-              >
-                <Clock className="h-4 w-4 mr-2" /> Hoy ({reminderGroups.today.length})
-              </Button>
-              <Button
-                variant={filter === "upcoming" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilter("upcoming")}
-                className={cn(
-                  filter === "upcoming"
-                    ? "bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-400"
-                    : "border-slate-600/70 bg-slate-900/30 text-slate-100 hover:bg-slate-800/70",
-                )}
-                data-testid="filter-reminders-upcoming"
-              >
-                <CheckCircle2 className="h-4 w-4 mr-2" /> Proximos ({reminderGroups.upcoming.length})
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold leading-tight">Recordatorios</h1>
+              <p className="text-[11px] text-slate-400">Citas y pendientes</p>
+            </div>
+            <div className="ml-auto flex items-center gap-1">
+              <Link href="/citas">
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-cyan-300 hover:bg-slate-800/70" title="Citas" data-testid="button-go-citas">
+                  <Calendar className="h-5 w-5" />
+                </Button>
+              </Link>
+              <Link href="/follow-up">
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-300 hover:bg-slate-800/70" title="Seguimiento" data-testid="button-go-followup">
+                  <ClipboardList className="h-5 w-5" />
+                </Button>
+              </Link>
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-300 hover:bg-slate-800/70" onClick={() => refetch()} data-testid="button-refresh-reminders-page">
+                <RefreshCw className="h-5 w-5" />
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Segmented view switch */}
+          <div className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-slate-800/60 p-1">
+            <button
+              onClick={() => setView("list")}
+              className={cn("flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[11px] font-medium transition-all", view === "list" ? "bg-slate-700 text-white shadow" : "text-slate-400")}
+              data-testid="button-reminders-view-list"
+            >
+              <List className="h-4 w-4" /> Lista
+            </button>
+            <button
+              onClick={() => setView("calendar")}
+              className={cn("flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[11px] font-medium transition-all", view === "calendar" ? "bg-slate-700 text-white shadow" : "text-slate-400")}
+              data-testid="button-reminders-view-calendar"
+            >
+              <CalendarDays className="h-4 w-4" /> Mes
+            </button>
+            <button
+              onClick={() => setView("agenda")}
+              className={cn("flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[11px] font-medium transition-all", view === "agenda" ? "bg-slate-700 text-white shadow" : "text-slate-400")}
+              data-testid="button-reminders-view-agenda"
+            >
+              <Rows3 className="h-4 w-4" /> Semana
+            </button>
+          </div>
+
+          {/* Filter pills (horizontal scroll on mobile) */}
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {([
+              { key: "all", label: "Todos", color: "emerald", n: reminderGroups.all.length },
+              { key: "overdue", label: "Vencidos", color: "rose", n: reminderGroups.overdue.length },
+              { key: "today", label: "Hoy", color: "amber", n: reminderGroups.today.length },
+              { key: "upcoming", label: "Próximos", color: "indigo", n: reminderGroups.upcoming.length },
+            ] as const).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                  filter === f.key
+                    ? f.color === "emerald"
+                      ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200"
+                      : f.color === "rose"
+                        ? "border-rose-500/60 bg-rose-500/20 text-rose-200"
+                        : f.color === "amber"
+                          ? "border-amber-500/60 bg-amber-500/20 text-amber-200"
+                          : "border-indigo-500/60 bg-indigo-500/20 text-indigo-200"
+                    : "border-slate-600/50 bg-slate-800/40 text-slate-400 hover:text-slate-200",
+                )}
+                data-testid={`filter-reminders-${f.key}`}
+              >
+                {f.label}
+                <span className={cn("rounded-full px-1.5 text-[10px] tabular-nums", filter === f.key ? "bg-black/20" : "bg-slate-700/60")}>{f.n}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         {isLoading ? (
           <div className="flex justify-center py-12">
@@ -713,7 +692,25 @@ export default function RemindersPage() {
             </CardContent>
           </Card>
         ) : view === "list" ? (
-          <div className="space-y-3">{visibleReminders.map((conv) => renderReminderCard(conv))}</div>
+          <div className="space-y-5">
+            {listGroups.map((group) => (
+              <div key={group.key}>
+                <div className="mb-2 flex items-center gap-2 px-1">
+                  <span className={cn(
+                    "text-xs font-bold uppercase tracking-wide",
+                    group.isToday ? "text-emerald-400" : group.isPast ? "text-rose-300" : "text-slate-300",
+                  )}>
+                    {group.label}
+                  </span>
+                  <span className="h-px flex-1 bg-slate-700/60" />
+                  <span className="text-[11px] text-slate-500">{group.items.length}</span>
+                </div>
+                <div className="space-y-3">
+                  {group.items.map((conv) => renderReminderCard(conv))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : view === "calendar" ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
             <Card className="h-fit border-slate-700/60 bg-slate-900/55 backdrop-blur-sm shadow-[0_10px_28px_rgba(2,6,23,.35)]">

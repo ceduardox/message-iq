@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { Link } from "wouter";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone, CalendarPlus } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -903,6 +904,51 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   });
 
   const [showReengageDialog, setShowReengageDialog] = useState(false);
+  const [showCitaDialog, setShowCitaDialog] = useState(false);
+  const { data: citaData } = useQuery<{ cita: { id: number; sede: string; startAt: string; endAt: string; estado: string } | null }>({
+    queryKey: ["/api/conversations", conversation.id, "cita"],
+    queryFn: async () => {
+      const res = await fetch(`/api/conversations/${conversation.id}/cita`, { credentials: "include" });
+      if (!res.ok) return { cita: null };
+      return res.json();
+    },
+  });
+  const existingCita = citaData?.cita || null;
+  const [citaSede, setCitaSede] = useState("centro");
+  const [citaDate, setCitaDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string }> }>({
+    queryKey: ["/api/slots", citaDate, citaSede, showCitaDialog],
+    queryFn: async () => {
+      const res = await fetch(`/api/slots?date=${citaDate}&sede=${citaSede}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Error slots");
+      return res.json();
+    },
+    enabled: showCitaDialog && !!citaDate,
+  });
+  const citaSlots = slotsData?.slots ?? [];
+  const reserveCitaMutation = useMutation({
+    mutationFn: async (startAt: string) => {
+      const res = await fetch("/api/citas", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversation.id, sede: citaSede, startAt }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al reservar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", conversation.id, "cita"] });
+      toast({ title: "Cita reservada" });
+      setShowCitaDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
   const sendReengageMutation = useMutation({
     mutationFn: async (stage: 1 | 2) => {
       const res = await fetch(`/api/conversations/${conversation.id}/reengage`, {
@@ -1706,21 +1752,6 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           </Button>
         )}
 
-        {/* Should Call Toggle */}
-        <Button 
-          variant={conversation.shouldCall ? "default" : "ghost"} 
-          size="icon" 
-          className={cn(
-            "flex-shrink-0 h-7 w-7",
-            conversation.shouldCall && "bg-green-500 text-white"
-          )}
-          onClick={() => toggleShouldCallMutation.mutate(!conversation.shouldCall)}
-          title={conversation.shouldCall ? "Marcado para llamar - Click para quitar" : "Click para marcar para llamar"}
-          data-testid="button-should-call"
-        >
-          <Phone className="h-4 w-4" />
-        </Button>
-
         {/* Manual Reengage - elige 1er o 2do */}
         <Dialog open={showReengageDialog} onOpenChange={setShowReengageDialog}>
           <DialogTrigger asChild>
@@ -1752,6 +1783,55 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           </DialogContent>
         </Dialog>
 
+        {/* Agendar cita - slots 45min por sede */}
+        <Dialog open={showCitaDialog} onOpenChange={setShowCitaDialog}>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="flex-shrink-0 h-7 w-7"
+              title="Agendar cita diagnóstico (45 min)"
+              data-testid="button-cita"
+            >
+              <CalendarPlus className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Agendar cita</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Sede</label>
+                  <select value={citaSede} onChange={(e) => setCitaSede(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm" data-testid="select-cita-sede">
+                    <option value="centro">Centro</option>
+                    <option value="norte">Norte</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Fecha</label>
+                  <Input type="date" value={citaDate} onChange={(e) => setCitaDate(e.target.value)} data-testid="input-cita-date" />
+                </div>
+              </div>
+              {slotsLoading ? (
+                <p className="text-sm text-muted-foreground">Cargando huecos...</p>
+              ) : citaSlots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sin huecos libres. Cambia fecha/sede o agrega disponibilidad en /citas.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  {citaSlots.map((s) => (
+                    <Button key={s.startAt} size="sm" variant="outline" disabled={reserveCitaMutation.isPending}
+                      onClick={() => reserveCitaMutation.mutate(s.startAt)} data-testid={`button-slot-${s.startAt}`}>
+                      {new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {isAdmin && (
           <Button
             variant="ghost"
@@ -1768,95 +1848,6 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             <Trash2 className="h-4 w-4" />
           </Button>
         )}
-
-        {/* Learn Button */}
-        <Dialog open={showLearnModal} onOpenChange={setShowLearnModal}>
-          <DialogTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="flex-shrink-0 h-7 w-7"
-              title="Aprender de esta conversación"
-              data-testid="button-learn"
-            >
-              <Lightbulb className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Aprender de esta conversación</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">¿Qué quieres que aprenda?</label>
-                <Input
-                  placeholder="Ej: Cómo evité un reclamo, cómo cerré la venta..."
-                  value={learnFocus}
-                  onChange={(e) => setLearnFocus(e.target.value)}
-                  data-testid="input-learn-focus"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Mensajes a analizar: {learnMessageCount}</label>
-                <Slider
-                  min={5}
-                  max={50}
-                  step={1}
-                  value={[learnMessageCount]}
-                  onValueChange={(value) => setLearnMessageCount(value[0])}
-                  className="w-full mt-2"
-                  data-testid="slider-message-count"
-                />
-              </div>
-              {!suggestedRule && (
-                <Button 
-                  onClick={() => learnMutation.mutate({ focus: learnFocus, messageCount: learnMessageCount })}
-                  disabled={learnMutation.isPending}
-                  className="w-full"
-                  data-testid="button-analyze"
-                >
-                  {learnMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Analizando...
-                    </>
-                  ) : (
-                    "Analizar conversación"
-                  )}
-                </Button>
-              )}
-              {suggestedRule && (
-                <div className="space-y-3">
-                  <label className="text-sm font-medium">Regla sugerida (puedes editarla):</label>
-                  <Textarea
-                    value={suggestedRule}
-                    onChange={(e) => setSuggestedRule(e.target.value)}
-                    rows={3}
-                    data-testid="textarea-suggested-rule"
-                  />
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setSuggestedRule("")}
-                      className="flex-1"
-                      data-testid="button-retry"
-                    >
-                      Reintentar
-                    </Button>
-                    <Button 
-                      onClick={() => saveRuleMutation.mutate(suggestedRule)}
-                      disabled={saveRuleMutation.isPending || !suggestedRule.trim()}
-                      className="flex-1"
-                      data-testid="button-save-rule"
-                    >
-                      {saveRuleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar regla"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Order Status Dropdown */}
         <DropdownMenu>
@@ -1987,10 +1978,6 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                   Quitar alerta
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => toggleShouldCallMutation.mutate(!conversation.shouldCall)} data-testid="mobile-action-call">
-                <Phone className={cn("h-4 w-4 mr-2", conversation.shouldCall && "text-green-500")} />
-                {conversation.shouldCall ? "Quitar marca de llamar" : "Marcar para llamar"}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => sendReengageMutation.mutate(1)} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage-1">
                 <Send className="h-4 w-4 mr-2" />
                 Reenganche 1 (60 min)
@@ -1998,6 +1985,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               <DropdownMenuItem onClick={() => sendReengageMutation.mutate(2)} disabled={sendReengageMutation.isPending} data-testid="mobile-action-reengage-2">
                 <Megaphone className="h-4 w-4 mr-2" />
                 Reenganche 2 (con lista)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowCitaDialog(true)} data-testid="mobile-action-cita">
+                <CalendarPlus className="h-4 w-4 mr-2" />
+                Agendar cita
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -2020,10 +2011,6 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               <DropdownMenuItem onClick={openReminderEditor}>
                 <Clock className="h-4 w-4 mr-2 text-amber-500" />
                 {conversation.reminderAt ? "Editar recordatorio" : "Agregar recordatorio"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowLearnModal(true)} data-testid="mobile-action-learn">
-                <Lightbulb className="h-4 w-4 mr-2" />
-                Aprender de esta conversación
               </DropdownMenuItem>
               {isAdmin && (
                 <>
@@ -2295,6 +2282,29 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                     <p className="whitespace-pre-wrap break-words">{msg.text}</p>
                   )
                 )}
+
+                {isOut && existingCita ? (
+                  <Link
+                    href={`/citas?date=${String(existingCita.startAt).slice(0, 10)}&cita=${existingCita.id}`}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-medium text-cyan-700 transition-colors hover:bg-cyan-500/20 dark:text-cyan-300"
+                    title="Ver esta cita en el calendario"
+                    data-testid={`button-view-cita-${msg.id}`}
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" />
+                    Ver cita · {String(existingCita.startAt).slice(0, 10).split("-").reverse().slice(0, 2).join("/")} {String(existingCita.startAt).slice(11, 16)} · {existingCita.sede === "norte" ? "Norte" : "Centro"}
+                  </Link>
+                ) : isOut && /\b\d{1,2}:\d{2}\b/.test(msg.text || "") ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCitaDialog(true)}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
+                    title="Agendar esta cita en el calendario"
+                    data-testid={`button-book-from-message-${msg.id}`}
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" />
+                    Agendar cita
+                  </button>
+                ) : null}
 
                 <div className={cn("flex items-center justify-end gap-1 mt-1 text-[10px] opacity-60")}>
                   <span>{msg.timestamp ? format(new Date(parseInt(msg.timestamp) * 1000), 'h:mm a') : format(new Date(), 'h:mm a')}</span>

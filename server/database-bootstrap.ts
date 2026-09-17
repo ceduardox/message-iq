@@ -308,5 +308,36 @@ export async function ensureDatabaseSchema(): Promise<void> {
     ON user_sessions (expire)
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_availability (
+      id SERIAL PRIMARY KEY,
+      agent_id INTEGER REFERENCES agents(id) ON DELETE CASCADE,
+      weekday INTEGER NOT NULL,
+      start_time VARCHAR(5) NOT NULL,
+      end_time VARCHAR(5) NOT NULL,
+      sede VARCHAR(20) NOT NULL DEFAULT 'centro',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS citas (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      sede VARCHAR(20) NOT NULL DEFAULT 'centro',
+      start_at TIMESTAMP NOT NULL,
+      end_at TIMESTAMP NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'reservada',
+      note TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS citas_start_idx ON citas (start_at)
+  `);
+
   schemaEnsured = true;
 }
