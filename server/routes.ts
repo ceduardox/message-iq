@@ -5023,7 +5023,7 @@ NO uses saludos formales. Se directo y amigable.`
     temperature: z.number().min(0).max(100).optional(),
     aiProvider: z.enum(["openai", "gemini", "deepseek"]).optional(),
     model: z.string().optional(),
-    maxPromptChars: z.number().min(500).max(20000).optional(),
+    maxPromptChars: z.number().min(500).max(60000).optional(),
     conversationHistory: z.number().min(1).max(20).optional(),
     audioResponseEnabled: z.boolean().optional(),
     audioMode: z.enum(["all", "first", "until_second"]).optional(),
