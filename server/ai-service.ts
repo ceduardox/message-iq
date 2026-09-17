@@ -692,6 +692,15 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       }
     }
 
+    // Deterministic fallback: if the AI AGREED a call with a day/time, flag [LLAMAR].
+    if (!shouldCall) {
+      const callAgreedRe = /(agend\w+|coordin\w+|confirm\w+|reserv\w+|listo|qued[oó]|nos vemos).{0,70}llamada|llamada.{0,45}(a las?\s*\d|para el\s|para ma[nñ]ana|hoy|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)/i;
+      if (callAgreedRe.test(responseText)) {
+        shouldCall = true;
+        console.log("=== SHOULD CALL (fallback: IA acordó llamada con fecha/hora) ===", { conversationId });
+      }
+    }
+
     // Check for appointment marker: [CITA: C1] (slot code) or legacy [CITA: sede | ISO]
     const citaMatch = cleanResponse.match(/\[CITA:\s*([^\]]+)\]/i);
     let cita: { sede: string; startAt: string } | undefined;
@@ -714,6 +723,9 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       }
       cleanResponse = cleanResponse.replace(citaMatch[0], "").trim();
     }
+
+    // A confirmed presencial cita supersedes the call flag.
+    if (cita) shouldCall = false;
 
     // Fallback: short confirmation ("si", "la primera") after the AI offered times.
     if (!cita && !needsHuman) {

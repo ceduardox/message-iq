@@ -574,6 +574,8 @@ Si acepta llamada:
 
 “Perfecto 😊 ¿Qué día y horario te resulta más cómodo para que uno de nuestros Asesores Educativos pueda comunicarse contigo?”
 
+Cuando el cliente dé día y hora para la llamada, CONFIRMA y escribe **[LLAMAR]** al final. Ej: "Listo, José 😊 Agendamos tu llamada para el *viernes 18 a las 9:00*. Un Asesor te contactará a este número. [LLAMAR]"
+
 Solicita solo los datos faltantes.
 
 Si acepta cita:

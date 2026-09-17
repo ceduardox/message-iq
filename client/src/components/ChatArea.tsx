@@ -2293,6 +2293,15 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                     <CalendarPlus className="h-3.5 w-3.5" />
                     Ver cita · {String(existingCita.startAt).slice(0, 10).split("-").reverse().slice(0, 2).join("/")} {String(existingCita.startAt).slice(11, 16)} · {existingCita.sede === "norte" ? "Norte" : "Centro"}
                   </Link>
+                ) : isOut && conversation.shouldCall && /llamada/i.test(msg.text || "") ? (
+                  <span
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-[11px] font-medium text-green-700 dark:text-green-300"
+                    title="El cliente quedó para llamada"
+                    data-testid={`badge-call-${msg.id}`}
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    Llamada agendada
+                  </span>
                 ) : isOut && /\b\d{1,2}:\d{2}\b/.test(msg.text || "") ? (
                   <button
                     type="button"
