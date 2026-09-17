@@ -558,6 +558,31 @@ function toLaPazWallClock(date: Date): string {
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
+// Return date fields to the client as LOCAL wall-clock strings (no timezone),
+// so the calendar/cards display the exact stored time regardless of server TZ.
+const DATE_STRING_FIELDS = ["reminderAt", "reminderUpdatedAt", "lastMessageTimestamp", "updatedAt"] as const;
+
+async function applyLocalDateTimeStrings(conversations: any[]): Promise<void> {
+  const ids = conversations.map((c) => c?.id).filter((x: any) => typeof x === "number");
+  if (ids.length === 0) return;
+  const cols = DATE_STRING_FIELDS.map((f) => {
+    const col = f === "reminderAt" ? "reminder_at"
+      : f === "reminderUpdatedAt" ? "reminder_updated_at"
+      : f === "lastMessageTimestamp" ? "last_message_timestamp"
+      : "updated_at";
+    return `to_char(${col}, 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
+  }).join(", ");
+  const rows: any = await db.execute(sql.raw(`SELECT id, ${cols} FROM conversations WHERE id IN (${ids.join(",")})`));
+  const map = new Map<number, any>((rows.rows ?? rows).map((r: any) => [r.id, r]));
+  for (const c of conversations) {
+    const r = map.get(c?.id);
+    if (!r) continue;
+    for (const f of DATE_STRING_FIELDS) {
+      if (r[f] != null) c[f] = r[f];
+    }
+  }
+}
+
 async function writeReminderRaw(
   id: number,
   reminderAt: Date | null,
@@ -3372,6 +3397,7 @@ export async function registerRoutes(
       before,
       assignedAgentId,
     });
+    await applyLocalDateTimeStrings(page);
     res.json(page);
   });
 
@@ -3383,6 +3409,7 @@ export async function registerRoutes(
       return res.status(403).json({ message: "Access denied" });
     }
     const messages = await storage.getMessages(id);
+    await applyLocalDateTimeStrings([conversation]);
     res.json({ conversation, messages });
   });
 
