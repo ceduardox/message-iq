@@ -36,6 +36,7 @@ const BLOCKED_LEGACY_BUTTON_SETS = [
   ["solo diabetes", "diabetes peso"],
 ];
 const DEFAULT_ADVISOR_NAME = "Lexi";
+const CITA_MINUTES = 60;
 const upsertSubadminSchema = z.object({
   name: z.string().trim().min(1).max(100),
   username: z.string().trim().min(1).max(50),
@@ -991,11 +992,54 @@ async function processAiResponse(data: BufferedMessage) {
         sendPushNotification(
           "Llamar al Cliente",
           aiResult.callAt
-            ? `${name}: llamada agendada ${new Date(aiResult.callAt).toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+            ? `${name}: llamada agendada ${new Date(aiResult.callAt).toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
             : `${name}: Alta probabilidad de compra - llamar ahora`,
           { conversationId: conversationId.toString(), waId: from, event: "should_call" },
           getConversationPushOptions(conversation)
         );
+      }
+
+      // Cita agendada por la IA: crea/actualiza la cita y el recordatorio.
+      if (aiResult.cita) {
+        try {
+          const start = new Date(aiResult.cita.startAt);
+          const end = new Date(start.getTime() + CITA_MINUTES * 60000);
+          const sede = aiResult.cita.sede;
+          const clash: any = await db.execute(sql`
+            SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
+            AND start_at < ${end} AND end_at > ${start} LIMIT 1
+          `);
+          if ((clash.rows ?? clash).length > 0) {
+            console.warn("=== CITA CLASH - slot no disponible, no se agenda ===", { conversationId, sede, startAt: start.toISOString() });
+          } else {
+            // Reprogramar: cancela la cita activa anterior de esta conversación.
+            await db.execute(sql`
+              UPDATE citas SET estado = 'cancelada'
+              WHERE conversation_id = ${conversationId} AND estado != 'cancelada'
+            `);
+            await db.execute(sql`
+              INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
+              VALUES (${conversationId}, ${conversation.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', ${"Agendada por IA"})
+            `);
+            const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+            await writeReminderRaw(
+              conversationId,
+              start,
+              `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              null,
+              false,
+            );
+            console.log("=== CITA CREADA POR IA ===", { conversationId, sede, startAt: start.toISOString() });
+            sendPushNotification(
+              "Nueva cita agendada",
+              `${name}: ${sedeLabel} - ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              { conversationId: conversationId.toString(), waId: from, event: "cita_nueva" },
+              getConversationPushOptions(conversation)
+            );
+          }
+        } catch (citaErr) {
+          console.error("=== ERROR CREANDO CITA IA ===", citaErr);
+        }
       }
 
       await storage.updateConversation(conversationId, updateData);
@@ -4531,7 +4575,6 @@ export async function registerRoutes(
   });
 
   // === CITAS: disponibilidad + slots + reserva (KISS, separado de recordatorios) ===
-  const CITA_MINUTES = 60;
   const VALID_SEDES = ["centro", "norte"];
   const normalizeSede = (v: any) => {
     const s = String(v || "centro").toLowerCase();
@@ -4657,6 +4700,11 @@ export async function registerRoutes(
     if ((clash.rows ?? clash).length > 0) return res.status(409).json({ message: "Horario ya ocupado en esa sede" });
     const conv = await storage.getConversation(parsed.data.conversationId);
     if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
+    // Reprogramar: una sola cita activa por conversación (cancela la anterior).
+    await db.execute(sql`
+      UPDATE citas SET estado = 'cancelada'
+      WHERE conversation_id = ${parsed.data.conversationId} AND estado != 'cancelada'
+    `);
     const ins: any = await db.execute(sql`
       INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
       VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
@@ -4664,12 +4712,13 @@ export async function registerRoutes(
     `);
     const citaId = ins.rows?.[0]?.id ?? ins[0]?.id;
     const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
-    await storage.updateConversation(conv.id, {
-      reminderAt: start,
-      reminderNote: `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-      reminderDone: false,
-      reminderUpdatedAt: new Date(),
-    } as any);
+    await writeReminderRaw(
+      conv.id,
+      start,
+      `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+      null,
+      false,
+    );
     res.json({ success: true, id: citaId, startAt: start, endAt: end, sede });
   });
 
@@ -4736,17 +4785,23 @@ export async function registerRoutes(
           AND start_at < ${end} AND end_at > ${start} LIMIT 1
         `);
         if ((clash.rows ?? clash).length === 0) {
+          // Reprogramar: cancela la cita activa anterior de esta conversación.
+          await db.execute(sql`
+            UPDATE citas SET estado = 'cancelada'
+            WHERE conversation_id = ${conv.id} AND estado != 'cancelada'
+          `);
           await db.execute(sql`
             INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
             VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', 'Agendada por IA (sim)')
           `);
           const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
-          await storage.updateConversation(conv.id, {
-            reminderAt: start,
-            reminderNote: `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-            reminderDone: false,
-            reminderUpdatedAt: new Date(),
-          } as any);
+          await writeReminderRaw(
+            conv.id,
+            start,
+            `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            null,
+            false,
+          );
           citaInfo = { sede, startAt: start.toISOString(), endAt: end.toISOString(), sedeLabel };
         } else {
           citaInfo = { clash: true, sede, startAt: start.toISOString() };
