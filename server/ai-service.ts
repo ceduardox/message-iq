@@ -470,7 +470,7 @@ export async function generateAiResponse(
   recentMessages: Message[],
   imageBase64?: string, // Optional: base64 encoded image for vision analysis
   advisorName?: string,
-): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean; orderStatus?: OrderStatus; cita?: { sede: string; startAt: string }; callAt?: string } | null> {
+): Promise<{ response: string; imageUrl?: string; tokensUsed: number; orderReady?: boolean; needsHuman?: boolean; shouldCall?: boolean; orderStatus?: OrderStatus; cita?: { sede: string; startAt: string }; callAt?: string; cancelar?: boolean } | null> {
   try {
     const [settings, allProducts, learnedRules] = await Promise.all([
       storage.getAiSettings(),
@@ -588,6 +588,7 @@ ${currentDateContext}
 - El NOMBRE es opcional para agendar: no lo pidas mas de una vez. Si el cliente da otro dato, continua con sede/horario.
 - Nunca bloquees el avance esperando un dato; ofrece igual el siguiente paso.
 - Si dice "no quiero llamadas": no insistas con llamada; ofrece cita presencial.
+- Si el cliente quiere CANCELAR su cita o llamada: confirma con calidez y escribe [CANCELAR] al final (el sistema libera el cupo). Ej: "Listo, cancelé tu cita 😊 ¿Quieres que busquemos otro horario? [CANCELAR]"
 - DESCONFIANZA ("es estafa"): responde con calma y datos concretos en TEXTO (web iqexponencial.com, TikTok, Facebook), sin listas ni botones.
 - TEMA CLINICO (TDAH, autismo, dislexia): se honesta (no tratamos ni curamos; es entrenamiento cognitivo que acompaña) y deriva a profesional; nunca diagnostiques.
 - En el turno del espejo emocional NO expliques lo que hacemos; solo valida lo que siente y pide el nombre.
@@ -791,6 +792,25 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
     // A confirmed presencial cita supersedes the call flag.
     if (cita) shouldCall = false;
 
+    // Cancelación de cita/llamada: [CANCELAR] (marcador) o intención clara del cliente.
+    let cancelar = false;
+    const cancelMatch = cleanResponse.match(/\[CANCELAR\]/i);
+    if (cancelMatch) {
+      cancelar = true;
+      cleanResponse = cleanResponse.replace(cancelMatch[0], "").trim();
+    }
+    if (!cancelar) {
+      const cancelRe = /(quiero|deseo|necesito|debo|voy a|pueden|puedo)\s+(cancelar|anular)|(cancelar|anular|cancelar)\s+(mi|la)\s+(cita|llamada)|ya no (puedo|podre|podr[eé]|voy a poder)\s+(ir|asistir)|no podr[eé] (ir|asistir)/i;
+      if (cancelRe.test(normalize(userMessage))) {
+        cancelar = true;
+        console.log("=== CANCELAR FALLBACK (intencion del cliente) ===", { conversationId });
+      }
+    }
+    if (cancelar) {
+      cita = undefined;
+      shouldCall = false;
+    }
+
     // If a call was agreed, try to extract the day/time from the reply text.
     let callAt: string | undefined;
     if (shouldCall && !cita) {
@@ -826,7 +846,7 @@ ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
       success: true,
     }).catch(err => console.error("AI log error:", err));
 
-    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall, orderStatus, cita: needsHuman ? undefined : cita, callAt: needsHuman ? undefined : callAt };
+    return { response: needsHuman ? "" : cleanResponse, imageUrl: needsHuman ? undefined : imageUrl, tokensUsed, orderReady, needsHuman, shouldCall, orderStatus, cita: needsHuman ? undefined : cita, callAt: needsHuman ? undefined : callAt, cancelar: needsHuman ? undefined : (cancelar || undefined) };
   } catch (error: any) {
     console.error("AI Error:", error);
     

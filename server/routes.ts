@@ -1102,6 +1102,21 @@ async function processAiResponse(data: BufferedMessage) {
         }
       }
 
+      // Cancelación de cita/llamada acordada con el cliente.
+      if (aiResult.cancelar) {
+        try {
+          await db.execute(sql`
+            UPDATE citas SET estado = 'cancelada'
+            WHERE conversation_id = ${conversationId} AND estado != 'cancelada'
+          `);
+          await writeReminderRaw(conversationId, null, null, null, false);
+          updateData.shouldCall = false;
+          console.log("=== CITA/LLAMADA CANCELADA POR IA ===", conversationId);
+        } catch (cancelErr) {
+          console.error("=== ERROR CANCELANDO ===", cancelErr);
+        }
+      }
+
       await storage.updateConversation(conversationId, updateData);
 
       console.log("=== AI RESPONSE SENT (BUFFERED) ===");
@@ -4907,7 +4922,15 @@ export async function registerRoutes(
           }
         }
       }
-      res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, callAt: aiResult.callAt ?? null, orderStatus: aiResult.orderStatus ?? null });
+      if (aiResult.cancelar) {
+        await db.execute(sql`
+          UPDATE citas SET estado = 'cancelada'
+          WHERE conversation_id = ${conv.id} AND estado != 'cancelada'
+        `);
+        await writeReminderRaw(conv.id, null, null, null, false);
+        await storage.updateConversation(conv.id, { shouldCall: false } as any);
+      }
+      res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, callAt: aiResult.callAt ?? null, orderStatus: aiResult.orderStatus ?? null, cancelar: !!aiResult.cancelar });
     } catch (err: any) {
       console.error("[DevSim] error:", err?.message);
       res.status(500).json({ message: err?.message || "Error simulando mensaje" });
