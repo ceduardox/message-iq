@@ -245,106 +245,104 @@ function KanbanCard({
           aria-hidden="true"
         />
       )}
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2">
         <div className={cn(
           "w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow",
           getAvatarColor()
         )}>
           {getInitials(name)}
         </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1">
-            <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">
-              {name}
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-white">
+          {name}
+        </span>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {isUrgent && (
+            <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 animate-pulse-urgent" />
+          )}
+          {showPhone && (
+            <Phone className="h-4 w-4 text-emerald-400 flex-shrink-0 animate-pulse-urgent" fill="currentColor" />
+          )}
+          {columnType === "listo" && (
+            <CheckCircle className="h-4 w-4 text-cyan-400 flex-shrink-0" />
+          )}
+          {columnType === "entregado" && (
+            <Truck className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          )}
+        </div>
+      </div>
+
+      <div className="mt-1.5 space-y-1">
+        {badge && (
+          <div className={cn(
+            "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-current/20 px-1.5 py-0.5 text-[11px] font-medium leading-none",
+            badge.bgColor, badge.textColor
+          )}>
+            <span className={cn("w-1.5 h-1.5 flex-shrink-0 rounded-full animate-pulse", badge.dotColor)} />
+            <span className="min-w-0 truncate">{badge.text}</span>
+          </div>
+        )}
+
+        {showAgentAssignment && (
+          <div className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-violet-400/30 bg-violet-500/10 px-1.5 py-0.5 text-[11px] leading-none text-violet-200">
+            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-300" />
+            <span className="min-w-0 truncate">{assignedAgentName ? `Agente: ${assignedAgentName}` : "Sin agente"}</span>
+          </div>
+        )}
+
+        {(() => {
+          const labelIds = [conv.labelId, conv.labelId2].filter(
+            (value): value is number => typeof value === "number" && value > 0,
+          );
+          if (labelIds.length === 0) return null;
+          const colorMap: Record<string, string> = {
+            blue: "bg-blue-500/20 text-blue-400",
+            green: "bg-green-500/20 text-green-400",
+            yellow: "bg-yellow-500/20 text-yellow-400",
+            red: "bg-red-500/20 text-red-400",
+            purple: "bg-purple-500/20 text-purple-400",
+            orange: "bg-orange-500/20 text-orange-400",
+          };
+          return (
+            <div className="flex flex-wrap items-center gap-1">
+              {labelIds.slice(0, 2).map((labelId) => {
+                const label = labels.find((item) => item.id === labelId);
+                if (!label) return null;
+                return (
+                  <div
+                    key={label.id}
+                    className={cn("inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] font-medium leading-none", colorMap[label.color] || "bg-slate-500/20 text-slate-400")}
+                    data-testid={`text-label-${label.id}-conv-${conv.id}`}
+                  >
+                    <Tag className="h-2.5 w-2.5 flex-shrink-0" />
+                    <span className="min-w-0 truncate">{label.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {conv.reminderAt && (
+          <div className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-500/20 px-1.5 py-0.5 text-[11px] font-medium leading-none text-amber-300">
+            <Clock className="h-2.5 w-2.5 flex-shrink-0" />
+            <span className="min-w-0 truncate">{formatDate(conv.reminderAt)}</span>
+          </div>
+        )}
+
+        {columnType === "nuevo" && conv.lastMessage && (
+          <p className="line-clamp-2 text-xs text-slate-400">
+            {conv.lastMessage}
+          </p>
+        )}
+
+        <div className="flex items-center gap-1 text-[11px] text-slate-500">
+          {columnType === "nuevo" && <Clock className="h-3 w-3 flex-shrink-0" />}
+          <span className="min-w-0 truncate">{formatDate(conv.lastMessageTimestamp)}</span>
+          {enableDrag && (
+            <span className="ml-auto flex-shrink-0 rounded-full border border-slate-600/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-400">
+              arrastrar
             </span>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {isUrgent && (
-                <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 animate-pulse-urgent" />
-              )}
-              {showPhone && (
-                <Phone className="h-4 w-4 text-emerald-400 flex-shrink-0 animate-pulse-urgent" fill="currentColor" />
-              )}
-              {columnType === "listo" && (
-                <CheckCircle className="h-4 w-4 text-cyan-400 flex-shrink-0" />
-              )}
-              {columnType === "entregado" && (
-                <Truck className="h-4 w-4 text-slate-400 flex-shrink-0" />
-              )}
-            </div>
-          </div>
-          
-          {badge && (
-            <div className={cn(
-              "mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border border-current/20 px-1.5 py-0.5 text-[11px] font-medium leading-none",
-              badge.bgColor, badge.textColor
-            )}>
-              <span className={cn("w-1.5 h-1.5 flex-shrink-0 rounded-full animate-pulse", badge.dotColor)} />
-              <span className="truncate">{badge.text}</span>
-            </div>
           )}
-
-          {showAgentAssignment && (
-            <div className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border border-violet-400/30 bg-violet-500/10 px-1.5 py-0.5 text-[11px] leading-none text-violet-200">
-              <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-300" />
-              <span className="truncate">{assignedAgentName ? `Agente: ${assignedAgentName}` : "Sin agente"}</span>
-            </div>
-          )}
-          
-          {(() => {
-            const labelIds = [conv.labelId, conv.labelId2].filter(
-              (value): value is number => typeof value === "number" && value > 0,
-            );
-            if (labelIds.length === 0) return null;
-            const colorMap: Record<string, string> = {
-              blue: "bg-blue-500/20 text-blue-400",
-              green: "bg-green-500/20 text-green-400",
-              yellow: "bg-yellow-500/20 text-yellow-400",
-              red: "bg-red-500/20 text-red-400",
-              purple: "bg-purple-500/20 text-purple-400",
-              orange: "bg-orange-500/20 text-orange-400",
-            };
-            return (
-              <div className="mt-1 flex flex-wrap items-center gap-1">
-                {labelIds.slice(0, 2).map((labelId) => {
-                  const label = labels.find((item) => item.id === labelId);
-                  if (!label) return null;
-                  return (
-                    <div
-                      key={label.id}
-                      className={cn("inline-flex max-w-full items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-[11px] font-medium leading-none", colorMap[label.color] || "bg-slate-500/20 text-slate-400")}
-                      data-testid={`text-label-${label.id}-conv-${conv.id}`}
-                    >
-                      <Tag className="h-2.5 w-2.5 flex-shrink-0" />
-                      <span className="truncate">{label.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          {conv.reminderAt && (
-            <div className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border border-amber-400/30 bg-amber-500/20 px-1.5 py-0.5 text-[11px] font-medium leading-none text-amber-300">
-              <Clock className="h-2.5 w-2.5 flex-shrink-0" />
-              <span className="truncate">{formatDate(conv.reminderAt)}</span>
-            </div>
-          )}
-
-          {columnType === "nuevo" && conv.lastMessage && (
-            <p className="mt-1 line-clamp-2 text-xs text-slate-400">
-              {conv.lastMessage}
-            </p>
-          )}
-          
-          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
-            {columnType === "nuevo" && <Clock className="h-3 w-3 flex-shrink-0" />}
-            <span className="truncate">{formatDate(conv.lastMessageTimestamp)}</span>
-            {enableDrag && (
-              <span className="ml-auto flex-shrink-0 rounded-full border border-slate-600/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-400">
-                arrastrar
-              </span>
-            )}
-          </div>
         </div>
       </div>
     </div>
