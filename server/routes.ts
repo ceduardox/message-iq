@@ -5364,7 +5364,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Update AI Settings
-  app.patch("/api/ai/settings", requireAuth, async (req, res) => {
+  app.patch("/api/ai/settings", requirePrimaryAdmin, async (req, res) => {
     try {
       const parsed = aiSettingsUpdateSchema.parse(req.body);
       const updated = await storage.updateAiSettings(parsed);
@@ -5388,7 +5388,7 @@ NO uses saludos formales. Se directo y amigable.`
     }
   });
 
-  app.patch("/api/ai/prompt-profiles", requireAuth, async (req, res) => {
+  app.patch("/api/ai/prompt-profiles", requirePrimaryAdmin, async (req, res) => {
     try {
       const parsed = promptProfilesUpdateSchema.parse(req.body);
       await Promise.all([
@@ -5426,7 +5426,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Add Training Data
-  app.post("/api/ai/training", requireAuth, async (req, res) => {
+  app.post("/api/ai/training", requirePrimaryAdmin, async (req, res) => {
     try {
       const parsed = aiTrainingCreateSchema.parse(req.body);
       if (isHiddenPromptProfileTitle(parsed.title)) {
@@ -5444,7 +5444,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Update Training Data
-  app.patch("/api/ai/training/:id", requireAuth, async (req, res) => {
+  app.patch("/api/ai/training/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       const parsed = aiTrainingCreateSchema.partial().parse(req.body);
       if (isHiddenPromptProfileTitle(parsed.title)) {
@@ -5462,7 +5462,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Delete Training Data
-  app.delete("/api/ai/training/:id", requireAuth, async (req, res) => {
+  app.delete("/api/ai/training/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       await storage.deleteAiTrainingData(parseInt(req.params.id));
       res.json({ success: true });
@@ -5575,7 +5575,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Create learned rule
-  app.post("/api/ai/rules", requireAuth, async (req, res) => {
+  app.post("/api/ai/rules", requirePrimaryAdmin, async (req, res) => {
     try {
       const { rule, learnedFrom, conversationId } = req.body;
       if (!rule) {
@@ -5595,7 +5595,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Update learned rule
-  app.patch("/api/ai/rules/:id", requireAuth, async (req, res) => {
+  app.patch("/api/ai/rules/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { rule, isActive } = req.body;
@@ -5608,7 +5608,7 @@ NO uses saludos formales. Se directo y amigable.`
   });
 
   // Delete learned rule
-  app.delete("/api/ai/rules/:id", requireAuth, async (req, res) => {
+  app.delete("/api/ai/rules/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteLearnedRule(id);
@@ -5712,7 +5712,7 @@ Maximo 2 lineas. Se especifico y practico.`;
     }
   });
 
-  app.post("/api/products/upload-image", requireAuth, uploadProductImage.single("image"), async (req, res) => {
+  app.post("/api/products/upload-image", requirePrimaryAdmin, uploadProductImage.single("image"), async (req, res) => {
     try {
       const file = req.file;
       if (!file) {
@@ -5759,7 +5759,7 @@ Maximo 2 lineas. Se especifico y practico.`;
   });
 
   // Create product
-  app.post("/api/products", requireAuth, async (req, res) => {
+  app.post("/api/products", requirePrimaryAdmin, async (req, res) => {
     try {
       await ensureProductImageColumnsExist();
       const parsed = insertProductSchema.parse(req.body);
@@ -5775,7 +5775,7 @@ Maximo 2 lineas. Se especifico y practico.`;
   });
 
   // Update product - require name if provided
-  app.patch("/api/products/:id", requireAuth, async (req, res) => {
+  app.patch("/api/products/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       await ensureProductImageColumnsExist();
       const id = parseInt(req.params.id);
@@ -5796,7 +5796,7 @@ Maximo 2 lineas. Se especifico y practico.`;
   });
 
   // Delete product
-  app.delete("/api/products/:id", requireAuth, async (req, res) => {
+  app.delete("/api/products/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       await ensureProductImageColumnsExist();
       const id = parseInt(req.params.id);
@@ -5874,7 +5874,7 @@ Maximo 2 lineas. Se especifico y practico.`;
     }
   });
 
-  app.post("/api/ad-banners", requireAdmin, async (req, res) => {
+  app.post("/api/ad-banners", requirePrimaryAdmin, async (req, res) => {
     try {
       const parsed = z.object({
         adId: z.string().min(1).max(120),
@@ -5900,7 +5900,7 @@ Maximo 2 lineas. Se especifico y practico.`;
     }
   });
 
-  app.patch("/api/ad-banners/:id", requireAdmin, async (req, res) => {
+  app.patch("/api/ad-banners/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
@@ -5930,7 +5930,7 @@ Maximo 2 lineas. Se especifico y practico.`;
     }
   });
 
-  app.delete("/api/ad-banners/:id", requireAdmin, async (req, res) => {
+  app.delete("/api/ad-banners/:id", requirePrimaryAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {

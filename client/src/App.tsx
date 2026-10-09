@@ -104,7 +104,7 @@ function Router() {
         <Route path="/privacy-policy" component={PrivacyPolicyPage} />
         <Route path="/data-deletion" component={DataDeletionPage} />
         <Route path="/ai-agent">
-          <AdminRoute component={AIAgentPage} />
+          <PrimaryAdminRoute component={AIAgentPage} />
         </Route>
         <Route path="/follow-up">
           <AdminRoute component={FollowUpPage} />
