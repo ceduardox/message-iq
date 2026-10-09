@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone, CalendarPlus } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone, CalendarPlus, StickyNote } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -905,6 +905,41 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 
   const [showReengageDialog, setShowReengageDialog] = useState(false);
   const [showCitaDialog, setShowCitaDialog] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const { data: comments = [] } = useQuery<Array<{ id: number; author: string | null; text: string; createdAt: string }>>({
+    queryKey: ["/api/conversations", conversation.id, "comments"],
+    queryFn: async () => {
+      const res = await fetch(`/api/conversations/${conversation.id}/comments`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const addCommentMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await fetch(`/api/conversations/${conversation.id}/comments`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error("No se pudo guardar el comentario");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/conversations", conversation.id, "comments"], data);
+      setNewComment("");
+      toast({ title: "Comentario agregado" });
+    },
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
+  });
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/comments/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo borrar");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/conversations", conversation.id, "comments"] }),
+  });
   const { data: citaData } = useQuery<{ cita: { id: number; sede: string; startAt: string; endAt: string; estado: string } | null }>({
     queryKey: ["/api/conversations", conversation.id, "cita"],
     queryFn: async () => {
@@ -1832,6 +1867,66 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           </DialogContent>
         </Dialog>
 
+        {/* Comentarios internos */}
+        <Dialog open={showComments} onOpenChange={setShowComments}>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("relative flex-shrink-0 h-7 w-7", comments.length > 0 ? "text-amber-400" : "text-slate-400")}
+              title={comments.length > 0 ? `${comments.length} comentario(s)` : "Comentarios internos"}
+              data-testid="button-comments"
+            >
+              <StickyNote className="h-4 w-4" />
+              {comments.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-slate-950">
+                  {comments.length}
+                </span>
+              )}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Comentarios internos</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {comments.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">Sin comentarios aún.</p>
+                ) : (
+                  comments.map((c) => (
+                    <div key={c.id} className="rounded-lg border bg-muted/40 p-2 text-sm" data-testid={`comment-${c.id}`}>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span className="font-medium">{c.author || "Admin"} · {new Date(c.createdAt).toLocaleString("es-BO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                        <button onClick={() => deleteCommentMutation.mutate(c.id)} className="text-red-400 hover:text-red-300" data-testid={`button-delete-comment-${c.id}`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="whitespace-pre-wrap break-words">{c.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+              <Textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                rows={2}
+                placeholder="Escribe un comentario interno..."
+                data-testid="textarea-new-comment"
+              />
+              <Button
+                onClick={() => { if (newComment.trim()) addCommentMutation.mutate(newComment.trim()); }}
+                disabled={addCommentMutation.isPending || !newComment.trim()}
+                className="w-full"
+                data-testid="button-save-comment"
+              >
+                {addCommentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                Agregar comentario
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {isAdmin && (
           <Button
             variant="ghost"
@@ -1989,6 +2084,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               <DropdownMenuItem onClick={() => setShowCitaDialog(true)} data-testid="mobile-action-cita">
                 <CalendarPlus className="h-4 w-4 mr-2" />
                 Agendar cita
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowComments(true)} data-testid="mobile-action-comments">
+                <StickyNote className={cn("h-4 w-4 mr-2", comments.length > 0 && "text-amber-400")} />
+                Comentarios{comments.length > 0 ? ` (${comments.length})` : ""}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

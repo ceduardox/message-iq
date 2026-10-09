@@ -347,5 +347,19 @@ export async function ensureDatabaseSchema(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS conversation_comments (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      author VARCHAR(100),
+      text TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS conversation_comments_conv_idx ON conversation_comments (conversation_id)
+  `);
+
   schemaEnsured = true;
 }

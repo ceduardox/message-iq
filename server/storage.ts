@@ -873,6 +873,27 @@ export class DatabaseStorage implements IStorage {
       ON CONFLICT (key) DO UPDATE SET label = ${label}, updated_at = NOW()
     `);
   }
+
+  async getComments(conversationId: number): Promise<Array<{ id: number; author: string | null; text: string; createdAt: string }>> {
+    const rows: any = await db.execute(sql`
+      SELECT id, author, text, to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "createdAt"
+      FROM conversation_comments
+      WHERE conversation_id = ${conversationId}
+      ORDER BY created_at ASC
+    `);
+    return (rows.rows ?? rows) as Array<{ id: number; author: string | null; text: string; createdAt: string }>;
+  }
+
+  async addComment(conversationId: number, text: string, author: string | null): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO conversation_comments (conversation_id, author, text)
+      VALUES (${conversationId}, ${author}, ${text})
+    `);
+  }
+
+  async deleteComment(id: number): Promise<void> {
+    await db.execute(sql`DELETE FROM conversation_comments WHERE id = ${id}`);
+  }
 }
 
 function normalizeAdIdLike(raw: unknown): string {

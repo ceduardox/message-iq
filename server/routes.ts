@@ -6342,6 +6342,32 @@ Maximo 2 lineas. Se especifico y practico.`;
     res.json({ success: true, key, label });
   });
 
+  // Comentarios internos por conversación
+  app.get("/api/conversations/:id/comments", requireAuth, async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Id inválido" });
+    const comments = await storage.getComments(id);
+    res.json(comments);
+  });
+
+  app.post("/api/conversations/:id/comments", requireAuth, async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Id inválido" });
+    const text = String(req.body?.text ?? "").trim().slice(0, 2000);
+    if (!text) return res.status(400).json({ message: "Comentario vacío" });
+    const author = (req.session as any)?.username || "Admin";
+    await storage.addComment(id, text, String(author));
+    const comments = await storage.getComments(id);
+    res.json(comments);
+  });
+
+  app.delete("/api/comments/:id", requireAuth, async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Id inválido" });
+    await storage.deleteComment(id);
+    res.json({ success: true });
+  });
+
   // Data deletion requests - public endpoint (no auth required)
   const deletionRequests: Array<{ id: number; phone: string; reason: string; createdAt: string; status: string }> = [];
   let deletionIdCounter = 1;
