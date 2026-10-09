@@ -520,7 +520,7 @@ export async function generateAiResponse(
         content: m.text || `[${m.type}]`,
       })) as Array<{ role: "user" | "assistant"; content: string }>;
 
-    const resolvedAdvisorName = (advisorName || "").trim() || "Lexi";
+    const resolvedAdvisorName = (advisorName || "").trim() || "Marcela";
     const promptTemplate = settings.systemPrompt || "Eres un asistente de ventas amigable.";
     let instructions = promptTemplate
       .replace(/\{\{\s*AGENT_NAME\s*\}\}/gi, resolvedAdvisorName)

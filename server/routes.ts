@@ -35,7 +35,7 @@ const BLOCKED_LEGACY_BUTTON_SETS = [
   ["azucar y peso", "dolor y estres", "dolor articular"],
   ["solo diabetes", "diabetes peso"],
 ];
-const DEFAULT_ADVISOR_NAME = "Lexi";
+const DEFAULT_ADVISOR_NAME = "Marcela";
 const CITA_MINUTES = 60;
 const upsertSubadminSchema = z.object({
   name: z.string().trim().min(1).max(100),
