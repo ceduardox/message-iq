@@ -6328,6 +6328,20 @@ Maximo 2 lineas. Se especifico y practico.`;
     }
   });
 
+  // Kanban: nombres personalizados de columnas
+  app.get("/api/kanban-labels", requireAuth, async (_req, res) => {
+    const labels = await storage.getKanbanLabels();
+    res.json(labels);
+  });
+
+  app.put("/api/kanban-labels/:key", requireAdmin, async (req, res) => {
+    const key = String(req.params.key || "").trim().slice(0, 20);
+    const label = String(req.body?.label ?? "").trim().slice(0, 60);
+    if (!key || !label) return res.status(400).json({ message: "Datos inválidos" });
+    await storage.upsertKanbanLabel(key, label);
+    res.json({ success: true, key, label });
+  });
+
   // Data deletion requests - public endpoint (no auth required)
   const deletionRequests: Array<{ id: number; phone: string; reason: string; createdAt: string; status: string }> = [];
   let deletionIdCounter = 1;

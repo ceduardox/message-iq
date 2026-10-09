@@ -860,6 +860,19 @@ export class DatabaseStorage implements IStorage {
     await this.ensureSubadminsTable();
     await db.delete(subadmins).where(eq(subadmins.id, id));
   }
+
+  async getKanbanLabels(): Promise<Array<{ key: string; label: string }>> {
+    const rows: any = await db.execute(sql`SELECT key, label FROM kanban_column_labels`);
+    return (rows.rows ?? rows) as Array<{ key: string; label: string }>;
+  }
+
+  async upsertKanbanLabel(key: string, label: string): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO kanban_column_labels (key, label, updated_at)
+      VALUES (${key}, ${label}, NOW())
+      ON CONFLICT (key) DO UPDATE SET label = ${label}, updated_at = NOW()
+    `);
+  }
 }
 
 function normalizeAdIdLike(raw: unknown): string {

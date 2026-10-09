@@ -339,5 +339,13 @@ export async function ensureDatabaseSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS citas_start_idx ON citas (start_at)
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS kanban_column_labels (
+      key VARCHAR(20) PRIMARY KEY,
+      label VARCHAR(60) NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
   schemaEnsured = true;
 }

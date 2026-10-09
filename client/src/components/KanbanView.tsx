@@ -3,7 +3,7 @@ import type { Conversation, Label } from "@shared/schema";
 import { useConversation } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { ChatArea } from "./ChatArea";
-import { Phone, Clock, AlertCircle, Truck, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X } from "lucide-react";
+import { Phone, Clock, AlertCircle, Truck, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +77,8 @@ interface ColumnProps {
   onDragOverColumn: (columnType: TabType) => void;
   onDropOnColumn: (columnType: TabType) => void;
   unreadIds: Set<number>;
+  canRename?: boolean;
+  onRename?: (key: TabType, label: string) => void;
 }
 
 const KANBAN_READ_STATE_KEY = "iqexcelencia_kanban_read_state_v1";
@@ -349,7 +351,15 @@ function KanbanCard({
   );
 }
 
-function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, showAgentAssignment, getAssignedAgentName, enableDrag, draggingConversationId, isDropTarget, onDragStartCard, onDragEndCard, onDragOverColumn, onDropOnColumn, unreadIds }: ColumnProps) {
+function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, showAgentAssignment, getAssignedAgentName, enableDrag, draggingConversationId, isDropTarget, onDragStartCard, onDragEndCard, onDragOverColumn, onDropOnColumn, unreadIds, canRename, onRename }: ColumnProps) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(title);
+  useEffect(() => { setTitleDraft(title); }, [title]);
+  const saveTitle = () => {
+    const next = titleDraft.trim();
+    setEditingTitle(false);
+    if (next && next !== title && onRename) onRename(columnType, next);
+  };
   const getColumnHeaderStyle = () => {
     switch (columnType) {
       case "humano":
@@ -419,9 +429,36 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
         getColumnHeaderStyle()
       )}>
         <div className="absolute inset-0 animate-glow-line" />
-        <div className="relative flex items-center gap-2">
+        <div className="relative flex items-center gap-2 min-w-0">
           {getColumnIcon()}
-          <span className="font-semibold text-sm">{title}</span>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveTitle();
+                if (e.key === "Escape") { setTitleDraft(title); setEditingTitle(false); }
+              }}
+              maxLength={60}
+              className="min-w-0 w-40 rounded-md bg-black/25 px-2 py-0.5 text-sm font-semibold text-white outline-none ring-1 ring-white/40"
+              data-testid={`input-column-title-${columnType}`}
+            />
+          ) : (
+            <span className="font-semibold text-sm truncate">{title}</span>
+          )}
+          {canRename && !editingTitle && (
+            <button
+              type="button"
+              onClick={() => setEditingTitle(true)}
+              className="opacity-60 hover:opacity-100 transition-opacity"
+              title="Editar nombre de la columna"
+              data-testid={`button-rename-column-${columnType}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
           <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-sm font-bold">
             {items.length}
           </span>
@@ -487,6 +524,34 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const [draggingConversationId, setDraggingConversationId] = useState<number | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TabType | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
+
+  const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
+    queryKey: ["/api/kanban-labels"],
+  });
+  const labelMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const r of kanbanLabels) m[r.key] = r.label;
+    return m;
+  }, [kanbanLabels]);
+  const labelFor = (key: TabType) => labelMap[key] || tabConfig.find((t) => t.key === key)?.label || key;
+  const renameMutation = useMutation({
+    mutationFn: async ({ key, label }: { key: TabType; label: string }) => {
+      const res = await fetch(`/api/kanban-labels/${key}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) throw new Error("No se pudo guardar el nombre");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kanban-labels"] });
+      toast({ title: "Nombre de columna guardado" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+  const handleRename = (key: TabType, label: string) => renameMutation.mutate({ key, label });
   const [isSwiping, setIsSwiping] = useState(false);
   const hasAppliedUrlConversation = useRef(false);
   const touchStartX = useRef<number | null>(null);
@@ -654,12 +719,12 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention)).slice(0, displayLimit);
 
   const columnData: Record<TabType, { items: Conversation[]; title: string }> = {
-    humano: { items: humano, title: "Interaccion Humana" },
-    nuevo: { items: nuevos, title: "Esperando Confirmaci." },
-    llamar: { items: llamar, title: "Llamar" },
-    proceso: { items: enProceso, title: "Cierre en Proceso" },
-    listo: { items: listos, title: "Por Cerrar" },
-    entregado: { items: entregados, title: "Cerrado" },
+    humano: { items: humano, title: labelFor("humano") },
+    nuevo: { items: nuevos, title: labelFor("nuevo") },
+    llamar: { items: llamar, title: labelFor("llamar") },
+    proceso: { items: enProceso, title: labelFor("proceso") },
+    listo: { items: listos, title: labelFor("listo") },
+    entregado: { items: entregados, title: labelFor("entregado") },
   };
 
   const getTabColor = (tab: TabType, isActive: boolean) => {
@@ -909,7 +974,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
               data-testid={`tab-${tab.key}`}
             >
               <Icon className="h-4 w-4" />
-              <span>{tab.shortLabel}</span>
+              <span>{labelMap[tab.key] || tab.shortLabel}</span>
               <span className={cn(
                 "text-xs px-1.5 py-0.5 rounded-full font-bold",
                 mobileTab === tab.key ? "bg-white/20" : "bg-slate-700"
@@ -982,7 +1047,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
       <div className="hidden md:flex flex-1 min-h-0">
         <div className="flex-1 flex gap-0 min-h-0 overflow-hidden p-3">
           <KanbanColumn
-            title="Interaccion Humana"
+            title={labelFor("humano")}
             items={humano}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -998,9 +1063,11 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
             unreadIds={unreadIds}
+            canRename={isAdmin}
+            onRename={handleRename}
           />
           <KanbanColumn
-            title="Esperando Confirmaci."
+            title={labelFor("nuevo")}
             items={nuevos}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1018,7 +1085,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             unreadIds={unreadIds}
           />
           <KanbanColumn
-            title="Llamar"
+            title={labelFor("llamar")}
             items={llamar}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1034,9 +1101,11 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
             unreadIds={unreadIds}
+            canRename={isAdmin}
+            onRename={handleRename}
           />
           <KanbanColumn
-            title="Cierre en Proceso"
+            title={labelFor("proceso")}
             items={enProceso}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1052,9 +1121,11 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
             unreadIds={unreadIds}
+            canRename={isAdmin}
+            onRename={handleRename}
           />
           <KanbanColumn
-            title="Por Cerrar"
+            title={labelFor("listo")}
             items={listos}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1070,9 +1141,11 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
             unreadIds={unreadIds}
+            canRename={isAdmin}
+            onRename={handleRename}
           />
           <KanbanColumn
-            title="Cerrado"
+            title={labelFor("entregado")}
             items={entregados}
             activeId={activeId}
             onSelect={handleSelectConversation}
@@ -1088,6 +1161,8 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             onDragOverColumn={handleDragOverColumn}
             onDropOnColumn={handleDropOnColumn}
             unreadIds={unreadIds}
+            canRename={isAdmin}
+            onRename={handleRename}
           />
         </div>
 
