@@ -20,6 +20,8 @@ import {
   Sun,
   Moon,
   Check,
+  Users,
+  Phone,
 } from "lucide-react";
 
 interface Availability {
@@ -36,6 +38,7 @@ interface Cita {
   id: number;
   conversationId: number;
   agentId: number | null;
+  kind?: string | null;
   sede: string;
   startAt: string;
   endAt: string;
@@ -118,6 +121,48 @@ export default function CitasPage() {
     },
   });
   const citas: Cita[] = Array.isArray(citasData) ? (citasData as Cita[]) : [];
+
+  // Capacidad por horario (por sede para citas; global para llamadas)
+  const { data: aiSettings } = useQuery<{ citaCapacityCentro: number | null; citaCapacityNorte: number | null; llamadaCapacity: number | null }>({
+    queryKey: ["/api/ai/settings"],
+  });
+  const [capCentro, setCapCentro] = useState(5);
+  const [capNorte, setCapNorte] = useState(5);
+  const [capLlamada, setCapLlamada] = useState(5);
+  useEffect(() => {
+    if (!aiSettings) return;
+    setCapCentro(aiSettings.citaCapacityCentro ?? 5);
+    setCapNorte(aiSettings.citaCapacityNorte ?? 5);
+    setCapLlamada(aiSettings.llamadaCapacity ?? 5);
+  }, [aiSettings]);
+  const saveCapacityMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", "/api/ai/settings", {
+        citaCapacityCentro: capCentro,
+        citaCapacityNorte: capNorte,
+        llamadaCapacity: capLlamada,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/settings"] });
+      toast({ title: "Capacidad guardada" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const ocupacionMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of citas) {
+      if ((c.kind ?? "cita") !== "cita") continue;
+      const k = `${c.sede}|${c.startAt}`;
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return m;
+  }, [citas]);
+  const isLlamada = (c: Cita) => (c.kind ?? "cita") === "llamada";
+  const capDe = (sede: string) => (sede === "norte" ? capNorte : capCentro);
+  const ocupadosDe = (c: Cita) => ocupacionMap.get(`${c.sede}|${c.startAt}`) || 1;
 
   const groupedBySede = useMemo(() => {
     const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map() };
@@ -262,6 +307,33 @@ export default function CitasPage() {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-5">
+        {/* ===== Capacidad por horario ===== */}
+        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <Users className="h-4 w-4 text-emerald-400" />
+            <h2 className="text-sm font-semibold">Capacidad por horario</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">Citas · Centro (mismo horario)</Label>
+              <Input type="number" min={1} max={50} value={capCentro} onChange={(e) => setCapCentro(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-centro" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">Citas · Norte (mismo horario)</Label>
+              <Input type="number" min={1} max={50} value={capNorte} onChange={(e) => setCapNorte(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-norte" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-400">Llamadas (global, mismo horario)</Label>
+              <Input type="number" min={1} max={50} value={capLlamada} onChange={(e) => setCapLlamada(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-llamada" />
+            </div>
+          </div>
+          <Button onClick={() => saveCapacityMutation.mutate()} disabled={saveCapacityMutation.isPending} className="mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-capacity">
+            {saveCapacityMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+            Guardar capacidad
+          </Button>
+          <p className="mt-2 text-xs text-slate-500">Cuenta por <strong>mismo horario</strong>. Las llamadas se cuentan aparte (global), sin importar la sede.</p>
+        </section>
+
         {/* ===== Configurar horario ===== */}
         <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
           <div className="mb-3 flex items-center gap-2">
@@ -479,12 +551,13 @@ export default function CitasPage() {
                         >
                           <div className="flex h-11 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-slate-900/70 text-center">
                             <span className="text-sm font-bold leading-none">{new Date(c.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                            <span className="text-[10px] text-slate-500">1 hora</span>
+                            <span className="text-[10px] text-slate-500">{isLlamada(c) ? "llamada" : `${ocupadosDe(c)}/${capDe(c.sede)}`}</span>
                           </div>
                           <div className="min-w-[140px] flex-1">
                             <p className="truncate text-sm font-medium">{c.contactName || c.waId}</p>
                             <p className="flex items-center gap-1 text-xs text-slate-400">
-                              <MapPin className="h-3 w-3" /> {SEDE_LABEL[c.sede] || c.sede}
+                              {isLlamada(c) ? <Phone className="h-3 w-3 text-emerald-400" /> : <MapPin className="h-3 w-3" />}
+                              {isLlamada(c) ? "Llamada" : (SEDE_LABEL[c.sede] || c.sede)}
                               {c.note && <span className="ml-1 truncate text-slate-500">· {c.note}</span>}
                             </p>
                           </div>

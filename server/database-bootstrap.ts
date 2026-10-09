@@ -145,6 +145,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
       follow_up_stage2_enabled BOOLEAN DEFAULT true,
       follow_up_stage2_message TEXT DEFAULT 'Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook',
       follow_up_stage2_hours INTEGER DEFAULT 5,
+      cita_capacity_centro INTEGER DEFAULT 5,
+      cita_capacity_norte INTEGER DEFAULT 5,
+      llamada_capacity INTEGER DEFAULT 5,
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -326,6 +329,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       id SERIAL PRIMARY KEY,
       conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
       agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+      kind VARCHAR(10) NOT NULL DEFAULT 'cita',
       sede VARCHAR(20) NOT NULL DEFAULT 'centro',
       start_at TIMESTAMP NOT NULL,
       end_at TIMESTAMP NOT NULL,
@@ -333,6 +337,10 @@ export async function ensureDatabaseSchema(): Promise<void> {
       note TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE citas ADD COLUMN IF NOT EXISTS kind VARCHAR(10) NOT NULL DEFAULT 'cita'
   `);
 
   await db.execute(sql`

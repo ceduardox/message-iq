@@ -199,6 +199,9 @@ export const aiSettings = pgTable("ai_settings", {
   followUpStage2Enabled: boolean("follow_up_stage2_enabled").default(true),
   followUpStage2Message: text("follow_up_stage2_message").default("Conoce más de IQeXponencial: www.iqexponencial.com, testimonios en TikTok y testimonios en Facebook"),
   followUpStage2Hours: integer("follow_up_stage2_hours").default(5),
+  citaCapacityCentro: integer("cita_capacity_centro").default(5),
+  citaCapacityNorte: integer("cita_capacity_norte").default(5),
+  llamadaCapacity: integer("llamada_capacity").default(5),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -319,6 +322,7 @@ export const citas = pgTable("citas", {
   id: serial("id").primaryKey(),
   conversationId: integer("conversation_id").references(() => conversations.id).notNull(),
   agentId: integer("agent_id").references(() => agents.id),
+  kind: varchar("kind", { length: 10 }).notNull().default("cita"), // "cita" (presencial) | "llamada"
   sede: varchar("sede", { length: 20 }).notNull().default("centro"), // "centro" | "norte"
   startAt: timestamp("start_at").notNull(),
   endAt: timestamp("end_at").notNull(),

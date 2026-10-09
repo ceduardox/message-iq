@@ -260,6 +260,18 @@ export class DatabaseStorage implements IStorage {
       ALTER TABLE ai_settings
       ADD COLUMN IF NOT EXISTS follow_up_stage2_hours INTEGER DEFAULT 5
     `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS cita_capacity_centro INTEGER DEFAULT 5
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS cita_capacity_norte INTEGER DEFAULT 5
+    `);
+    await db.execute(sql`
+      ALTER TABLE ai_settings
+      ADD COLUMN IF NOT EXISTS llamada_capacity INTEGER DEFAULT 5
+    `);
     this.aiSettingsColumnsEnsured = true;
   }
 

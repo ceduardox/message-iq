@@ -614,6 +614,31 @@ async function writeReminderRaw(
   }
 }
 
+// Capacidad: por sede para citas presenciales; global para llamadas. Conteo por MISMO inicio.
+function sedeCapacity(settings: any, sede: string): number {
+  const v = sede === "norte" ? settings?.citaCapacityNorte : settings?.citaCapacityCentro;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+function llamadaCapacity(settings: any): number {
+  const n = Number(settings?.llamadaCapacity);
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+async function countCitasSameStart(sede: string, start: Date): Promise<number> {
+  const rows: any = await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM citas
+    WHERE kind = 'cita' AND estado != 'cancelada' AND sede = ${sede} AND start_at = ${start}
+  `);
+  return (rows.rows ?? rows)[0]?.n ?? 0;
+}
+async function countLlamadasSameStart(start: Date): Promise<number> {
+  const rows: any = await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM citas
+    WHERE kind = 'llamada' AND estado != 'cancelada' AND start_at = ${start}
+  `);
+  return (rows.rows ?? rows)[0]?.n ?? 0;
+}
+
 function getConversationAdvisorName(assignedAgentName?: string | null) {
   const normalized = (assignedAgentName || "").trim();
   return normalized || DEFAULT_ADVISOR_NAME;
@@ -1011,7 +1036,18 @@ async function processAiResponse(data: BufferedMessage) {
               null,
               false,
             );
-            console.log("=== CALL REMINDER SET ===", conversationId, callDate.toISOString());
+            // Registra la llamada en el calendario (cupo GLOBAL por mismo inicio).
+            const lcap = llamadaCapacity(await storage.getAiSettings());
+            const locup = await countLlamadasSameStart(callDate);
+            if (locup < lcap) {
+              await db.execute(sql`
+                INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
+                VALUES (${conversationId}, ${conversation.assignedAgentId ?? null}, 'llamada', 'centro', ${callDate}, ${new Date(callDate.getTime() + CITA_MINUTES * 60000)}, 'reservada', ${"Llamada agendada por IA"})
+              `);
+              console.log("=== CALL REMINDER SET ===", conversationId, callDate.toISOString());
+            } else {
+              console.warn("=== LLAMADA LLENA (cupo global) ===", { conversationId, callDate: callDate.toISOString(), locup, lcap });
+            }
           }
         }
         sendPushNotification(
@@ -1030,12 +1066,11 @@ async function processAiResponse(data: BufferedMessage) {
           const start = new Date(aiResult.cita.startAt);
           const end = new Date(start.getTime() + CITA_MINUTES * 60000);
           const sede = aiResult.cita.sede;
-          const clash: any = await db.execute(sql`
-            SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
-            AND start_at < ${end} AND end_at > ${start} LIMIT 1
-          `);
-          if ((clash.rows ?? clash).length > 0) {
-            console.warn("=== CITA CLASH - slot no disponible, no se agenda ===", { conversationId, sede, startAt: start.toISOString() });
+          const capSettings = await storage.getAiSettings();
+          const cap = sedeCapacity(capSettings, sede);
+          const ocupados = await countCitasSameStart(sede, start);
+          if (ocupados >= cap) {
+            console.warn("=== CITA LLENA - no se agenda ===", { conversationId, sede, startAt: start.toISOString(), ocupados, cap });
           } else {
             // Reprogramar: cancela la cita activa anterior de esta conversación.
             await db.execute(sql`
@@ -1043,8 +1078,8 @@ async function processAiResponse(data: BufferedMessage) {
               WHERE conversation_id = ${conversationId} AND estado != 'cancelada'
             `);
             await db.execute(sql`
-              INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
-              VALUES (${conversationId}, ${conversation.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', ${"Agendada por IA"})
+              INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
+              VALUES (${conversationId}, ${conversation.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', ${"Agendada por IA"})
             `);
             const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
             await writeReminderRaw(
@@ -4644,22 +4679,36 @@ export async function registerRoutes(
     const day = new Date(dateStr + "T12:00:00");
     if (Number.isNaN(day.getTime())) return res.status(400).json({ message: "Fecha inválida" });
     const weekday = day.getDay();
+    const settings = await storage.getAiSettings();
+    const capacity = sedeCapacity(settings, sede);
     const avail: any = await db.execute(sql`SELECT start_time AS "startTime", end_time AS "endTime" FROM agent_availability WHERE weekday = ${weekday} AND sede = ${sede} AND is_active IS DISTINCT FROM false`);
     const list = avail.rows ?? avail;
     const dayStart = new Date(dateStr + "T00:00:00");
     const dayEnd = new Date(dateStr + "T23:59:59");
-    const busy: any = await db.execute(sql`SELECT start_at AS "startAt", end_at AS "endAt" FROM citas WHERE sede = ${sede} AND estado != 'cancelada' AND start_at >= ${dayStart} AND start_at <= ${dayEnd}`);
-    const busyList = (busy.rows ?? busy).map((b: any) => ({ s: new Date(b.startAt).getTime(), e: new Date(b.endAt).getTime() }));
+    // Conteo por MISMO inicio (presenciales de esa sede), en hora local del server.
+    const busy: any = await db.execute(sql`
+      SELECT start_at AS "startAt"
+      FROM citas
+      WHERE kind = 'cita' AND sede = ${sede} AND estado != 'cancelada'
+        AND start_at >= ${dayStart} AND start_at <= ${dayEnd}
+    `);
+    const keyOf = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}:00`;
+    const counts: Record<string, number> = {};
+    for (const b of (busy.rows ?? busy)) {
+      const k = keyOf(new Date(b.startAt));
+      counts[k] = (counts[k] || 0) + 1;
+    }
     const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-    const slots: Array<{ startAt: string; endAt: string; sede: string }> = [];
+    const slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number }> = [];
     for (const a of list) {
       const s = toMin(a.startTime);
       const e = toMin(a.endTime);
       for (let m = s; m + CITA_MINUTES <= e; m += CITA_MINUTES) {
         const st = new Date(day); st.setHours(Math.floor(m / 60), m % 60, 0, 0);
         const en = new Date(st.getTime() + CITA_MINUTES * 60000);
-        const overlap = busyList.some((b: any) => st.getTime() < b.e && en.getTime() > b.s);
-        if (!overlap) slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede });
+        const ocupados = counts[keyOf(st)] || 0;
+        if (ocupados < capacity) slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede, ocupados, capacidad: capacity });
       }
     }
     res.json({ date: dateStr, sede, slots });
@@ -4686,7 +4735,7 @@ export async function registerRoutes(
         SELECT c.id, c.conversation_id AS "conversationId", c.agent_id AS "agentId", c.sede,
                to_char(c.start_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "startAt",
                to_char(c.end_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "endAt",
-               c.estado, c.note,
+               c.estado, c.note, c.kind,
                conv.contact_name AS "contactName", conv.wa_id AS "waId"
         FROM citas c LEFT JOIN conversations conv ON conv.id = c.conversation_id
         WHERE c.start_at >= ${new Date(dateStr + "T00:00:00")} AND c.start_at <= ${new Date(dateStr + "T23:59:59")}
@@ -4697,7 +4746,7 @@ export async function registerRoutes(
         SELECT c.id, c.conversation_id AS "conversationId", c.agent_id AS "agentId", c.sede,
                to_char(c.start_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "startAt",
                to_char(c.end_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "endAt",
-               c.estado, c.note,
+               c.estado, c.note, c.kind,
                conv.contact_name AS "contactName", conv.wa_id AS "waId"
         FROM citas c LEFT JOIN conversations conv ON conv.id = c.conversation_id
         WHERE c.start_at >= NOW() - INTERVAL '1 day'
@@ -4720,11 +4769,15 @@ export async function registerRoutes(
     const start = new Date(parsed.data.startAt);
     if (Number.isNaN(start.getTime())) return res.status(400).json({ message: "Fecha inválida" });
     const end = new Date(start.getTime() + CITA_MINUTES * 60000);
-    const clash: any = await db.execute(sql`
-      SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
-      AND start_at < ${end} AND end_at > ${start} LIMIT 1
+    const settings = await storage.getAiSettings();
+    const cap = sedeCapacity(settings, sede);
+    const capRows: any = await db.execute(sql`
+      SELECT COUNT(*)::int AS n FROM citas
+      WHERE kind = 'cita' AND estado != 'cancelada' AND sede = ${sede} AND start_at = ${start}
+        AND conversation_id != ${parsed.data.conversationId}
     `);
-    if ((clash.rows ?? clash).length > 0) return res.status(409).json({ message: "Horario ya ocupado en esa sede" });
+    const ocupados = (capRows.rows ?? capRows)[0]?.n ?? 0;
+    if (ocupados >= cap) return res.status(409).json({ message: `Horario lleno (${ocupados}/${cap})` });
     const conv = await storage.getConversation(parsed.data.conversationId);
     if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
     // Reprogramar: una sola cita activa por conversación (cancela la anterior).
@@ -4733,8 +4786,8 @@ export async function registerRoutes(
       WHERE conversation_id = ${parsed.data.conversationId} AND estado != 'cancelada'
     `);
     const ins: any = await db.execute(sql`
-      INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
-      VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
+      INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
+      VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
       RETURNING id
     `);
     const citaId = ins.rows?.[0]?.id ?? ins[0]?.id;
@@ -4807,19 +4860,17 @@ export async function registerRoutes(
         const start = new Date(aiResult.cita.startAt);
         const end = new Date(start.getTime() + CITA_MINUTES * 60000);
         const sede = aiResult.cita.sede;
-        const clash: any = await db.execute(sql`
-          SELECT id FROM citas WHERE sede = ${sede} AND estado != 'cancelada'
-          AND start_at < ${end} AND end_at > ${start} LIMIT 1
-        `);
-        if ((clash.rows ?? clash).length === 0) {
+        const cap = sedeCapacity(await storage.getAiSettings(), sede);
+        const ocupados = await countCitasSameStart(sede, start);
+        if (ocupados < cap) {
           // Reprogramar: cancela la cita activa anterior de esta conversación.
           await db.execute(sql`
             UPDATE citas SET estado = 'cancelada'
             WHERE conversation_id = ${conv.id} AND estado != 'cancelada'
           `);
           await db.execute(sql`
-            INSERT INTO citas (conversation_id, agent_id, sede, start_at, end_at, estado, note)
-            VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, ${sede}, ${start}, ${end}, 'reservada', 'Agendada por IA (sim)')
+            INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
+            VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', 'Agendada por IA (sim)')
           `);
           const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
           await writeReminderRaw(
@@ -4846,6 +4897,14 @@ export async function registerRoutes(
             null,
             false,
           );
+          const lcap = llamadaCapacity(await storage.getAiSettings());
+          const locup = await countLlamadasSameStart(callDate);
+          if (locup < lcap) {
+            await db.execute(sql`
+              INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
+              VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, 'llamada', 'centro', ${callDate}, ${new Date(callDate.getTime() + CITA_MINUTES * 60000)}, 'reservada', ${"Llamada agendada por IA (sim)"})
+            `);
+          }
         }
       }
       res.json({ response: aiResult.response, cita: citaInfo, shouldCall: !!aiResult.shouldCall, callAt: aiResult.callAt ?? null, orderStatus: aiResult.orderStatus ?? null });
@@ -5193,6 +5252,9 @@ NO uses saludos formales. Se directo y amigable.`
     followUpStage2Enabled: z.boolean().optional(),
     followUpStage2Message: z.string().nullable().optional(),
     followUpStage2Hours: z.number().min(1).max(6).optional(),
+    citaCapacityCentro: z.number().min(1).max(50).optional(),
+    citaCapacityNorte: z.number().min(1).max(50).optional(),
+    llamadaCapacity: z.number().min(1).max(50).optional(),
   });
 
   const promptProfilesUpdateSchema = z.object({

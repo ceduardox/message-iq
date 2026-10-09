@@ -124,17 +124,28 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
     const avail = availRes.rows ?? availRes;
     if (!Array.isArray(avail) || avail.length === 0) return empty;
 
+    const capRes: any = await db.execute(sql`
+      SELECT cita_capacity_centro AS c, cita_capacity_norte AS n FROM ai_settings LIMIT 1
+    `);
+    const capRow = (capRes.rows ?? capRes)[0] || {};
+    const capBySede: Record<string, number> = {
+      centro: Number(capRow.c) > 0 ? Number(capRow.c) : 5,
+      norte: Number(capRow.n) > 0 ? Number(capRow.n) : 5,
+    };
+
     const busyRes: any = await db.execute(sql`
-      SELECT sede, start_at AS "startAt", end_at AS "endAt"
+      SELECT sede, start_at AS "startAt"
       FROM citas
-      WHERE estado != 'cancelada'
+      WHERE kind = 'cita' AND estado != 'cancelada'
         AND start_at >= NOW() - INTERVAL '1 hour'
         AND start_at <= NOW() + INTERVAL '8 days'
     `);
-    const busy = busyRes.rows ?? busyRes;
-    const busyBySede: Record<string, Array<{ s: number; e: number }>> = {};
-    for (const b of busy) {
-      (busyBySede[b.sede] ||= []).push({ s: new Date(b.startAt).getTime(), e: new Date(b.endAt).getTime() });
+    const keyOf = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:00`;
+    const countBySede: Record<string, Record<string, number>> = {};
+    for (const b of (busyRes.rows ?? busyRes)) {
+      const k = keyOf(new Date(b.startAt));
+      (countBySede[b.sede] ||= {})[k] = ((countBySede[b.sede] ||= {})[k] || 0) + 1;
     }
 
     const toMin = (t: string) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
@@ -158,9 +169,8 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
             const st = new Date(day);
             st.setHours(Math.floor(m / 60), m % 60, 0, 0);
             if (st.getTime() < now + 60 * 60 * 1000) continue;
-            const en = st.getTime() + CITA_MINUTES * 60000;
-            const overlap = (busyBySede[sede] || []).some((b) => st.getTime() < b.e && en > b.s);
-            if (!overlap) slots.push(st);
+            const ocupados = (countBySede[sede] || {})[keyOf(st)] || 0;
+            if (ocupados < capBySede[sede]) slots.push(st);
           }
           if (slots.length >= 3) break;
         }

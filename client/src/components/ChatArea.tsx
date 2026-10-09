@@ -951,7 +951,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const existingCita = citaData?.cita || null;
   const [citaSede, setCitaSede] = useState("centro");
   const [citaDate, setCitaDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string }> }>({
+  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number }> }>({
     queryKey: ["/api/slots", citaDate, citaSede, showCitaDialog],
     queryFn: async () => {
       const res = await fetch(`/api/slots?date=${citaDate}&sede=${citaSede}`, { credentials: "include" });
@@ -1859,6 +1859,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                     <Button key={s.startAt} size="sm" variant="outline" disabled={reserveCitaMutation.isPending}
                       onClick={() => reserveCitaMutation.mutate(s.startAt)} data-testid={`button-slot-${s.startAt}`}>
                       {new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
+                      <span className="ml-1 text-[10px] opacity-70">{s.ocupados}/{s.capacidad}</span>
                     </Button>
                   ))}
                 </div>
