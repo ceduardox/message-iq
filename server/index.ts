@@ -6,9 +6,9 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Force the CRM timezone so all date/hour logic (citas, agenda) matches Bolivia,
-// regardless of the container / platform timezone (usually UTC).
-process.env.TZ = "America/La_Paz";
+// Force the app timezone (elegible con APP_TIMEZONE). Por defecto Bolivia.
+// Así todas las fechas/horas (citas, agenda) coinciden sin importar la zona del servidor.
+process.env.TZ = process.env.APP_TIMEZONE || "America/La_Paz";
 
 const app = express();
 

@@ -7,7 +7,7 @@ import type { Message, Product } from "@shared/schema";
 const DEFAULT_PUBLIC_BASE_URL = "https://iqexcelencia.com";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
-const CRM_TIME_ZONE = "America/La_Paz";
+const CRM_TIME_ZONE = process.env.APP_TIMEZONE || process.env.TZ || "America/La_Paz";
 const CITA_MINUTES = 60;
 const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte" };
 

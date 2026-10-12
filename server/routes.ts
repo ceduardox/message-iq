@@ -37,6 +37,8 @@ const BLOCKED_LEGACY_BUTTON_SETS = [
 ];
 const DEFAULT_ADVISOR_NAME = "Marcela";
 const CITA_MINUTES = 60;
+// Zona horaria de la app (elegible por env). Por defecto Bolivia.
+const APP_TZ = process.env.APP_TIMEZONE || process.env.TZ || "America/La_Paz";
 const upsertSubadminSchema = z.object({
   name: z.string().trim().min(1).max(100),
   username: z.string().trim().min(1).max(50),
@@ -545,7 +547,7 @@ function getPushTargetUrl(data?: Record<string, string>) {
 // lo que desfasa la hora de Bolivia (-4h). Escribimos la hora local de Bolivia explícitamente.
 function toLaPazWallClock(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/La_Paz",
+    timeZone: APP_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -1032,7 +1034,7 @@ async function processAiResponse(data: BufferedMessage) {
             await writeReminderRaw(
               conversationId,
               callDate,
-              `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: "America/La_Paz", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: APP_TZ, weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
               null,
               false,
             );
@@ -1053,7 +1055,7 @@ async function processAiResponse(data: BufferedMessage) {
         sendPushNotification(
           "Llamar al Cliente",
           aiResult.callAt
-            ? `${name}: llamada agendada ${new Date(aiResult.callAt).toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+            ? `${name}: llamada agendada ${new Date(aiResult.callAt).toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
             : `${name}: Alta probabilidad de compra - llamar ahora`,
           { conversationId: conversationId.toString(), waId: from, event: "should_call" },
           getConversationPushOptions(conversation)
@@ -1085,14 +1087,14 @@ async function processAiResponse(data: BufferedMessage) {
             await writeReminderRaw(
               conversationId,
               start,
-              `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
               null,
               false,
             );
             console.log("=== CITA CREADA POR IA ===", { conversationId, sede, startAt: start.toISOString() });
             sendPushNotification(
               "Nueva cita agendada",
-              `${name}: ${sedeLabel} - ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              `${name}: ${sedeLabel} - ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
               { conversationId: conversationId.toString(), waId: from, event: "cita_nueva" },
               getConversationPushOptions(conversation)
             );
@@ -3999,7 +4001,7 @@ export async function registerRoutes(
         SELECT date::text AS date, unit_cost_bs, official_rate_bs, parallel_rate_bs, updated_at
         FROM daily_cost_settings
         WHERE 1 = 1
-          ${!dateFrom && !dateTo ? sql`AND date >= ((NOW() AT TIME ZONE 'America/La_Paz')::date - INTERVAL '29 days')::date` : sql``}
+          ${!dateFrom && !dateTo ? sql`AND date >= ((NOW() AT TIME ZONE ${APP_TZ})::date - INTERVAL '29 days')::date` : sql``}
           ${dateFrom ? sql`AND date >= ${dateFrom}::date` : sql``}
           ${dateTo ? sql`AND date <= ${dateTo}::date` : sql``}
         ORDER BY date DESC
@@ -4070,7 +4072,7 @@ export async function registerRoutes(
               ELSE NULL
             END,
             m.created_at
-          ) AT TIME ZONE 'America/La_Paz'
+          ) AT TIME ZONE ${APP_TZ}
         )
       `;
 
@@ -4087,7 +4089,7 @@ export async function registerRoutes(
           JOIN conversations c ON m.conversation_id = c.id
           JOIN agents a ON c.assigned_agent_id = a.id
           WHERE 1 = 1
-            ${!dateFrom && !dateTo ? sql`AND ${dayExpression} >= ((NOW() AT TIME ZONE 'America/La_Paz')::date - INTERVAL '29 days')::date` : sql``}
+            ${!dateFrom && !dateTo ? sql`AND ${dayExpression} >= ((NOW() AT TIME ZONE ${APP_TZ})::date - INTERVAL '29 days')::date` : sql``}
             ${dateFrom ? sql`AND ${dayExpression} >= ${dateFrom}::date` : sql``}
             ${dateTo ? sql`AND ${dayExpression} <= ${dateTo}::date` : sql``}
           GROUP BY a.id, a.name, ${dayExpression}
@@ -4810,7 +4812,7 @@ export async function registerRoutes(
     await writeReminderRaw(
       conv.id,
       start,
-      `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+      `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
       null,
       false,
     );
@@ -4891,7 +4893,7 @@ export async function registerRoutes(
           await writeReminderRaw(
             conv.id,
             start,
-            `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: "America/La_Paz", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
             null,
             false,
           );
@@ -4908,7 +4910,7 @@ export async function registerRoutes(
           await writeReminderRaw(
             conv.id,
             callDate,
-            `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: "America/La_Paz", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: APP_TZ, weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
             null,
             false,
           );
@@ -6110,12 +6112,12 @@ Maximo 2 lineas. Se especifico y practico.`;
       }
 
       const dateFilterSql = sql`
-        ${dateFrom ? sql`AND DATE(m.created_at AT TIME ZONE 'America/La_Paz') >= ${dateFrom}` : sql``}
-        ${dateTo ? sql`AND DATE(m.created_at AT TIME ZONE 'America/La_Paz') <= ${dateTo}` : sql``}
+        ${dateFrom ? sql`AND DATE(m.created_at AT TIME ZONE ${APP_TZ}) >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND DATE(m.created_at AT TIME ZONE ${APP_TZ}) <= ${dateTo}` : sql``}
       `;
       const leadDateFilterSql = sql`
-        ${dateFrom ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') >= ${dateFrom}` : sql``}
-        ${dateTo ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE 'America/La_Paz') <= ${dateTo}` : sql``}
+        ${dateFrom ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE ${APP_TZ}) >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND DATE(fi.first_inbound_at AT TIME ZONE ${APP_TZ}) <= ${dateTo}` : sql``}
       `;
       const inboundChatDateFilterSql = sql`
         ${dateFrom
@@ -6126,7 +6128,7 @@ Maximo 2 lineas. Se especifico y practico.`;
                   ELSE NULL
                 END,
                 m_in.created_at
-              ) AT TIME ZONE 'America/La_Paz'
+              ) AT TIME ZONE ${APP_TZ}
             ) >= ${dateFrom}`
           : sql``}
         ${dateTo
@@ -6137,7 +6139,7 @@ Maximo 2 lineas. Se especifico y practico.`;
                   ELSE NULL
                 END,
                 m_in.created_at
-              ) AT TIME ZONE 'America/La_Paz'
+              ) AT TIME ZONE ${APP_TZ}
             ) <= ${dateTo}`
           : sql``}
       `;
