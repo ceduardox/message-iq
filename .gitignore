@@ -11,3 +11,7 @@ railway_dump.sql
 tmp-iqx-preview/
 .local-*.log
 .local-*.err.log
+
+# Scripts locales de prueba (apuntan a localhost, no van al repo)
+script/*.mjs
+script/recover-otp-dryrun.ts
