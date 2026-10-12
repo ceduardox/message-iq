@@ -907,6 +907,18 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const [showCitaDialog, setShowCitaDialog] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState("");
+  const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
+    queryKey: ["/api/kanban-labels"],
+  });
+  const kanbanLabelMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const r of kanbanLabels) m[r.key] = r.label;
+    return m;
+  }, [kanbanLabels]);
+  const statusLabel = (key: "pending" | "ready" | "delivered") => {
+    const mapKey = key === "pending" ? "proceso" : key === "ready" ? "listo" : "entregado";
+    return kanbanLabelMap[mapKey] || (key === "pending" ? "Cierre en proceso" : key === "ready" ? "Por cerrar" : "Cerrado");
+  };
   const { data: comments = [] } = useQuery<Array<{ id: number; author: string | null; text: string; createdAt: string }>>({
     queryKey: ["/api/conversations", conversation.id, "comments"],
     queryFn: async () => {
@@ -1973,15 +1985,15 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>
               <Package className="h-4 w-4 mr-2 text-yellow-600" />
-              Cierre en proceso
+              {statusLabel("pending")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>
               <PackageCheck className="h-4 w-4 mr-2 text-green-600" />
-              Por cerrar
+              {statusLabel("ready")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>
               <Truck className="h-4 w-4 mr-2 text-blue-600" />
-              Cerrado
+              {statusLabel("delivered")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2103,9 +2115,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               {mobileMenuExpandedSection === "status" && (
                 <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
                   <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>Sin estado</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>Cierre en proceso</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>Por cerrar</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>Cerrado</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>{statusLabel("pending")}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>{statusLabel("ready")}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>{statusLabel("delivered")}</DropdownMenuItem>
                 </div>
               )}
               <DropdownMenuItem onClick={openReminderEditor}>
