@@ -4715,7 +4715,7 @@ export async function registerRoutes(
       counts[k] = (counts[k] || 0) + 1;
     }
     const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-    const slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number }> = [];
+    const slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number; disponible: boolean }> = [];
     for (const a of list) {
       const s = toMin(a.startTime);
       const e = toMin(a.endTime);
@@ -4723,10 +4723,10 @@ export async function registerRoutes(
         const st = new Date(day); st.setHours(Math.floor(m / 60), m % 60, 0, 0);
         const en = new Date(st.getTime() + CITA_MINUTES * 60000);
         const ocupados = counts[keyOf(st)] || 0;
-        if (ocupados < capacity) slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede, ocupados, capacidad: capacity });
+        slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede, ocupados, capacidad: capacity, disponible: ocupados < capacity });
       }
     }
-    res.json({ date: dateStr, sede, slots });
+    res.json({ date: dateStr, sede, slots, capacidad: capacity, tieneDisponibilidad: list.length > 0 });
   });
 
   app.get("/api/conversations/:id/cita", requireAuth, async (req, res) => {

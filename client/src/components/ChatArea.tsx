@@ -963,7 +963,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const existingCita = citaData?.cita || null;
   const [citaSede, setCitaSede] = useState("centro");
   const [citaDate, setCitaDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number }> }>({
+  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number; disponible: boolean }>; tieneDisponibilidad: boolean }>({
     queryKey: ["/api/slots", citaDate, citaSede, showCitaDialog],
     queryFn: async () => {
       const res = await fetch(`/api/slots?date=${citaDate}&sede=${citaSede}`, { credentials: "include" });
@@ -1843,37 +1843,73 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               <CalendarPlus className="h-4 w-4" />
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-sm">
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Agendar cita</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <CalendarPlus className="h-5 w-5 text-emerald-500" />
+                Agendar cita
+              </DialogTitle>
             </DialogHeader>
-            <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Sede</label>
-                  <select value={citaSede} onChange={(e) => setCitaSede(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm" data-testid="select-cita-sede">
+                  <label className="text-xs font-medium text-muted-foreground">Sede</label>
+                  <select value={citaSede} onChange={(e) => setCitaSede(e.target.value)} className="h-10 w-full rounded-lg border bg-background px-3 text-sm" data-testid="select-cita-sede">
                     <option value="centro">Centro</option>
                     <option value="norte">Norte</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Fecha</label>
-                  <Input type="date" value={citaDate} onChange={(e) => setCitaDate(e.target.value)} data-testid="input-cita-date" />
+                  <label className="text-xs font-medium text-muted-foreground">Fecha</label>
+                  <Input type="date" value={citaDate} onChange={(e) => setCitaDate(e.target.value)} className="h-10" data-testid="input-cita-date" />
                 </div>
               </div>
+
               {slotsLoading ? (
-                <p className="text-sm text-muted-foreground">Cargando huecos...</p>
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Buscando horarios…
+                </div>
+              ) : !slotsData?.tieneDisponibilidad ? (
+                <div className="rounded-lg border border-dashed p-4 text-center">
+                  <p className="text-sm text-muted-foreground">No hay horarios configurados para esa sede y fecha.</p>
+                  <Link href="/citas">
+                    <Button variant="outline" size="sm" className="mt-2">Configurar en /citas</Button>
+                  </Link>
+                </div>
               ) : citaSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sin huecos libres. Cambia fecha/sede o agrega disponibilidad en /citas.</p>
+                <p className="text-sm text-muted-foreground">Sin horarios ese día. Prueba otra fecha.</p>
               ) : (
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                  {citaSlots.map((s) => (
-                    <Button key={s.startAt} size="sm" variant="outline" disabled={reserveCitaMutation.isPending}
-                      onClick={() => reserveCitaMutation.mutate(s.startAt)} data-testid={`button-slot-${s.startAt}`}>
-                      {new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
-                      <span className="ml-1 text-[10px] opacity-70">{s.ocupados}/{s.capacidad}</span>
-                    </Button>
-                  ))}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Elige un horario (cupo disponible)</p>
+                  <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1">
+                    {citaSlots.map((s) => {
+                      const lleno = !s.disponible;
+                      const libres = Math.max(0, s.capacidad - s.ocupados);
+                      return (
+                        <button
+                          key={s.startAt}
+                          type="button"
+                          disabled={lleno || reserveCitaMutation.isPending}
+                          onClick={() => reserveCitaMutation.mutate(s.startAt)}
+                          className={cn(
+                            "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all",
+                            lleno
+                              ? "cursor-not-allowed border-slate-300 bg-muted opacity-60"
+                              : "border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-[0.98]",
+                          )}
+                          data-testid={`button-slot-${s.startAt}`}
+                        >
+                          <span className="text-sm font-semibold tabular-nums">
+                            {new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", lleno ? "bg-slate-400/30 text-slate-600" : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300")}>
+                            {lleno ? "Lleno" : `${libres} libre${libres > 1 ? "s" : ""}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Se guarda en el calendario (/citas) y en la agenda.</p>
                 </div>
               )}
             </div>
