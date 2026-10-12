@@ -1,4 +1,4 @@
-﻿import type { Express } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
@@ -568,11 +568,17 @@ async function applyLocalDateTimeStrings(conversations: any[]): Promise<void> {
   const ids = conversations.map((c) => c?.id).filter((x: any) => typeof x === "number");
   if (ids.length === 0) return;
   const cols = DATE_STRING_FIELDS.map((f) => {
-    const col = f === "reminderAt" ? "reminder_at"
-      : f === "reminderUpdatedAt" ? "reminder_updated_at"
-      : f === "lastMessageTimestamp" ? "last_message_timestamp"
-      : "updated_at";
-    return `to_char(${col}, 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
+    if (f === "lastMessageTimestamp") {
+      return `to_char(last_message_timestamp AT TIME ZONE 'UTC' AT TIME ZONE '${APP_TZ}', 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
+    }
+    if (f === "updatedAt") {
+      return `to_char(updated_at AT TIME ZONE 'UTC' AT TIME ZONE '${APP_TZ}', 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
+    }
+    if (f === "reminderUpdatedAt") {
+      return `to_char(reminder_updated_at AT TIME ZONE 'UTC' AT TIME ZONE '${APP_TZ}', 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
+    }
+    // reminder_at ya está guardado en hora local boliviana vía toLaPazWallClock
+    return `to_char(reminder_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "${f}"`;
   }).join(", ");
   const rows: any = await db.execute(sql.raw(`SELECT id, ${cols} FROM conversations WHERE id IN (${ids.join(",")})`));
   const map = new Map<number, any>((rows.rows ?? rows).map((r: any) => [r.id, r]));
@@ -4416,6 +4422,7 @@ export async function registerRoutes(
 
     await writeReminderRaw(id, reminderAt, reminderNote, reminderColor, reminderDone);
     const updated = await storage.getConversation(id);
+    if (updated) await applyLocalDateTimeStrings([updated]);
     res.json(updated);
   });
 
@@ -4424,6 +4431,7 @@ export async function registerRoutes(
     const id = parseInt(req.params.id);
     await writeReminderRaw(id, null, null, null, false);
     const updated = await storage.getConversation(id);
+    if (updated) await applyLocalDateTimeStrings([updated]);
     res.json(updated);
   });
 
