@@ -915,10 +915,39 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     for (const r of kanbanLabels) m[r.key] = r.label;
     return m;
   }, [kanbanLabels]);
-  const statusLabel = (key: "pending" | "ready" | "delivered") => {
-    const mapKey = key === "pending" ? "proceso" : key === "ready" ? "listo" : "entregado";
-    return kanbanLabelMap[mapKey] || (key === "pending" ? "Cierre en proceso" : key === "ready" ? "Por cerrar" : "Cerrado");
+  const COL_DEFAULTS: Record<string, string> = {
+    humano: "Interacción Humana",
+    nuevo: "Esperando Confirmación",
+    llamar: "Llamar",
+    proceso: "Cierre en proceso",
+    listo: "Por cerrar",
+    entregado: "Cerrado",
   };
+  const colLabel = (col: string) => kanbanLabelMap[col] || COL_DEFAULTS[col] || col;
+  const statusLabel = (key: "pending" | "ready" | "delivered") =>
+    colLabel(key === "pending" ? "proceso" : key === "ready" ? "listo" : "entregado");
+  const currentColumn = conversation.needsHumanAttention ? "humano"
+    : conversation.shouldCall ? "llamar"
+    : conversation.orderStatus === "pending" ? "proceso"
+    : conversation.orderStatus === "ready" ? "listo"
+    : conversation.orderStatus === "delivered" ? "entregado"
+    : "nuevo";
+  const setColumnMutation = useMutation({
+    mutationFn: async (column: string) => {
+      const res = await fetch(`/api/conversations/${conversation.id}/kanban-status`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ column }),
+      });
+      if (!res.ok) throw new Error("No se pudo actualizar el estado");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Estado actualizado" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
   const { data: comments = [] } = useQuery<Array<{ id: number; author: string | null; text: string; createdAt: string }>>({
     queryKey: ["/api/conversations", conversation.id, "comments"],
     queryFn: async () => {
@@ -1996,41 +2025,41 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
         {/* Order Status Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button 
-              variant={conversation.orderStatus === 'ready' ? "default" : "ghost"} 
-              size="icon" 
+            <Button
+              variant={currentColumn === "listo" ? "default" : "ghost"}
+              size="icon"
               className={cn(
                 "flex-shrink-0 h-7 w-7",
-                conversation.orderStatus === 'ready' && "bg-green-500 text-white",
-                conversation.orderStatus === 'pending' && "text-yellow-600",
-                conversation.orderStatus === 'delivered' && "text-blue-600"
+                currentColumn === "listo" && "bg-green-500 text-white",
+                currentColumn === "proceso" && "text-yellow-600",
+                currentColumn === "entregado" && "text-blue-600",
+                currentColumn === "humano" && "text-red-500",
+                currentColumn === "llamar" && "text-emerald-500"
               )}
+              title={colLabel(currentColumn)}
               data-testid="button-order-status"
             >
-              {conversation.orderStatus === 'ready' ? <PackageCheck className="h-4 w-4" /> :
-               conversation.orderStatus === 'pending' ? <Package className="h-4 w-4" /> :
-               conversation.orderStatus === 'delivered' ? <Truck className="h-4 w-4" /> :
+              {currentColumn === "humano" ? <AlertCircle className="h-4 w-4" /> :
+               currentColumn === "llamar" ? <Phone className="h-4 w-4" /> :
+               currentColumn === "listo" ? <PackageCheck className="h-4 w-4" /> :
+               currentColumn === "proceso" ? <Package className="h-4 w-4" /> :
+               currentColumn === "entregado" ? <Truck className="h-4 w-4" /> :
                <Package className="h-4 w-4" />}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>
-              <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />
-              Sin estado
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>
-              <Package className="h-4 w-4 mr-2 text-yellow-600" />
-              {statusLabel("pending")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>
-              <PackageCheck className="h-4 w-4 mr-2 text-green-600" />
-              {statusLabel("ready")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>
-              <Truck className="h-4 w-4 mr-2 text-blue-600" />
-              {statusLabel("delivered")}
-            </DropdownMenuItem>
+            {(["nuevo", "humano", "llamar", "proceso", "listo", "entregado"] as const).map((col) => (
+              <DropdownMenuItem key={col} onClick={() => setColumnMutation.mutate(col)} className={cn(currentColumn === col && "font-semibold")}>
+                {col === "humano" ? <AlertCircle className="h-4 w-4 mr-2 text-red-500" /> :
+                 col === "llamar" ? <Phone className="h-4 w-4 mr-2 text-emerald-500" /> :
+                 col === "proceso" ? <Package className="h-4 w-4 mr-2 text-yellow-600" /> :
+                 col === "listo" ? <PackageCheck className="h-4 w-4 mr-2 text-green-600" /> :
+                 col === "entregado" ? <Truck className="h-4 w-4 mr-2 text-blue-600" /> :
+                 <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />}
+                {colLabel(col)}
+                {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
         </div>
@@ -2150,10 +2179,12 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               </DropdownMenuItem>
               {mobileMenuExpandedSection === "status" && (
                 <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate(null)}>Sin estado</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('pending')}>{statusLabel("pending")}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('ready')}>{statusLabel("ready")}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setOrderStatusMutation.mutate('delivered')}>{statusLabel("delivered")}</DropdownMenuItem>
+                  {(["nuevo", "humano", "llamar", "proceso", "listo", "entregado"] as const).map((col) => (
+                    <DropdownMenuItem key={col} onClick={() => setColumnMutation.mutate(col)} className={cn(currentColumn === col && "font-semibold")}>
+                      {colLabel(col)}
+                      {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
+                    </DropdownMenuItem>
+                  ))}
                 </div>
               )}
               <DropdownMenuItem onClick={openReminderEditor}>
