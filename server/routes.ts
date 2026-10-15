@@ -3459,6 +3459,23 @@ export async function registerRoutes(
     res.json(page);
   });
 
+  // Buscador de contactos para agendar citas manualmente (por nombre o WhatsApp).
+  app.get("/api/conversations/search", requireAuth, async (req, res) => {
+    const q = String(req.query.q || "").trim();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    const assignedAgentId = (req.session as any).role === "agent" ? Number((req.session as any).agentId) : undefined;
+    const term = `%${q.toLowerCase()}%`;
+    const rows: any = await db.execute(sql`
+      SELECT id, wa_id AS "waId", contact_name AS "contactName", updated_at AS "updatedAt"
+      FROM conversations
+      WHERE (${q} = '' OR lower(coalesce(contact_name, '')) LIKE ${term} OR wa_id LIKE ${term})
+        ${assignedAgentId ? sql`AND assigned_agent_id = ${assignedAgentId}` : sql``}
+      ORDER BY updated_at DESC
+      LIMIT ${limit}
+    `);
+    res.json(rows.rows ?? rows);
+  });
+
   app.get(api.conversations.get.path, requireAuth, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const conversation = await storage.getConversation(id);

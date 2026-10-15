@@ -905,6 +905,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 
   const [showReengageDialog, setShowReengageDialog] = useState(false);
   const [showCitaDialog, setShowCitaDialog] = useState(false);
+  const [citaPrefillTime, setCitaPrefillTime] = useState<string | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState("");
   const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
@@ -1494,6 +1495,23 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     setEditingLabelColor("blue");
   };
 
+  // Abre el diálogo de cita intentando leer fecha/hora del mensaje.
+  const openCitaFromMessage = (text?: string | null) => {
+    const t = String(text || "");
+    const timeMatch = t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    setCitaPrefillTime(timeMatch ? `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}` : null);
+    if (/\bmañana\b/i.test(t)) {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      setCitaDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    }
+    setShowCitaDialog(true);
+  };
+  const openCitaDialog = () => {
+    setCitaPrefillTime(null);
+    setShowCitaDialog(true);
+  };
+
   return (
     <div className="flex flex-col h-full max-h-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
       <style dangerouslySetInnerHTML={{ __html: recordingWaveCss }} />
@@ -1860,12 +1878,18 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
         </Dialog>
 
         {/* Agendar cita - slots 45min por sede */}
-        <Dialog open={showCitaDialog} onOpenChange={setShowCitaDialog}>
+        <Dialog
+          open={showCitaDialog}
+          onOpenChange={(o) => {
+            setShowCitaDialog(o);
+            if (!o) setCitaPrefillTime(null);
+          }}
+        >
           <DialogTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="flex-shrink-0 h-7 w-7"
+              className="flex-shrink-0 h-7 w-7 text-emerald-600 dark:text-emerald-400"
               title="Agendar cita diagnóstico (45 min)"
               data-testid="button-cita"
             >
@@ -1901,19 +1925,26 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               ) : !slotsData?.tieneDisponibilidad ? (
                 <div className="rounded-lg border border-dashed p-4 text-center">
                   <p className="text-sm text-muted-foreground">No hay horarios configurados para esa sede y fecha.</p>
-                  <Link href="/citas">
-                    <Button variant="outline" size="sm" className="mt-2">Configurar en /citas</Button>
+                  <Link href={`/citas?date=${citaDate}&sede=${citaSede}`}>
+                    <Button variant="outline" size="sm" className="mt-2" data-testid="button-config-citas">
+                      Configurar horario en Citas
+                    </Button>
                   </Link>
                 </div>
               ) : citaSlots.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Sin horarios ese día. Prueba otra fecha.</p>
               ) : (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Elige un horario (cupo disponible)</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Elige un horario (cupo disponible)
+                    {citaPrefillTime && <span className="ml-1 text-emerald-600 dark:text-emerald-400">· sugerido {citaPrefillTime}</span>}
+                  </p>
                   <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1">
                     {citaSlots.map((s) => {
                       const lleno = !s.disponible;
                       const libres = Math.max(0, s.capacidad - s.ocupados);
+                      const label = new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false });
+                      const sugerido = !!citaPrefillTime && label === citaPrefillTime;
                       return (
                         <button
                           key={s.startAt}
@@ -1925,11 +1956,12 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                             lleno
                               ? "cursor-not-allowed border-slate-300 bg-muted opacity-60"
                               : "border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-[0.98]",
+                            sugerido && !lleno && "ring-2 ring-emerald-500",
                           )}
                           data-testid={`button-slot-${s.startAt}`}
                         >
                           <span className="text-sm font-semibold tabular-nums">
-                            {new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}
+                            {label}
                           </span>
                           <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", lleno ? "bg-slate-400/30 text-slate-600" : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300")}>
                             {lleno ? "Lleno" : `${libres} libre${libres > 1 ? "s" : ""}`}
@@ -2487,7 +2519,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 ) : isOut && /\b\d{1,2}:\d{2}\b/.test(msg.text || "") ? (
                   <button
                     type="button"
-                    onClick={() => setShowCitaDialog(true)}
+                    onClick={() => openCitaFromMessage(msg.text)}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
                     title="Agendar esta cita en el calendario"
                     data-testid={`button-book-from-message-${msg.id}`}
@@ -2745,6 +2777,17 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             className="flex-1 min-w-0 min-h-[40px] max-h-[200px] md:max-h-[140px] resize-none overflow-hidden border-0 bg-white dark:bg-[#2a3942] rounded-3xl px-3 md:px-4 py-2 text-sm leading-[1.35] focus-visible:ring-0"
             rows={1}
           />
+
+          <Button
+            onClick={openCitaDialog}
+            size="icon"
+            variant="ghost"
+            className="rounded-full h-9 w-9 md:h-10 md:w-10 flex-shrink-0 text-emerald-600 dark:text-emerald-400"
+            data-testid="button-agendar-cita-composer"
+            title="Agendar cita"
+          >
+            <CalendarPlus className="h-4 w-4 md:h-5 md:w-5" />
+          </Button>
 
           <Button
             onClick={() => (isRecording ? stopRecording() : startRecording())}

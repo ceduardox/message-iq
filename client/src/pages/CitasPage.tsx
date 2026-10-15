@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearch } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,15 @@ import {
   Check,
   Users,
   Phone,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  X,
+  Settings2,
+  CalendarRange,
+  Eye,
+  EyeOff,
+  User,
 } from "lucide-react";
 
 interface Availability {
@@ -48,20 +59,29 @@ interface Cita {
   waId: string | null;
 }
 
+interface ContactResult {
+  id: number;
+  waId: string;
+  contactName: string | null;
+  updatedAt: string | null;
+}
+
+const APP_TZ = "America/La_Paz";
 const WEEKDAYS_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-const WEEKDAYS_FULL = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte" };
 const SEDE_ADDR: Record<string, string> = { centro: "Cochabamba #694", norte: "Los Cusis #139" };
-const SEDE_ACCENT: Record<string, { tab: string; chip: string; dot: string }> = {
+const SEDE_ACCENT: Record<string, { tab: string; chip: string; dot: string; bar: string }> = {
   centro: {
     tab: "border-cyan-500 bg-cyan-500/15 text-cyan-200",
     chip: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
     dot: "bg-cyan-400",
+    bar: "bg-cyan-400",
   },
   norte: {
     tab: "border-violet-500 bg-violet-500/15 text-violet-200",
     chip: "border-violet-500/40 bg-violet-500/10 text-violet-200",
     dot: "bg-violet-400",
+    bar: "bg-violet-400",
   },
 };
 const ESTADOS = ["reservada", "confirmada", "asistio", "cancelada"];
@@ -72,11 +92,47 @@ const ESTADO_STYLE: Record<string, string> = {
   cancelada: "bg-slate-600/20 text-slate-400 border-slate-500/40 line-through",
 };
 
+const pad = (n: number) => String(n).padStart(2, "0");
+const toDateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const addDaysKey = (key: string, n: number) => {
+  const d = new Date(key + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return toDateKey(d);
+};
+const weekdayOf = (key: string) => new Date(key + "T12:00:00").getDay();
+const startOfWeekKey = (key: string) => {
+  const d = new Date(key + "T12:00:00");
+  const diff = (d.getDay() + 6) % 7; // lunes como inicio
+  d.setDate(d.getDate() - diff);
+  return toDateKey(d);
+};
+const timeOf = (c: Cita) => c.startAt.slice(11, 16);
+const toMin = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+const fmtDayShort = (key: string) =>
+  new Date(key + "T12:00:00").toLocaleDateString("es-BO", { day: "2-digit", month: "short" });
+
 export default function CitasPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Availability form (range-based, mobile first)
+  const search = useSearch();
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const [tab, setTab] = useState("agenda");
+
+  // ===== Agenda state =====
+  const today = toDateKey(new Date());
+  const [selectedDate, setSelectedDate] = useState(searchParams.get("date") || today);
+  const [sedeAgenda, setSedeAgenda] = useState<"centro" | "norte">("centro");
+  const [soloOcupados, setSoloOcupados] = useState(true);
+  const [estadoFilter, setEstadoFilter] = useState("todas");
+  const [highlightCitaId, setHighlightCitaId] = useState<number | null>(
+    searchParams.get("cita") ? parseInt(searchParams.get("cita") as string) : null,
+  );
+
+  // ===== Horarios state =====
   const [sede, setSede] = useState("centro");
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [morningOn, setMorningOn] = useState(true);
@@ -86,22 +142,39 @@ export default function CitasPage() {
   const [afternoonStart, setAfternoonStart] = useState("14:00");
   const [afternoonEnd, setAfternoonEnd] = useState("18:00");
 
-  // Citas filters (supports deep-link: /citas?date=YYYY-MM-DD&cita=<id>)
-  const search = useSearch();
-  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
-  const [filterDate, setFilterDate] = useState(searchParams.get("date") || "");
-  const [estadoFilter, setEstadoFilter] = useState("todas");
-  const [highlightCitaId, setHighlightCitaId] = useState<number | null>(
-    searchParams.get("cita") ? parseInt(searchParams.get("cita") as string) : null,
-  );
+  // ===== Nueva cita dialog =====
+  const [showNueva, setShowNueva] = useState(false);
+  const [dlgContact, setDlgContact] = useState<ContactResult | null>(null);
+  const [dlgQuery, setDlgQuery] = useState("");
+  const [dlgDebounced, setDlgDebounced] = useState("");
+  const [dlgSede, setDlgSede] = useState<"centro" | "norte">("centro");
+  const [dlgDate, setDlgDate] = useState(selectedDate);
+  const [dlgNote, setDlgNote] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const date = searchParams.get("date");
     const cita = searchParams.get("cita");
-    if (date) setFilterDate(date);
-    if (cita) setHighlightCitaId(parseInt(cita));
+    const sedeParam = searchParams.get("sede");
+    if (date) setSelectedDate(date);
+    if (sedeParam === "centro" || sedeParam === "norte") {
+      setSedeAgenda(sedeParam);
+      setSede(sedeParam);
+      // Llegó desde "Configurar horario" en el chat: abrir la pestaña de horarios.
+      setTab("horarios");
+    }
+    if (cita) {
+      setHighlightCitaId(parseInt(cita));
+      setTab("agenda");
+    }
   }, [searchParams]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDlgDebounced(dlgQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [dlgQuery]);
+
+  // ===== Queries =====
   const { data: avail = [], isLoading: availLoading, refetch: refetchAvail } = useQuery<Availability[]>({
     queryKey: ["/api/availabilities"],
     queryFn: async () => {
@@ -112,17 +185,46 @@ export default function CitasPage() {
   });
 
   const { data: citasData, isLoading: citasLoading, refetch: refetchCitas } = useQuery<Cita[]>({
-    queryKey: ["/api/citas", filterDate],
+    queryKey: ["/api/citas", selectedDate],
     queryFn: async () => {
-      const qs = filterDate ? `?date=${filterDate}` : "";
-      const res = await fetch(`/api/citas${qs}`, { credentials: "include" });
+      const res = await fetch(`/api/citas?date=${selectedDate}`, { credentials: "include" });
       if (!res.ok) throw new Error("Error");
       return res.json();
     },
   });
   const citas: Cita[] = Array.isArray(citasData) ? (citasData as Cita[]) : [];
 
-  // Capacidad por horario (por sede para citas; global para llamadas)
+  const { data: upcoming = [] } = useQuery<Cita[]>({
+    queryKey: ["/api/citas", "upcoming"],
+    queryFn: async () => {
+      const res = await fetch("/api/citas", { credentials: "include" });
+      if (!res.ok) throw new Error("Error");
+      return res.json();
+    },
+  });
+
+  const { data: dlgCitasData } = useQuery<Cita[]>({
+    queryKey: ["/api/citas", "dlg", dlgDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/citas?date=${dlgDate}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Error");
+      return res.json();
+    },
+    enabled: showNueva,
+  });
+  const dlgCitas: Cita[] = Array.isArray(dlgCitasData) ? (dlgCitasData as Cita[]) : [];
+
+  const { data: contactResults = [], isFetching: searchingContacts } = useQuery<ContactResult[]>({
+    queryKey: ["/api/conversations/search", dlgDebounced],
+    queryFn: async () => {
+      const res = await fetch(`/api/conversations/search?q=${encodeURIComponent(dlgDebounced)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Error");
+      return res.json();
+    },
+    enabled: showNueva,
+  });
+
+  // Capacidad
   const { data: aiSettings } = useQuery<{ citaCapacityCentro: number | null; citaCapacityNorte: number | null; llamadaCapacity: number | null }>({
     queryKey: ["/api/ai/settings"],
   });
@@ -135,6 +237,8 @@ export default function CitasPage() {
     setCapNorte(aiSettings.citaCapacityNorte ?? 5);
     setCapLlamada(aiSettings.llamadaCapacity ?? 5);
   }, [aiSettings]);
+  const capDe = (s: string) => (s === "norte" ? capNorte : capCentro);
+
   const saveCapacityMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("PATCH", "/api/ai/settings", {
@@ -151,94 +255,75 @@ export default function CitasPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const ocupacionMap = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of citas) {
-      if ((c.kind ?? "cita") !== "cita") continue;
-      const k = `${c.sede}|${c.startAt}`;
-      m.set(k, (m.get(k) || 0) + 1);
+  // ===== Derivados =====
+  const timesFor = (weekday: number, s: string): string[] => {
+    const set = new Set<string>();
+    for (const a of avail) {
+      if (a.sede !== s || a.weekday !== weekday || a.isActive === false) continue;
+      const start = toMin(a.startTime);
+      const end = toMin(a.endTime);
+      for (let m = start; m + 60 <= end; m += 60) set.add(`${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
+    }
+    return Array.from(set).sort();
+  };
+
+  const isLlamada = (c: Cita) => (c.kind ?? "cita") === "llamada";
+
+  const agendaCitas = useMemo(
+    () => citas.filter((c) => !isLlamada(c) && c.sede === sedeAgenda && (estadoFilter === "todas" || c.estado === estadoFilter)),
+    [citas, sedeAgenda, estadoFilter],
+  );
+  const llamadasDia = useMemo(() => citas.filter((c) => isLlamada(c) && (estadoFilter === "todas" || c.estado === estadoFilter)), [citas, estadoFilter]);
+
+  const byTime = useMemo(() => {
+    const m = new Map<string, Cita[]>();
+    for (const c of agendaCitas) {
+      const k = timeOf(c);
+      const list = m.get(k) || [];
+      list.push(c);
+      m.set(k, list);
     }
     return m;
-  }, [citas]);
-  const isLlamada = (c: Cita) => (c.kind ?? "cita") === "llamada";
-  const capDe = (sede: string) => (sede === "norte" ? capNorte : capCentro);
-  const ocupadosDe = (c: Cita) => ocupacionMap.get(`${c.sede}|${c.startAt}`) || 1;
+  }, [agendaCitas]);
 
-  const groupedBySede = useMemo(() => {
-    const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map() };
-    for (const a of avail) {
-      const byDay = map[a.sede] || (map[a.sede] = new Map());
-      const list = byDay.get(a.weekday) || [];
-      list.push(a);
-      byDay.set(a.weekday, list);
+  const agendaRows = useMemo(() => {
+    const weekday = weekdayOf(selectedDate);
+    const times = timesFor(weekday, sedeAgenda);
+    const rows: Array<{ time: string; citas: Cita[]; capacidad: number; extras?: boolean }> = [];
+    const seen = new Set<string>();
+    for (const t of times) {
+      seen.add(t);
+      rows.push({ time: t, citas: byTime.get(t) || [], capacidad: capDe(sedeAgenda) });
     }
-    return map;
-  }, [avail]);
+    for (const t of Array.from(byTime.keys()).sort()) {
+      if (!seen.has(t)) rows.push({ time: t, citas: byTime.get(t) || [], capacidad: capDe(sedeAgenda), extras: true });
+    }
+    return rows.sort((a, b) => a.time.localeCompare(b.time));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, sedeAgenda, avail, byTime, capCentro, capNorte]);
 
-  const filteredCitas = useMemo(
-    () => (estadoFilter === "todas" ? citas : citas.filter((c) => c.estado === estadoFilter)),
-    [citas, estadoFilter],
-  );
-
-  const groupedCitas = useMemo(() => {
-    const map = new Map<string, Cita[]>();
-    for (const c of filteredCitas) {
-      const key = new Date(c.startAt).toLocaleDateString("es-BO", { weekday: "long", day: "2-digit", month: "long" });
-      const list = map.get(key) || [];
+  const llamadasRows = useMemo(() => {
+    const m = new Map<string, Cita[]>();
+    for (const c of llamadasDia) {
+      const k = timeOf(c);
+      const list = m.get(k) || [];
       list.push(c);
-      map.set(key, list);
+      m.set(k, list);
     }
-    return map;
-  }, [filteredCitas]);
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [llamadasDia]);
 
-  const toggleDay = (d: number) =>
-    setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+  const dayCount = (key: string) => {
+    const iso = key;
+    return upcoming.filter((c) => c.startAt.slice(0, 10) === iso && c.estado !== "cancelada").length;
+  };
 
-  const upcomingCount = days.length * ((morningOn ? 1 : 0) + (afternoonOn ? 1 : 0));
+  const weekStart = startOfWeekKey(selectedDate);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDaysKey(weekStart, i));
+  const accent = SEDE_ACCENT[sedeAgenda];
+  const totalDelDia = agendaCitas.length + llamadasDia.length;
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (days.length === 0) throw new Error("Selecciona al menos un día");
-      if (!morningOn && !afternoonOn) throw new Error("Activa al menos un turno");
-      if (morningOn && morningStart >= morningEnd) throw new Error("Turno mañana: la hora de inicio debe ser menor");
-      if (afternoonOn && afternoonStart >= afternoonEnd) throw new Error("Turno tarde: la hora de inicio debe ser menor");
-
-      // Replace availability for the selected weekdays + sede (predictable editing).
-      const existing = avail.filter((a) => a.sede === sede && days.includes(a.weekday));
-      for (const a of existing) {
-        await apiRequest("DELETE", `/api/availabilities/${a.id}`);
-      }
-      for (const wd of days) {
-        if (morningOn) {
-          await apiRequest("POST", "/api/availabilities", { weekday: wd, startTime: morningStart, endTime: morningEnd, sede });
-        }
-        if (afternoonOn) {
-          await apiRequest("POST", "/api/availabilities", { weekday: wd, startTime: afternoonStart, endTime: afternoonEnd, sede });
-        }
-      }
-      return { dias: days.length, turnos: upcomingCount };
-    },
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] });
-      toast({ title: "Horario guardado", description: `${r.dias} día(s) · ${r.turnos} bloque(s) en ${SEDE_LABEL[sede]}` });
-    },
-    onError: (e: Error) => toast({ title: "Revisa los datos", description: e.message, variant: "destructive" }),
-  });
-
-  const clearDayMutation = useMutation({
-    mutationFn: async () => {
-      const existing = avail.filter((a) => a.sede === sede && days.includes(a.weekday));
-      for (const a of existing) {
-        await apiRequest("DELETE", `/api/availabilities/${a.id}`);
-      }
-      return existing.length;
-    },
-    onSuccess: (n) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] });
-      toast({ title: n > 0 ? `${n} bloque(s) quitado(s)` : "No había bloques en esos días" });
-    },
-  });
-
+  // ===== Mutations =====
   const updateCita = useMutation({
     mutationFn: async ({ id, estado }: { id: number; estado: string }) => {
       const res = await fetch(`/api/citas/${id}`, {
@@ -267,19 +352,155 @@ export default function CitasPage() {
     },
   });
 
-  const todayKey = new Date().toDateString();
-  const accent = SEDE_ACCENT[sede] || SEDE_ACCENT.centro;
+  const createCita = useMutation({
+    mutationFn: async (payload: { conversationId: number; sede: string; date: string; time: string; note?: string }) => {
+      const startAt = new Date(`${payload.date}T${payload.time}:00-04:00`).toISOString();
+      const res = await fetch("/api/citas", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: payload.conversationId, sede: payload.sede, startAt, note: payload.note }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al agendar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/citas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Cita agendada", description: "Se guardó en la agenda y se avisará al contacto." });
+      closeNueva();
+    },
+    onError: (e: Error) => toast({ title: "No se pudo agendar", description: e.message, variant: "destructive" }),
+  });
+
+  const closeNueva = () => {
+    setShowNueva(false);
+    setDlgContact(null);
+    setDlgQuery("");
+    setDlgDebounced("");
+    setDlgNote("");
+  };
+
+  const openNueva = (opts?: { sede?: "centro" | "norte"; date?: string; time?: string }) => {
+    setDlgSede(opts?.sede || sedeAgenda);
+    setDlgDate(opts?.date || selectedDate);
+    setDlgNote(opts?.time ? "" : dlgNote);
+    setShowNueva(true);
+    setTimeout(() => searchInputRef.current?.focus(), 120);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (days.length === 0) throw new Error("Selecciona al menos un día");
+      if (!morningOn && !afternoonOn) throw new Error("Activa al menos un turno");
+      if (morningOn && morningStart >= morningEnd) throw new Error("Turno mañana: la hora de inicio debe ser menor");
+      if (afternoonOn && afternoonStart >= afternoonEnd) throw new Error("Turno tarde: la hora de inicio debe ser menor");
+      const existing = avail.filter((a) => a.sede === sede && days.includes(a.weekday));
+      for (const a of existing) await apiRequest("DELETE", `/api/availabilities/${a.id}`);
+      for (const wd of days) {
+        if (morningOn) await apiRequest("POST", "/api/availabilities", { weekday: wd, startTime: morningStart, endTime: morningEnd, sede });
+        if (afternoonOn) await apiRequest("POST", "/api/availabilities", { weekday: wd, startTime: afternoonStart, endTime: afternoonEnd, sede });
+      }
+      return { dias: days.length, turnos: days.length * ((morningOn ? 1 : 0) + (afternoonOn ? 1 : 0)) };
+    },
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] });
+      toast({ title: "Horario guardado", description: `${r.dias} día(s) · ${r.turnos} bloque(s) en ${SEDE_LABEL[sede]}` });
+    },
+    onError: (e: Error) => toast({ title: "Revisa los datos", description: e.message, variant: "destructive" }),
+  });
+
+  const clearDayMutation = useMutation({
+    mutationFn: async () => {
+      const existing = avail.filter((a) => a.sede === sede && days.includes(a.weekday));
+      for (const a of existing) await apiRequest("DELETE", `/api/availabilities/${a.id}`);
+      return existing.length;
+    },
+    onSuccess: (n) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] });
+      toast({ title: n > 0 ? `${n} bloque(s) quitado(s)` : "No había bloques en esos días" });
+    },
+  });
+
+  const toggleDay = (d: number) => setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+
+  const groupedBySede = useMemo(() => {
+    const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map() };
+    for (const a of avail) {
+      const byDay = map[a.sede] || (map[a.sede] = new Map());
+      const list = byDay.get(a.weekday) || [];
+      list.push(a);
+      byDay.set(a.weekday, list);
+    }
+    return map;
+  }, [avail]);
 
   useEffect(() => {
-    if (!highlightCitaId || filteredCitas.length === 0) return;
+    if (!highlightCitaId || citas.length === 0) return;
     const el = document.getElementById(`cita-${highlightCitaId}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightCitaId, filteredCitas]);
+  }, [highlightCitaId, citas]);
+
+  // Slots del diálogo
+  const dlgTimes = useMemo(() => {
+    const weekday = weekdayOf(dlgDate);
+    return timesFor(weekday, dlgSede);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dlgDate, dlgSede, avail]);
+  const dlgByTime = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of dlgCitas) {
+      if (isLlamada(c) || c.sede !== dlgSede || c.estado === "cancelada") continue;
+      const k = timeOf(c);
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return m;
+  }, [dlgCitas, dlgSede]);
+  const dlgCap = capDe(dlgSede);
+
+  const renderCita = (c: Cita) => (
+    <div
+      key={c.id}
+      id={`cita-${c.id}`}
+      className={cn(
+        "group flex items-center gap-2 rounded-lg border bg-slate-800/50 px-2.5 py-1.5 transition-colors",
+        highlightCitaId === c.id ? "border-emerald-500/70 ring-2 ring-emerald-500/40" : "border-slate-700/60 hover:border-slate-600",
+      )}
+      data-testid={`cita-${c.id}`}
+    >
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.contactName || c.waId}</span>
+      {c.note && <span className="hidden max-w-[120px] truncate text-[11px] text-slate-500 sm:inline">· {c.note}</span>}
+      <span className={cn("hidden rounded-full border px-2 py-0.5 text-[10px] capitalize sm:inline-block", ESTADO_STYLE[c.estado] || ESTADO_STYLE.reservada)}>
+        {c.estado}
+      </span>
+      <select
+        value={c.estado}
+        onChange={(e) => updateCita.mutate({ id: c.id, estado: e.target.value })}
+        className="h-7 rounded-md border border-slate-600/60 bg-slate-900/70 px-1.5 text-[11px] capitalize text-slate-200"
+        data-testid={`select-cita-estado-${c.id}`}
+      >
+        {ESTADOS.map((e) => (
+          <option key={e} value={e} className="capitalize">{e}</option>
+        ))}
+      </select>
+      <button
+        onClick={() => deleteCita.mutate(c.id)}
+        className="rounded p-1 text-red-400/70 hover:bg-red-500/10 hover:text-red-300"
+        data-testid={`button-del-cita-${c.id}`}
+        title="Eliminar cita"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-28 text-slate-100 lg:pb-8">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-slate-700/50 bg-slate-900/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <Link href="/">
             <Button variant="ghost" size="icon" className="text-slate-300 hover:bg-slate-800/70" data-testid="button-back-citas">
@@ -290,302 +511,588 @@ export default function CitasPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/20">
               <CalendarPlus className="h-5 w-5 text-white" />
             </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight">Mis horarios y citas</h1>
+            <div className="hidden sm:block">
+              <h1 className="text-base font-bold leading-tight">Citas e horarios</h1>
               <p className="text-xs text-slate-400">Diagnóstico gratuito · 1 hora</p>
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/reminders">
-              <Button variant="outline" size="sm" className="border-slate-600 bg-slate-900/40 text-slate-100">Recordatorios</Button>
-            </Link>
-            <Button variant="ghost" size="icon" className="text-slate-300 hover:bg-slate-800/70" onClick={() => { refetchAvail(); refetchCitas(); }}>
+            <Button
+              size="sm"
+              onClick={() => openNueva()}
+              className="bg-gradient-to-r from-emerald-500 to-cyan-500 text-white"
+              data-testid="button-nueva-cita"
+            >
+              <CalendarPlus className="mr-1.5 h-4 w-4" /> Nueva cita
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-300 hover:bg-slate-800/70"
+              onClick={() => { refetchAvail(); refetchCitas(); }}
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-5 px-4 py-5">
-        {/* ===== Capacidad por horario ===== */}
-        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <Users className="h-4 w-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold">Capacidad por horario</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-slate-400">Citas · Centro (mismo horario)</Label>
-              <Input type="number" min={1} max={50} value={capCentro} onChange={(e) => setCapCentro(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-centro" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-slate-400">Citas · Norte (mismo horario)</Label>
-              <Input type="number" min={1} max={50} value={capNorte} onChange={(e) => setCapNorte(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-norte" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-slate-400">Llamadas (global, mismo horario)</Label>
-              <Input type="number" min={1} max={50} value={capLlamada} onChange={(e) => setCapLlamada(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-llamada" />
-            </div>
-          </div>
-          <Button onClick={() => saveCapacityMutation.mutate()} disabled={saveCapacityMutation.isPending} className="mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-capacity">
-            {saveCapacityMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-            Guardar capacidad
-          </Button>
-          <p className="mt-2 text-xs text-slate-500">Cuenta por <strong>mismo horario</strong>. Las llamadas se cuentan aparte (global), sin importar la sede.</p>
-        </section>
+      <div className="mx-auto max-w-5xl px-4 py-4">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="grid w-full grid-cols-3 bg-slate-800/60">
+            <TabsTrigger value="agenda" className="gap-1.5 data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <CalendarRange className="h-4 w-4" /> Agenda
+            </TabsTrigger>
+            <TabsTrigger value="horarios" className="gap-1.5 data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <Clock className="h-4 w-4" /> Horarios
+            </TabsTrigger>
+            <TabsTrigger value="config" className="gap-1.5 data-[state=active]:bg-slate-700 data-[state=active]:text-white">
+              <Settings2 className="h-4 w-4" /> Config
+            </TabsTrigger>
+          </TabsList>
 
-        {/* ===== Configurar horario ===== */}
-        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-400" />
-            <h2 className="text-sm font-semibold">Configurar horario</h2>
-          </div>
-
-          {/* Sede */}
-          <div className="mb-4">
-            <Label className="mb-2 block text-xs text-slate-400">Sede</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["centro", "norte"] as const).map((s) => (
+          {/* ================= AGENDA ================= */}
+          <TabsContent value="agenda" className="space-y-4">
+            {/* Navegación de semana */}
+            <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3 shadow-xl backdrop-blur-sm">
+              <div className="mb-2 flex items-center justify-between">
                 <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSede(s)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-xl border-2 p-3 text-left transition-all",
-                    sede === s ? SEDE_ACCENT[s].tab : "border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-slate-500",
-                  )}
-                  data-testid={`button-sede-${s}`}
+                  onClick={() => setSelectedDate(addDaysKey(selectedDate, -7))}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  data-testid="button-prev-week"
                 >
-                  <MapPin className={cn("h-4 w-4", sede === s ? "" : "text-slate-500")} />
-                  <span>
-                    <span className="block text-sm font-semibold">{SEDE_LABEL[s]}</span>
-                    <span className="block text-[11px] opacity-70">{SEDE_ADDR[s]}</span>
-                  </span>
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Días */}
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <Label className="text-xs text-slate-400">Días</Label>
-              <div className="flex gap-1.5">
-                <button onClick={() => setDays([1, 2, 3, 4, 5])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50" data-testid="shortcut-lv">Lun–Vie</button>
-                <button onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50" data-testid="shortcut-all">Todos</button>
-                <button onClick={() => setDays([])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-red-500/50" data-testid="shortcut-none">Ninguno</button>
+                <button
+                  onClick={() => setSelectedDate(today)}
+                  className="text-sm font-semibold capitalize text-slate-200"
+                  data-testid="button-today"
+                >
+                  {new Date(selectedDate + "T12:00:00").toLocaleDateString("es-BO", { month: "long", year: "numeric" })}
+                </button>
+                <button
+                  onClick={() => setSelectedDate(addDaysKey(selectedDate, 7))}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  data-testid="button-next-week"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            </div>
-            <div className="grid grid-cols-7 gap-1.5">
-              {[1, 2, 3, 4, 5, 6, 0].map((d) => {
-                const on = days.includes(d);
-                return (
+              <div className="grid grid-cols-7 gap-1">
+                {weekDays.map((key) => {
+                  const active = key === selectedDate;
+                  const isToday = key === today;
+                  const count = dayCount(key);
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setSelectedDate(key)}
+                      className={cn(
+                        "relative flex flex-col items-center rounded-xl border py-2 transition-all",
+                        active ? "border-emerald-500 bg-emerald-500/20 text-white" : "border-transparent bg-slate-800/40 text-slate-300 hover:bg-slate-800",
+                      )}
+                      data-testid={`day-${key}`}
+                    >
+                      <span className="text-[10px] uppercase opacity-70">{WEEKDAYS_SHORT[weekdayOf(key)]}</span>
+                      <span className={cn("text-sm font-bold", isToday && !active && "text-emerald-400")}>{key.slice(8, 10)}</span>
+                      {count > 0 && (
+                        <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-slate-950">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Controles */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex overflow-hidden rounded-xl border border-slate-700/60">
+                {(["centro", "norte"] as const).map((s) => (
                   <button
-                    key={d}
-                    type="button"
-                    onClick={() => toggleDay(d)}
+                    key={s}
+                    onClick={() => setSedeAgenda(s)}
                     className={cn(
-                      "flex h-12 flex-col items-center justify-center rounded-xl border-2 text-xs font-semibold transition-all",
-                      on ? "border-emerald-500 bg-emerald-500/20 text-white" : "border-slate-600/50 bg-slate-800/50 text-slate-400",
+                      "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors",
+                      sedeAgenda === s ? SEDE_ACCENT[s].tab : "bg-slate-800/40 text-slate-400 hover:text-slate-200",
                     )}
-                    data-testid={`day-${d}`}
+                    data-testid={`agenda-sede-${s}`}
                   >
-                    {WEEKDAYS_SHORT[d]}
-                    {on && <Check className="mt-0.5 h-3 w-3" />}
+                    <span className={cn("h-2 w-2 rounded-full", SEDE_ACCENT[s].dot)} />
+                    {SEDE_LABEL[s]}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Turnos */}
-          <div className="space-y-3">
-            <div className={cn("rounded-xl border p-3 transition-all", morningOn ? "border-amber-500/50 bg-amber-500/10" : "border-slate-600/50 bg-slate-800/40")}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sun className={cn("h-4 w-4", morningOn ? "text-amber-400" : "text-slate-500")} />
-                  <span className="text-sm font-medium">Turno mañana</span>
-                </div>
-                <Switch checked={morningOn} onCheckedChange={setMorningOn} data-testid="switch-morning" />
+                ))}
               </div>
-              {morningOn && (
-                <div className="mt-3 flex items-center gap-2">
-                  <Input type="time" value={morningStart} onChange={(e) => setMorningStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" data-testid="input-morning-start" />
-                  <span className="text-slate-500">–</span>
-                  <Input type="time" value={morningEnd} onChange={(e) => setMorningEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" data-testid="input-morning-end" />
-                </div>
-              )}
-            </div>
 
-            <div className={cn("rounded-xl border p-3 transition-all", afternoonOn ? "border-indigo-500/50 bg-indigo-500/10" : "border-slate-600/50 bg-slate-800/40")}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Moon className={cn("h-4 w-4", afternoonOn ? "text-indigo-300" : "text-slate-500")} />
-                  <span className="text-sm font-medium">Turno tarde</span>
-                </div>
-                <Switch checked={afternoonOn} onCheckedChange={setAfternoonOn} data-testid="switch-afternoon" />
-              </div>
-              {afternoonOn && (
-                <div className="mt-3 flex items-center gap-2">
-                  <Input type="time" value={afternoonStart} onChange={(e) => setAfternoonStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" data-testid="input-afternoon-start" />
-                  <span className="text-slate-500">–</span>
-                  <Input type="time" value={afternoonEnd} onChange={(e) => setAfternoonEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" data-testid="input-afternoon-end" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2">
-            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-schedule">
-              {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-              Guardar horario
-            </Button>
-            <Button variant="outline" onClick={() => clearDayMutation.mutate()} disabled={clearDayMutation.isPending} className="border-slate-600 bg-slate-800/60 text-slate-200" data-testid="button-clear-days">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">Reemplaza el horario de {SEDE_LABEL[sede]} en los días elegidos. Se crean citas de 1 hora.</p>
-        </section>
-
-        {/* ===== Resumen semanal ===== */}
-        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold">Mi semana</h2>
-          </div>
-          {availLoading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-          ) : (
-            <div className="space-y-3">
-              {(["centro", "norte"] as const).map((s) => {
-                const byDay = groupedBySede[s] || new Map();
-                const total = Array.from(byDay.values()).reduce((acc, l) => acc + l.length, 0);
-                return (
-                  <div key={s} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-3">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className={cn("h-2.5 w-2.5 rounded-full", SEDE_ACCENT[s].dot)} />
-                      <span className="text-sm font-semibold">{SEDE_LABEL[s]}</span>
-                      <span className="ml-auto text-xs text-slate-500">{total} bloque(s)</span>
-                    </div>
-                    {total === 0 ? (
-                      <p className="text-xs text-slate-600">Sin horarios cargados.</p>
-                    ) : (
-                      <div className="space-y-1">
-                        {[1, 2, 3, 4, 5, 6, 0].map((wd) => {
-                          const list = (byDay.get(wd) || []).slice().sort((x, y) => x.startTime.localeCompare(y.startTime));
-                          if (list.length === 0) return null;
-                          return (
-                            <div key={wd} className="flex items-start gap-2">
-                              <span className="w-10 shrink-0 pt-1 text-[11px] font-semibold text-slate-400">{WEEKDAYS_SHORT[wd]}</span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {list.map((a) => (
-                                  <span key={a.id} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] tabular-nums", SEDE_ACCENT[s].chip)} data-testid={`avail-${a.id}`}>
-                                    {a.startTime}–{a.endTime}
-                                    <button onClick={() => apiRequest("DELETE", `/api/availabilities/${a.id}`).then(() => queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] }))} className="ml-0.5 opacity-50 hover:opacity-100" data-testid={`button-del-avail-${a.id}`}>
-                                      <Trash2 className="h-2.5 w-2.5" />
-                                    </button>
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* ===== Citas ===== */}
-        <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="mr-auto text-sm font-semibold">{filterDate ? "Citas del día" : "Próximas citas"}</h2>
-            <Input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="h-9 w-auto border-slate-600/60 bg-slate-800/60 text-slate-100" data-testid="input-citas-date" />
-            {filterDate && (
-              <Button variant="outline" size="sm" onClick={() => setFilterDate("")} className="border-slate-600 bg-slate-800/60 text-slate-200" data-testid="button-citas-ver-proximas">
-                Ver próximas
-              </Button>
-            )}
-          </div>
-
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {["todas", ...ESTADOS].map((e) => (
-              <button key={e} onClick={() => setEstadoFilter(e)} className={cn("rounded-full border px-3 py-1 text-xs capitalize transition-all", estadoFilter === e ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200" : "border-slate-600/50 bg-slate-800/40 text-slate-400 hover:text-slate-200")} data-testid={`filter-estado-${e}`}>
-                {e}
+              <button
+                onClick={() => setSoloOcupados((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
+                  soloOcupados ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" : "border-slate-700/60 bg-slate-800/40 text-slate-400",
+                )}
+                data-testid="toggle-solo-ocupados"
+              >
+                {soloOcupados ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {soloOcupados ? "Solo con citas" : "Ver horarios libres"}
               </button>
-            ))}
-          </div>
 
-          {citasLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-          ) : filteredCitas.length === 0 ? (
-            <div className="py-10 text-center">
-              <CalendarPlus className="mx-auto mb-3 h-10 w-10 text-slate-600" />
-              <p className="text-sm text-slate-400">Sin citas {filterDate ? "este día" : "próximas"}.</p>
-              <p className="text-xs text-slate-600">Se agendan solas cuando Lexi confirma un horario.</p>
+              <select
+                value={estadoFilter}
+                onChange={(e) => setEstadoFilter(e.target.value)}
+                className="h-8 rounded-xl border border-slate-700/60 bg-slate-800/40 px-2 text-xs capitalize text-slate-300"
+                data-testid="filter-estado"
+              >
+                {["todas", ...ESTADOS].map((e) => (
+                  <option key={e} value={e} className="capitalize">{e === "todas" ? "Todos los estados" : e}</option>
+                ))}
+              </select>
+
+              <span className="ml-auto text-xs text-slate-500">{totalDelDia} cita(s) · {fmtDayShort(selectedDate)}</span>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {Array.from(groupedCitas.entries()).map(([dayLabel, list]) => {
-                const isToday = new Date(list[0].startAt).toDateString() === todayKey;
-                return (
-                  <div key={dayLabel}>
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className={cn("text-xs font-semibold uppercase tracking-wide", isToday ? "text-emerald-400" : "text-slate-400")}>{isToday ? "Hoy" : dayLabel}</span>
-                      <span className="h-px flex-1 bg-slate-700/60" />
-                      <span className="text-xs text-slate-500">{list.length} cita{list.length > 1 ? "s" : ""}</span>
+
+            {/* Lista de agenda */}
+            <section className="space-y-2">
+              {citasLoading || availLoading ? (
+                <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+              ) : (
+                <>
+                  {agendaRows.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-slate-700/60 py-10 text-center">
+                      <CalendarPlus className="mx-auto mb-2 h-9 w-9 text-slate-600" />
+                      <p className="text-sm text-slate-400">Sin horarios configurados este día.</p>
+                      <Button variant="outline" size="sm" className="mt-3 border-slate-600 bg-slate-800/60" onClick={() => setTab("horarios")}>
+                        Configurar horario
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      {list.map((c) => (
-                        <div
-                          key={c.id}
-                          id={`cita-${c.id}`}
-                          className={cn(
-                            "flex flex-wrap items-center gap-3 rounded-xl border bg-slate-800/40 p-3 transition-colors hover:border-slate-600",
-                            highlightCitaId === c.id ? "border-emerald-500/70 ring-2 ring-emerald-500/40" : "border-slate-700/60",
-                          )}
-                          data-testid={`cita-${c.id}`}
-                        >
-                          <div className="flex h-11 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-slate-900/70 text-center">
-                            <span className="text-sm font-bold leading-none">{new Date(c.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                            <span className="text-[10px] text-slate-500">{isLlamada(c) ? "llamada" : `${ocupadosDe(c)}/${capDe(c.sede)}`}</span>
-                          </div>
-                          <div className="min-w-[140px] flex-1">
-                            <p className="truncate text-sm font-medium">{c.contactName || c.waId}</p>
-                            <p className="flex items-center gap-1 text-xs text-slate-400">
-                              {isLlamada(c) ? <Phone className="h-3 w-3 text-emerald-400" /> : <MapPin className="h-3 w-3" />}
-                              {isLlamada(c) ? "Llamada" : (SEDE_LABEL[c.sede] || c.sede)}
-                              {c.note && <span className="ml-1 truncate text-slate-500">· {c.note}</span>}
-                            </p>
-                          </div>
-                          <span className={cn("rounded-full border px-2.5 py-0.5 text-xs capitalize", ESTADO_STYLE[c.estado] || ESTADO_STYLE.reservada)}>{c.estado}</span>
-                          <select value={c.estado} onChange={(e) => updateCita.mutate({ id: c.id, estado: e.target.value })} className="h-8 rounded-lg border border-slate-600/60 bg-slate-900/70 px-2 text-xs capitalize text-slate-200" data-testid={`select-cita-estado-${c.id}`}>
-                            {ESTADOS.map((e) => <option key={e} value={e} className="capitalize">{e}</option>)}
-                          </select>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:bg-red-500/10" onClick={() => deleteCita.mutate(c.id)} data-testid={`button-del-cita-${c.id}`}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                  )}
+
+                  {agendaRows.map((row) => {
+                    const ocupados = row.citas.length;
+                    const pct = Math.min(100, Math.round((ocupados / Math.max(1, row.capacidad)) * 100));
+                    const lleno = ocupados >= row.capacidad;
+                    if (soloOcupados && ocupados === 0 && !row.extras) return null;
+                    return (
+                      <div
+                        key={row.time}
+                        className={cn(
+                          "flex gap-3 rounded-2xl border bg-slate-900/60 p-2.5 shadow-sm",
+                          ocupados > 0 ? "border-slate-700/60" : "border-slate-800/60",
+                        )}
+                        data-testid={`slot-${row.time}`}
+                      >
+                        {/* Hora */}
+                        <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-800/60 py-1">
+                          <span className={cn("text-base font-bold tabular-nums", ocupados > 0 ? "text-white" : "text-slate-400")}>{row.time}</span>
+                          <span className={cn("text-[10px] font-medium tabular-nums", lleno ? "text-red-400" : ocupados > 0 ? "text-emerald-400" : "text-slate-500")}>
+                            {ocupados}/{row.capacidad}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </main>
 
-      {/* Sticky save bar (mobile) */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-700/60 bg-slate-900/95 p-3 backdrop-blur-xl lg:hidden">
-        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-sticky">
-          {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-          Guardar horario · {SEDE_LABEL[sede]} · {upcomingCount} bloque(s)
-        </Button>
+                        {/* Contenido */}
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="h-1 overflow-hidden rounded-full bg-slate-800">
+                            <div className={cn("h-full rounded-full", lleno ? "bg-red-500/70" : accent.bar)} style={{ width: `${pct}%` }} />
+                          </div>
+                          {ocupados === 0 ? (
+                            <button
+                              onClick={() => openNueva({ sede: sedeAgenda, date: selectedDate })}
+                              className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-slate-700/60 px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:border-emerald-500/50 hover:text-emerald-300"
+                            >
+                              <CalendarPlus className="h-3.5 w-3.5" /> Libre · agendar aquí
+                            </button>
+                          ) : (
+                            <>
+                              {row.citas.map(renderCita)}
+                              {!lleno && (
+                                <button
+                                  onClick={() => openNueva({ sede: sedeAgenda, date: selectedDate })}
+                                  className="flex items-center gap-1 text-[11px] text-slate-500 transition-colors hover:text-emerald-300"
+                                >
+                                  <CalendarPlus className="h-3 w-3" /> Agregar otra ({row.capacidad - ocupados} libre{(row.capacidad - ocupados) > 1 ? "s" : ""})
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {row.extras && <p className="text-[10px] text-amber-400/80">Fuera del horario configurado</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Llamadas */}
+                  {llamadasRows.length > 0 && (
+                    <div className="mt-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-emerald-400" />
+                        <h3 className="text-sm font-semibold">Llamadas del día</h3>
+                        <span className="h-px flex-1 bg-slate-700/60" />
+                        <span className="text-xs text-slate-500">{llamadasDia.length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {llamadasRows.map(([time, list]) => (
+                          <div key={time} className="flex gap-3 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-2.5">
+                            <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-800/60 py-1">
+                              <span className="text-base font-bold tabular-nums">{time}</span>
+                              <span className="text-[10px] text-emerald-400">{list.length}/{capLlamada}</span>
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              {list.map(renderCita)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {agendaRows.length > 0 && agendaCitas.length === 0 && llamadasRows.length === 0 && soloOcupados && (
+                    <div className="rounded-2xl border border-dashed border-slate-700/60 py-8 text-center text-sm text-slate-500">
+                      No hay citas para {SEDE_LABEL[sedeAgenda]} este día.
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </TabsContent>
+
+          {/* ================= HORARIOS ================= */}
+          <TabsContent value="horarios" className="space-y-4">
+            <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
+              <div className="mb-3 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-amber-400" />
+                <h2 className="text-sm font-semibold">Configurar horario</h2>
+              </div>
+
+              <div className="mb-4">
+                <Label className="mb-2 block text-xs text-slate-400">Sede</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["centro", "norte"] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSede(s)}
+                      className={cn(
+                        "flex items-center gap-2 rounded-xl border-2 p-3 text-left transition-all",
+                        sede === s ? SEDE_ACCENT[s].tab : "border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-slate-500",
+                      )}
+                      data-testid={`button-sede-${s}`}
+                    >
+                      <MapPin className={cn("h-4 w-4", sede === s ? "" : "text-slate-500")} />
+                      <span>
+                        <span className="block text-sm font-semibold">{SEDE_LABEL[s]}</span>
+                        <span className="block text-[11px] opacity-70">{SEDE_ADDR[s]}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <Label className="text-xs text-slate-400">Días</Label>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setDays([1, 2, 3, 4, 5])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50">Lun–Vie</button>
+                    <button onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50">Todos</button>
+                    <button onClick={() => setDays([])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-red-500/50">Ninguno</button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                    const on = days.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleDay(d)}
+                        className={cn(
+                          "flex h-12 flex-col items-center justify-center rounded-xl border-2 text-xs font-semibold transition-all",
+                          on ? "border-emerald-500 bg-emerald-500/20 text-white" : "border-slate-600/50 bg-slate-800/50 text-slate-400",
+                        )}
+                        data-testid={`day-${d}`}
+                      >
+                        {WEEKDAYS_SHORT[d]}
+                        {on && <Check className="mt-0.5 h-3 w-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className={cn("rounded-xl border p-3 transition-all", morningOn ? "border-amber-500/50 bg-amber-500/10" : "border-slate-600/50 bg-slate-800/40")}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sun className={cn("h-4 w-4", morningOn ? "text-amber-400" : "text-slate-500")} />
+                      <span className="text-sm font-medium">Turno mañana</span>
+                    </div>
+                    <Switch checked={morningOn} onCheckedChange={setMorningOn} />
+                  </div>
+                  {morningOn && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Input type="time" value={morningStart} onChange={(e) => setMorningStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+                      <span className="text-slate-500">–</span>
+                      <Input type="time" value={morningEnd} onChange={(e) => setMorningEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+                    </div>
+                  )}
+                </div>
+
+                <div className={cn("rounded-xl border p-3 transition-all", afternoonOn ? "border-indigo-500/50 bg-indigo-500/10" : "border-slate-600/50 bg-slate-800/40")}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Moon className={cn("h-4 w-4", afternoonOn ? "text-indigo-300" : "text-slate-500")} />
+                      <span className="text-sm font-medium">Turno tarde</span>
+                    </div>
+                    <Switch checked={afternoonOn} onCheckedChange={setAfternoonOn} />
+                  </div>
+                  {afternoonOn && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Input type="time" value={afternoonStart} onChange={(e) => setAfternoonStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+                      <span className="text-slate-500">–</span>
+                      <Input type="time" value={afternoonEnd} onChange={(e) => setAfternoonEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center gap-2">
+                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white">
+                  {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                  Guardar horario
+                </Button>
+                <Button variant="outline" onClick={() => clearDayMutation.mutate()} disabled={clearDayMutation.isPending} className="border-slate-600 bg-slate-800/60 text-slate-200">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Reemplaza el horario de {SEDE_LABEL[sede]} en los días elegidos. Se crean citas de 1 hora.</p>
+            </section>
+
+            {/* Resumen semanal */}
+            <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
+              <div className="mb-3 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-emerald-400" />
+                <h2 className="text-sm font-semibold">Mi semana</h2>
+              </div>
+              {availLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+              ) : (
+                <div className="space-y-3">
+                  {(["centro", "norte"] as const).map((s) => {
+                    const byDay = groupedBySede[s] || new Map();
+                    const total = Array.from(byDay.values()).reduce((acc, l) => acc + l.length, 0);
+                    return (
+                      <div key={s} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className={cn("h-2.5 w-2.5 rounded-full", SEDE_ACCENT[s].dot)} />
+                          <span className="text-sm font-semibold">{SEDE_LABEL[s]}</span>
+                          <span className="ml-auto text-xs text-slate-500">{total} bloque(s)</span>
+                        </div>
+                        {total === 0 ? (
+                          <p className="text-xs text-slate-600">Sin horarios cargados.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {[1, 2, 3, 4, 5, 6, 0].map((wd) => {
+                              const list = (byDay.get(wd) || []).slice().sort((x, y) => x.startTime.localeCompare(y.startTime));
+                              if (list.length === 0) return null;
+                              return (
+                                <div key={wd} className="flex items-start gap-2">
+                                  <span className="w-10 shrink-0 pt-1 text-[11px] font-semibold text-slate-400">{WEEKDAYS_SHORT[wd]}</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {list.map((a) => (
+                                      <span key={a.id} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] tabular-nums", SEDE_ACCENT[s].chip)}>
+                                        {a.startTime}–{a.endTime}
+                                        <button
+                                          onClick={() => apiRequest("DELETE", `/api/availabilities/${a.id}`).then(() => queryClient.invalidateQueries({ queryKey: ["/api/availabilities"] }))}
+                                          className="ml-0.5 opacity-50 hover:opacity-100"
+                                        >
+                                          <Trash2 className="h-2.5 w-2.5" />
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </TabsContent>
+
+          {/* ================= CONFIG ================= */}
+          <TabsContent value="config" className="space-y-4">
+            <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
+              <div className="mb-3 flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-400" />
+                <h2 className="text-sm font-semibold">Capacidad por horario</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-400">Citas · Centro (mismo horario)</Label>
+                  <Input type="number" min={1} max={50} value={capCentro} onChange={(e) => setCapCentro(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-centro" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-400">Citas · Norte (mismo horario)</Label>
+                  <Input type="number" min={1} max={50} value={capNorte} onChange={(e) => setCapNorte(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-norte" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-400">Llamadas (global, mismo horario)</Label>
+                  <Input type="number" min={1} max={50} value={capLlamada} onChange={(e) => setCapLlamada(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-llamada" />
+                </div>
+              </div>
+              <Button onClick={() => saveCapacityMutation.mutate()} disabled={saveCapacityMutation.isPending} className="mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-capacity">
+                {saveCapacityMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                Guardar capacidad
+              </Button>
+              <p className="mt-2 text-xs text-slate-500">Cuenta por <strong>mismo horario</strong>. Puedes tener varias citas a la misma hora (hasta la capacidad). Las llamadas se cuentan aparte.</p>
+            </section>
+
+            <Link href="/reminders">
+              <Button variant="outline" className="w-full border-slate-600 bg-slate-800/40 text-slate-200">
+                <Clock className="mr-2 h-4 w-4" /> Ver recordatorios
+              </Button>
+            </Link>
+          </TabsContent>
+        </Tabs>
       </div>
+
+      {/* Sticky guardar horario (mobile, solo tab horarios) */}
+      {tab === "horarios" && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-700/60 bg-slate-900/95 p-3 backdrop-blur-xl lg:hidden">
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white">
+            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+            Guardar horario · {SEDE_LABEL[sede]}
+          </Button>
+        </div>
+      )}
+
+      {/* ================= Diálogo Nueva cita ================= */}
+      <Dialog open={showNueva} onOpenChange={(o) => (o ? setShowNueva(true) : closeNueva())}>
+        <DialogContent className="max-w-md border-slate-700 bg-slate-900 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarPlus className="h-5 w-5 text-emerald-500" /> Nueva cita
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Contacto */}
+            {dlgContact ? (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-2.5">
+                <User className="h-4 w-4 text-emerald-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{dlgContact.contactName || `+${dlgContact.waId}`}</p>
+                  <p className="truncate text-[11px] text-slate-400">+{dlgContact.waId}</p>
+                </div>
+                <button onClick={() => setDlgContact(null)} className="rounded p-1 text-slate-400 hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <Input
+                    ref={searchInputRef}
+                    value={dlgQuery}
+                    onChange={(e) => setDlgQuery(e.target.value)}
+                    placeholder="Buscar por nombre o WhatsApp…"
+                    className="border-slate-600/60 bg-slate-800/50 pl-9 text-white"
+                    data-testid="input-buscar-contacto"
+                  />
+                  {searchingContacts && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500" />}
+                </div>
+                <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                  {contactResults.length === 0 ? (
+                    <p className="py-3 text-center text-xs text-slate-500">
+                      {dlgQuery ? "Sin resultados." : "Escribe para buscar un contacto."}
+                    </p>
+                  ) : (
+                    contactResults.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => setDlgContact(c)}
+                        className="flex w-full items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-1.5 text-left hover:border-emerald-500/40 hover:bg-slate-800"
+                        data-testid={`contact-${c.id}`}
+                      >
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-[11px] font-semibold">
+                          {(c.contactName || c.waId).slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm">{c.contactName || `+${c.waId}`}</p>
+                          <p className="truncate text-[11px] text-slate-500">+{c.waId}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Sede + fecha */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">Sede</label>
+                <select value={dlgSede} onChange={(e) => setDlgSede(e.target.value as "centro" | "norte")} className="h-10 w-full rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 text-sm text-white" data-testid="select-dlg-sede">
+                  <option value="centro">Centro</option>
+                  <option value="norte">Norte</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">Fecha</label>
+                <Input type="date" value={dlgDate} onChange={(e) => setDlgDate(e.target.value)} className="h-10 border-slate-600/60 bg-slate-800/50 text-white" data-testid="input-dlg-date" />
+              </div>
+            </div>
+
+            {/* Horarios */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-slate-400">Elige un horario</p>
+              {dlgTimes.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-slate-700/60 p-3 text-center text-xs text-slate-500">
+                  No hay horarios configurados para {SEDE_LABEL[dlgSede]} ese día.
+                </p>
+              ) : (
+                <div className="grid max-h-52 grid-cols-3 gap-2 overflow-y-auto pr-1">
+                  {dlgTimes.map((t) => {
+                    const ocupados = dlgByTime.get(t) || 0;
+                    const lleno = ocupados >= dlgCap;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        disabled={lleno || createCita.isPending || !dlgContact}
+                        onClick={() => dlgContact && createCita.mutate({ conversationId: dlgContact.id, sede: dlgSede, date: dlgDate, time: t, note: dlgNote })}
+                        className={cn(
+                          "flex flex-col items-center rounded-xl border px-2 py-1.5 text-center transition-all",
+                          lleno
+                            ? "cursor-not-allowed border-slate-700/50 bg-slate-800/30 text-slate-600"
+                            : "border-emerald-400/50 bg-emerald-500/10 text-white hover:bg-emerald-500/20 active:scale-[0.97] disabled:opacity-40",
+                        )}
+                        data-testid={`dlg-slot-${t}`}
+                      >
+                        <span className="text-sm font-semibold tabular-nums">{t}</span>
+                        <span className={cn("text-[10px]", lleno ? "text-red-400/80" : "text-emerald-300/80")}>
+                          {lleno ? "Lleno" : `${dlgCap - ocupados} libre${dlgCap - ocupados > 1 ? "s" : ""}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {!dlgContact && <p className="text-[11px] text-amber-400/80">Primero elige un contacto.</p>}
+            </div>
+
+            {/* Nota */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-400">Nota (opcional)</label>
+              <Input value={dlgNote} onChange={(e) => setDlgNote(e.target.value)} maxLength={300} placeholder="Ej. interesado en modalidad virtual" className="border-slate-600/60 bg-slate-800/50 text-white" />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
