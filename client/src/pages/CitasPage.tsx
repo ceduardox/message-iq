@@ -128,6 +128,7 @@ export default function CitasPage() {
   const [sedeAgenda, setSedeAgenda] = useState<"centro" | "norte">("centro");
   const [soloOcupados, setSoloOcupados] = useState(true);
   const [estadoFilter, setEstadoFilter] = useState("todas");
+  const [configHint, setConfigHint] = useState<string | null>(null);
   const [highlightCitaId, setHighlightCitaId] = useState<number | null>(
     searchParams.get("cita") ? parseInt(searchParams.get("cita") as string) : null,
   );
@@ -160,6 +161,10 @@ export default function CitasPage() {
     if (sedeParam === "centro" || sedeParam === "norte") {
       setSedeAgenda(sedeParam);
       setSede(sedeParam);
+      if (date) {
+        setDays([weekdayOf(date)]);
+        setConfigHint(date);
+      }
       // Llegó desde "Configurar horario" en el chat: abrir la pestaña de horarios.
       setTab("horarios");
     }
@@ -427,6 +432,13 @@ export default function CitasPage() {
 
   const toggleDay = (d: number) => setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
 
+  const configureFromDate = (dateKey: string) => {
+    setSede(sedeAgenda);
+    setDays([weekdayOf(dateKey)]);
+    setConfigHint(dateKey);
+    setTab("horarios");
+  };
+
   const groupedBySede = useMemo(() => {
     const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map() };
     for (const a of avail) {
@@ -661,8 +673,8 @@ export default function CitasPage() {
                     <div className="rounded-2xl border border-dashed border-slate-700/60 py-10 text-center">
                       <CalendarPlus className="mx-auto mb-2 h-9 w-9 text-slate-600" />
                       <p className="text-sm text-slate-400">Sin horarios configurados este día.</p>
-                      <Button variant="outline" size="sm" className="mt-3 border-slate-600 bg-slate-800/60" onClick={() => setTab("horarios")}>
-                        Configurar horario
+                      <Button variant="outline" size="sm" className="mt-3 border-slate-600 bg-slate-800/60" onClick={() => configureFromDate(selectedDate)}>
+                        Configurar {WEEKDAYS_SHORT[weekdayOf(selectedDate)]} en Horarios
                       </Button>
                     </div>
                   )}
@@ -757,6 +769,18 @@ export default function CitasPage() {
 
           {/* ================= HORARIOS ================= */}
           <TabsContent value="horarios" className="space-y-4">
+            {configHint && (
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                <CalendarRange className="h-4 w-4 shrink-0 text-emerald-400" />
+                <span className="min-w-0">
+                  Configurando <strong>{WEEKDAYS_SHORT[weekdayOf(configHint)]} {fmtDayShort(configHint)}</strong> · {SEDE_LABEL[sede]}
+                  <span className="ml-1 text-emerald-300/70">(día ya marcado abajo)</span>
+                </span>
+                <button onClick={() => setConfigHint(null)} className="ml-auto shrink-0 rounded p-1 text-emerald-300/70 hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
               <div className="mb-3 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-amber-400" />
