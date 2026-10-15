@@ -148,6 +148,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
       cita_capacity_centro INTEGER DEFAULT 5,
       cita_capacity_norte INTEGER DEFAULT 5,
       llamada_capacity INTEGER DEFAULT 5,
+      cita_capacity INTEGER DEFAULT 5,
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);

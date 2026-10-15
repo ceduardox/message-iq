@@ -9,7 +9,7 @@ const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
 const CRM_TIME_ZONE = process.env.APP_TIMEZONE || process.env.TZ || "America/La_Paz";
 const CITA_MINUTES = 60;
-const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte" };
+const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte", virtual: "Virtual" };
 
 type AiProvider = "openai" | "gemini" | "deepseek";
 
@@ -125,27 +125,24 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
     if (!Array.isArray(avail) || avail.length === 0) return empty;
 
     const capRes: any = await db.execute(sql`
-      SELECT cita_capacity_centro AS c, cita_capacity_norte AS n FROM ai_settings LIMIT 1
+      SELECT cita_capacity AS cap FROM ai_settings LIMIT 1
     `);
     const capRow = (capRes.rows ?? capRes)[0] || {};
-    const capBySede: Record<string, number> = {
-      centro: Number(capRow.c) > 0 ? Number(capRow.c) : 5,
-      norte: Number(capRow.n) > 0 ? Number(capRow.n) : 5,
-    };
+    const capacity = Number(capRow.cap) > 0 ? Number(capRow.cap) : 5;
 
     const busyRes: any = await db.execute(sql`
-      SELECT sede, start_at AS "startAt"
+      SELECT start_at AS "startAt"
       FROM citas
-      WHERE kind = 'cita' AND estado != 'cancelada'
+      WHERE estado != 'cancelada'
         AND start_at >= NOW() - INTERVAL '1 hour'
         AND start_at <= NOW() + INTERVAL '8 days'
     `);
     const keyOf = (d: Date) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:00`;
-    const countBySede: Record<string, Record<string, number>> = {};
+    const countByStart: Record<string, number> = {};
     for (const b of (busyRes.rows ?? busyRes)) {
       const k = keyOf(new Date(b.startAt));
-      (countBySede[b.sede] ||= {})[k] = ((countBySede[b.sede] ||= {})[k] || 0) + 1;
+      countByStart[k] = (countByStart[k] || 0) + 1;
     }
 
     const toMin = (t: string) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
@@ -153,7 +150,7 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
     const lines: string[] = [];
     const slotsById: Record<string, { sede: string; startAt: string }> = {};
 
-    for (const sede of ["centro", "norte"]) {
+    for (const sede of ["centro", "norte", "virtual"]) {
       const blocks = avail.filter((a: any) => a.sede === sede);
       if (blocks.length === 0) continue;
       const slots: Date[] = [];
@@ -169,21 +166,21 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
             const st = new Date(day);
             st.setHours(Math.floor(m / 60), m % 60, 0, 0);
             if (st.getTime() < now + 60 * 60 * 1000) continue;
-            const ocupados = (countBySede[sede] || {})[keyOf(st)] || 0;
-            if (ocupados < capBySede[sede]) slots.push(st);
+            const ocupados = countByStart[keyOf(st)] || 0;
+            if (ocupados < capacity) slots.push(st);
           }
           if (slots.length >= 3) break;
         }
       }
       if (slots.length === 0) continue;
-      const prefix = sede === "norte" ? "N" : "C";
+      const prefix = sede === "norte" ? "N" : sede === "virtual" ? "V" : "C";
       const parts = slots.map((s, i) => {
         const code = `${prefix}${i + 1}`;
         slotsById[code] = { sede, startAt: s.toISOString() };
         const label = `${s.toLocaleDateString("es-BO", { weekday: "long", day: "2-digit", month: "short" })} ${s.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
         return `${code}=${label}`;
       });
-      lines.push(`Sede ${SEDE_LABEL[sede]}: ${parts.join(" | ")}`);
+      lines.push(`Canal ${SEDE_LABEL[sede]}: ${parts.join(" | ")}`);
     }
     return { context: lines.join("\n"), slotsById };
   } catch (err) {
@@ -310,7 +307,7 @@ function detectSlotConfirmation(
   const isConfirm = isOrdinal || confirmWords.includes(msg) || msg.startsWith("si ");
   if (!isConfirm) return null;
 
-  const sede = /norte/i.test(lastOutText) ? "norte" : /centro/i.test(lastOutText) ? "centro" : null;
+  const sede = /virtual/i.test(lastOutText) ? "virtual" : /norte/i.test(lastOutText) ? "norte" : /centro/i.test(lastOutText) ? "centro" : null;
   const filtered = codes
     .filter((c) => !sede || slotsById[c].sede === sede)
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
@@ -557,7 +554,7 @@ No uses otros nombres distintos al asignado.
 ${currentDateContext}
 REGLA EDUCATIVA INMUTABLE (IQx es centro educativo presencial, NO vende productos):
 - Nunca hables de envios, stock, pedidos ni pago contra entrega.
-- Si preguntan por otra ciudad: explica con honestidad que el entrenamiento es presencial en Santa Cruz y deja la puerta abierta a visitar una sede.
+- Si preguntan por otra ciudad: explica con honestidad que hay sedes presenciales en Santa Cruz (Centro y Norte) y que tambien existe la modalidad VIRTUAL por videollamada; deja la puerta abierta.
 - Tolera typos y respuestas de 1 palabra (ej: domigno=domingo, "la primera"=primera sede mencionada). Resuelve sin repreguntar.
 - Mensajes de 2 a 3 lineas, 1 pregunta por turno, usa el nombre del cliente cuando lo sepas.
 
@@ -607,7 +604,7 @@ ${currentDateContext}
 - Un cierre esta "en proceso" cuando la llamada o cita con el Asesor Educativo ya se realizo y solo falta el cierre comercial.
 - Si NO puedes responder la pregunta con la información disponible, escribe exactamente [NECESITO_HUMANO] y no respondas nada más.
 - Si el cliente pide que lo llamen (cualquier forma: "llámenme", "me pueden llamar", "prefiero llamada", "que me llame", "quiero hablar por teléfono"), o menciona llamada telefónica, o detectas que una llamada cerraría la venta, escribe [LLAMAR] al final SIEMPRE. Recuerda: ya tienes su número de WhatsApp, NO le pidas número.
-${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas (ej: "el jueves 17 a las 15:00 o 16:00").\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1] o [CITA: N2]. Usa el codigo (C1, C2, N1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si no hay horario disponible, no uses [CITA:].` : ""}
+${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas (ej: "el jueves 17 a las 15:00 o 16:00").\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1], [CITA: N2] o [CITA: V1]. Usa el codigo (C1, C2, N1, V1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Para CITA VIRTUAL, di "modalidad virtual (videollamada)" y NO menciones direccion. Para presencial, menciona la sede y su direccion.\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si no hay horario disponible, no uses [CITA:].` : ""}
 ${learnedRulesContext}
 ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
 

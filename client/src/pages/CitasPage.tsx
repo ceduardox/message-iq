@@ -68,8 +68,10 @@ interface ContactResult {
 
 const APP_TZ = "America/La_Paz";
 const WEEKDAYS_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte" };
-const SEDE_ADDR: Record<string, string> = { centro: "Cochabamba #694", norte: "Los Cusis #139" };
+const CANALES = ["centro", "norte", "virtual"] as const;
+type Canal = (typeof CANALES)[number];
+const SEDE_LABEL: Record<string, string> = { centro: "Centro", norte: "Norte", virtual: "Virtual" };
+const SEDE_ADDR: Record<string, string> = { centro: "Cochabamba #694", norte: "Los Cusis #139", virtual: "Videollamada" };
 const SEDE_ACCENT: Record<string, { tab: string; chip: string; dot: string; bar: string }> = {
   centro: {
     tab: "border-cyan-500 bg-cyan-500/15 text-cyan-200",
@@ -82,6 +84,12 @@ const SEDE_ACCENT: Record<string, { tab: string; chip: string; dot: string; bar:
     chip: "border-violet-500/40 bg-violet-500/10 text-violet-200",
     dot: "bg-violet-400",
     bar: "bg-violet-400",
+  },
+  virtual: {
+    tab: "border-rose-500 bg-rose-500/15 text-rose-200",
+    chip: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+    dot: "bg-rose-400",
+    bar: "bg-rose-400",
   },
 };
 const ESTADOS = ["reservada", "confirmada", "asistio", "cancelada"];
@@ -125,7 +133,7 @@ export default function CitasPage() {
   // ===== Agenda state =====
   const today = toDateKey(new Date());
   const [selectedDate, setSelectedDate] = useState(searchParams.get("date") || today);
-  const [sedeAgenda, setSedeAgenda] = useState<"centro" | "norte">("centro");
+  const [sedeAgenda, setSedeAgenda] = useState<Canal>("centro");
   const [soloOcupados, setSoloOcupados] = useState(true);
   const [estadoFilter, setEstadoFilter] = useState("todas");
   const [configHint, setConfigHint] = useState<string | null>(null);
@@ -134,7 +142,7 @@ export default function CitasPage() {
   );
 
   // ===== Horarios state =====
-  const [sede, setSede] = useState("centro");
+  const [sede, setSede] = useState<Canal>("centro");
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [morningOn, setMorningOn] = useState(true);
   const [morningStart, setMorningStart] = useState("08:00");
@@ -148,7 +156,7 @@ export default function CitasPage() {
   const [dlgContact, setDlgContact] = useState<ContactResult | null>(null);
   const [dlgQuery, setDlgQuery] = useState("");
   const [dlgDebounced, setDlgDebounced] = useState("");
-  const [dlgSede, setDlgSede] = useState<"centro" | "norte">("centro");
+  const [dlgSede, setDlgSede] = useState<Canal>("centro");
   const [dlgDate, setDlgDate] = useState(selectedDate);
   const [dlgNote, setDlgNote] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -158,7 +166,7 @@ export default function CitasPage() {
     const cita = searchParams.get("cita");
     const sedeParam = searchParams.get("sede");
     if (date) setSelectedDate(date);
-    if (sedeParam === "centro" || sedeParam === "norte") {
+    if (sedeParam === "centro" || sedeParam === "norte" || sedeParam === "virtual") {
       setSedeAgenda(sedeParam);
       setSede(sedeParam);
       if (date) {
@@ -229,27 +237,21 @@ export default function CitasPage() {
     enabled: showNueva,
   });
 
-  // Capacidad
-  const { data: aiSettings } = useQuery<{ citaCapacityCentro: number | null; citaCapacityNorte: number | null; llamadaCapacity: number | null }>({
+  // Capacidad (cupo COMPARTIDO por horario, todos los canales)
+  const { data: aiSettings } = useQuery<{ citaCapacity: number | null }>({
     queryKey: ["/api/ai/settings"],
   });
-  const [capCentro, setCapCentro] = useState(5);
-  const [capNorte, setCapNorte] = useState(5);
-  const [capLlamada, setCapLlamada] = useState(5);
+  const [capShared, setCapShared] = useState(5);
   useEffect(() => {
     if (!aiSettings) return;
-    setCapCentro(aiSettings.citaCapacityCentro ?? 5);
-    setCapNorte(aiSettings.citaCapacityNorte ?? 5);
-    setCapLlamada(aiSettings.llamadaCapacity ?? 5);
+    setCapShared(aiSettings.citaCapacity ?? 5);
   }, [aiSettings]);
-  const capDe = (s: string) => (s === "norte" ? capNorte : capCentro);
+  const capDe = (_s?: string) => capShared;
 
   const saveCapacityMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("PATCH", "/api/ai/settings", {
-        citaCapacityCentro: capCentro,
-        citaCapacityNorte: capNorte,
-        llamadaCapacity: capLlamada,
+        citaCapacity: capShared,
       });
       return res.json();
     },
@@ -305,7 +307,7 @@ export default function CitasPage() {
     }
     return rows.sort((a, b) => a.time.localeCompare(b.time));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, sedeAgenda, avail, byTime, capCentro, capNorte]);
+  }, [selectedDate, sedeAgenda, avail, byTime, capShared]);
 
   const llamadasRows = useMemo(() => {
     const m = new Map<string, Cita[]>();
@@ -389,7 +391,7 @@ export default function CitasPage() {
     setDlgNote("");
   };
 
-  const openNueva = (opts?: { sede?: "centro" | "norte"; date?: string; time?: string }) => {
+  const openNueva = (opts?: { sede?: Canal; date?: string; time?: string }) => {
     setDlgSede(opts?.sede || sedeAgenda);
     setDlgDate(opts?.date || selectedDate);
     setDlgNote(opts?.time ? "" : dlgNote);
@@ -440,7 +442,7 @@ export default function CitasPage() {
   };
 
   const groupedBySede = useMemo(() => {
-    const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map() };
+    const map: Record<string, Map<number, Availability[]>> = { centro: new Map(), norte: new Map(), virtual: new Map() };
     for (const a of avail) {
       const byDay = map[a.sede] || (map[a.sede] = new Map());
       const list = byDay.get(a.weekday) || [];
@@ -621,7 +623,7 @@ export default function CitasPage() {
             {/* Controles */}
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex overflow-hidden rounded-xl border border-slate-700/60">
-                {(["centro", "norte"] as const).map((s) => (
+                {CANALES.map((s) => (
                   <button
                     key={s}
                     onClick={() => setSedeAgenda(s)}
@@ -746,7 +748,7 @@ export default function CitasPage() {
                           <div key={time} className="flex gap-3 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-2.5">
                             <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-800/60 py-1">
                               <span className="text-base font-bold tabular-nums">{time}</span>
-                              <span className="text-[10px] text-emerald-400">{list.length}/{capLlamada}</span>
+                              <span className="text-[10px] text-emerald-400">{list.length}/{capShared}</span>
                             </div>
                             <div className="min-w-0 flex-1 space-y-1.5">
                               {list.map(renderCita)}
@@ -788,15 +790,15 @@ export default function CitasPage() {
               </div>
 
               <div className="mb-4">
-                <Label className="mb-2 block text-xs text-slate-400">Sede</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["centro", "norte"] as const).map((s) => (
+                <Label className="mb-2 block text-xs text-slate-400">Canal</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {CANALES.map((s) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => setSede(s)}
                       className={cn(
-                        "flex items-center gap-2 rounded-xl border-2 p-3 text-left transition-all",
+                        "flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
                         sede === s ? SEDE_ACCENT[s].tab : "border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-slate-500",
                       )}
                       data-testid={`button-sede-${s}`}
@@ -900,7 +902,7 @@ export default function CitasPage() {
                 <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
               ) : (
                 <div className="space-y-3">
-                  {(["centro", "norte"] as const).map((s) => {
+                  {CANALES.map((s) => {
                     const byDay = groupedBySede[s] || new Map();
                     const total = Array.from(byDay.values()).reduce((acc, l) => acc + l.length, 0);
                     return (
@@ -951,27 +953,17 @@ export default function CitasPage() {
             <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
               <div className="mb-3 flex items-center gap-2">
                 <Users className="h-4 w-4 text-emerald-400" />
-                <h2 className="text-sm font-semibold">Capacidad por horario</h2>
+                <h2 className="text-sm font-semibold">Cupo por horario (compartido)</h2>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-400">Citas · Centro (mismo horario)</Label>
-                  <Input type="number" min={1} max={50} value={capCentro} onChange={(e) => setCapCentro(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-centro" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-400">Citas · Norte (mismo horario)</Label>
-                  <Input type="number" min={1} max={50} value={capNorte} onChange={(e) => setCapNorte(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-norte" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-slate-400">Llamadas (global, mismo horario)</Label>
-                  <Input type="number" min={1} max={50} value={capLlamada} onChange={(e) => setCapLlamada(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-llamada" />
-                </div>
+              <div className="max-w-[220px] space-y-1">
+                <Label className="text-xs text-slate-400">Cupo por horario (todos los canales)</Label>
+                <Input type="number" min={1} max={200} value={capShared} onChange={(e) => setCapShared(parseInt(e.target.value) || 1)} className="bg-slate-800/50 border-slate-600/50 text-white" data-testid="input-cap-shared" />
               </div>
               <Button onClick={() => saveCapacityMutation.mutate()} disabled={saveCapacityMutation.isPending} className="mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white" data-testid="button-save-capacity">
                 {saveCapacityMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
                 Guardar capacidad
               </Button>
-              <p className="mt-2 text-xs text-slate-500">Cuenta por <strong>mismo horario</strong>. Puedes tener varias citas a la misma hora (hasta la capacidad). Las llamadas se cuentan aparte.</p>
+              <p className="mt-2 text-xs text-slate-500">Cuenta por <strong>mismo horario</strong>: Centro, Norte y Virtual <strong>comparten</strong> el cupo (mismo asesor). Ej: con 5, puedes tener 3 presenciales + 2 virtuales a la misma hora.</p>
             </section>
 
             <Link href="/reminders">
@@ -1059,10 +1051,11 @@ export default function CitasPage() {
             {/* Sede + fecha */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">Sede</label>
-                <select value={dlgSede} onChange={(e) => setDlgSede(e.target.value as "centro" | "norte")} className="h-10 w-full rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 text-sm text-white" data-testid="select-dlg-sede">
+                <label className="text-xs font-medium text-slate-400">Canal</label>
+                <select value={dlgSede} onChange={(e) => setDlgSede(e.target.value as Canal)} className="h-10 w-full rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 text-sm text-white" data-testid="select-dlg-sede">
                   <option value="centro">Centro</option>
                   <option value="norte">Norte</option>
+                  <option value="virtual">Virtual</option>
                 </select>
               </div>
               <div className="space-y-1">

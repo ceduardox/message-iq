@@ -622,29 +622,36 @@ async function writeReminderRaw(
   }
 }
 
-// Capacidad: por sede para citas presenciales; global para llamadas. Conteo por MISMO inicio.
-function sedeCapacity(settings: any, sede: string): number {
-  const v = sede === "norte" ? settings?.citaCapacityNorte : settings?.citaCapacityCentro;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : 5;
+// Cupo COMPARTIDO por horario (mismo asesor): cuenta todas las citas/llamadas del mismo inicio,
+// sin importar canal (centro/norte/virtual) ni tipo. El canal es solo etiqueta.
+function sharedCitaCapacity(settings: any): number {
+  const n = Number(settings?.citaCapacity);
+  if (Number.isFinite(n) && n > 0) return n;
+  // Compatibilidad con el modelo anterior (por sede): usa el mayor configurado.
+  const c = Number(settings?.citaCapacityCentro);
+  const no = Number(settings?.citaCapacityNorte);
+  const fallback = Math.max(Number.isFinite(c) && c > 0 ? c : 0, Number.isFinite(no) && no > 0 ? no : 0);
+  return fallback > 0 ? fallback : 5;
+}
+function sedeCapacity(settings: any, _sede: string): number {
+  return sharedCitaCapacity(settings);
 }
 function llamadaCapacity(settings: any): number {
-  const n = Number(settings?.llamadaCapacity);
-  return Number.isFinite(n) && n > 0 ? n : 5;
+  return sharedCitaCapacity(settings);
 }
-async function countCitasSameStart(sede: string, start: Date): Promise<number> {
+// Ocupación total (citas + llamadas, cualquier canal) al mismo inicio.
+async function countAllSameStart(start: Date): Promise<number> {
   const rows: any = await db.execute(sql`
     SELECT COUNT(*)::int AS n FROM citas
-    WHERE kind = 'cita' AND estado != 'cancelada' AND sede = ${sede} AND start_at = ${start}
+    WHERE estado != 'cancelada' AND start_at = ${start}
   `);
   return (rows.rows ?? rows)[0]?.n ?? 0;
+}
+async function countCitasSameStart(_sede: string, start: Date): Promise<number> {
+  return countAllSameStart(start);
 }
 async function countLlamadasSameStart(start: Date): Promise<number> {
-  const rows: any = await db.execute(sql`
-    SELECT COUNT(*)::int AS n FROM citas
-    WHERE kind = 'llamada' AND estado != 'cancelada' AND start_at = ${start}
-  `);
-  return (rows.rows ?? rows)[0]?.n ?? 0;
+  return countAllSameStart(start);
 }
 
 function getConversationAdvisorName(assignedAgentName?: string | null) {
@@ -1080,16 +1087,16 @@ async function processAiResponse(data: BufferedMessage) {
           if (ocupados >= cap) {
             console.warn("=== CITA LLENA - no se agenda ===", { conversationId, sede, startAt: start.toISOString(), ocupados, cap });
           } else {
-            // Reprogramar: cancela la cita activa anterior de esta conversación.
+            // Una cita activa POR CANAL: cancela solo la cita previa del mismo canal.
             await db.execute(sql`
               UPDATE citas SET estado = 'cancelada'
-              WHERE conversation_id = ${conversationId} AND estado != 'cancelada'
+              WHERE conversation_id = ${conversationId} AND estado != 'cancelada' AND kind = 'cita' AND sede = ${sede}
             `);
             await db.execute(sql`
               INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
               VALUES (${conversationId}, ${conversation.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', ${"Agendada por IA"})
             `);
-            const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+            const sedeLabel = sede === "virtual" ? "Virtual (videollamada)" : sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
             await writeReminderRaw(
               conversationId,
               start,
@@ -4679,7 +4686,7 @@ export async function registerRoutes(
   });
 
   // === CITAS: disponibilidad + slots + reserva (KISS, separado de recordatorios) ===
-  const VALID_SEDES = ["centro", "norte"];
+  const VALID_SEDES = ["centro", "norte", "virtual"];
   const normalizeSede = (v: any) => {
     const s = String(v || "centro").toLowerCase();
     return VALID_SEDES.includes(s) ? s : "centro";
@@ -4696,7 +4703,7 @@ export async function registerRoutes(
       weekday: z.number().min(0).max(6),
       startTime: z.string().regex(/^\d{2}:\d{2}$/),
       endTime: z.string().regex(/^\d{2}:\d{2}$/),
-      sede: z.enum(["centro", "norte"]).optional(),
+      sede: z.enum(["centro", "norte", "virtual"]).optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Datos inválidos", details: parsed.error.errors });
     const { agentId, weekday, startTime, endTime, sede } = parsed.data;
@@ -4727,11 +4734,11 @@ export async function registerRoutes(
     const list = avail.rows ?? avail;
     const dayStart = new Date(dateStr + "T00:00:00");
     const dayEnd = new Date(dateStr + "T23:59:59");
-    // Conteo por MISMO inicio (presenciales de esa sede), en hora local del server.
+    // Conteo por MISMO inicio, TODOS los canales (cupo compartido), en hora local del server.
     const busy: any = await db.execute(sql`
       SELECT start_at AS "startAt"
       FROM citas
-      WHERE kind = 'cita' AND sede = ${sede} AND estado != 'cancelada'
+      WHERE estado != 'cancelada'
         AND start_at >= ${dayStart} AND start_at <= ${dayEnd}
     `);
     const keyOf = (dt: Date) =>
@@ -4754,6 +4761,56 @@ export async function registerRoutes(
       }
     }
     res.json({ date: dateStr, sede, slots, capacidad: capacity, tieneDisponibilidad: list.length > 0 });
+  });
+
+  // Próximos cupos disponibles (para reservar en 1 tap desde el chat).
+  app.get("/api/slots/upcoming", requireAuth, async (req, res) => {
+    const sede = normalizeSede(req.query.sede);
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 21);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 12, 1), 40);
+    const settings = await storage.getAiSettings();
+    const capacity = sedeCapacity(settings, sede);
+    const keyOf = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}:00`;
+    const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    const now = Date.now();
+    const slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number; disponible: boolean }> = [];
+    const base = new Date();
+    for (let i = 0; i < days && slots.length < limit; i++) {
+      const day = new Date(base);
+      day.setDate(day.getDate() + i);
+      const weekday = day.getDay();
+      const avail: any = await db.execute(sql`SELECT start_time AS "startTime", end_time AS "endTime" FROM agent_availability WHERE weekday = ${weekday} AND sede = ${sede} AND is_active IS DISTINCT FROM false`);
+      const list = avail.rows ?? avail;
+      if (list.length === 0) continue;
+      const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+      const busy: any = await db.execute(sql`
+        SELECT start_at AS "startAt" FROM citas
+        WHERE estado != 'cancelada'
+          AND start_at >= ${dayStart} AND start_at <= ${dayEnd}
+      `);
+      const counts: Record<string, number> = {};
+      for (const b of (busy.rows ?? busy)) {
+        const k = keyOf(new Date(b.startAt));
+        counts[k] = (counts[k] || 0) + 1;
+      }
+      for (const a of list) {
+        const s = toMin(a.startTime);
+        const e = toMin(a.endTime);
+        for (let m = s; m + CITA_MINUTES <= e; m += CITA_MINUTES) {
+          const st = new Date(day); st.setHours(Math.floor(m / 60), m % 60, 0, 0);
+          if (st.getTime() < now) continue;
+          const ocupados = counts[keyOf(st)] || 0;
+          if (ocupados >= capacity) continue;
+          const en = new Date(st.getTime() + CITA_MINUTES * 60000);
+          slots.push({ startAt: st.toISOString(), endAt: en.toISOString(), sede, ocupados, capacidad: capacity, disponible: true });
+          if (slots.length >= limit) break;
+        }
+        if (slots.length >= limit) break;
+      }
+    }
+    res.json({ sede, capacidad: capacity, slots });
   });
 
   app.get("/api/conversations/:id/cita", requireAuth, async (req, res) => {
@@ -4801,47 +4858,59 @@ export async function registerRoutes(
   app.post("/api/citas", requireAuth, async (req, res) => {
     const parsed = z.object({
       conversationId: z.number(),
-      sede: z.enum(["centro", "norte"]).optional(),
+      sede: z.enum(["centro", "norte", "virtual"]).optional(),
+      kind: z.enum(["cita", "llamada"]).optional(),
       startAt: z.string().datetime(),
       agentId: z.number().nullable().optional(),
       note: z.string().max(300).optional().nullable(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Datos inválidos", details: parsed.error.errors });
+    const kind = parsed.data.kind || "cita";
     const sede = parsed.data.sede || "centro";
     const start = new Date(parsed.data.startAt);
     if (Number.isNaN(start.getTime())) return res.status(400).json({ message: "Fecha inválida" });
     const end = new Date(start.getTime() + CITA_MINUTES * 60000);
     const settings = await storage.getAiSettings();
-    const cap = sedeCapacity(settings, sede);
+    // Cupo COMPARTIDO por horario (todos los canales y tipos).
+    const cap = sharedCitaCapacity(settings);
     const capRows: any = await db.execute(sql`
       SELECT COUNT(*)::int AS n FROM citas
-      WHERE kind = 'cita' AND estado != 'cancelada' AND sede = ${sede} AND start_at = ${start}
+      WHERE estado != 'cancelada' AND start_at = ${start}
         AND conversation_id != ${parsed.data.conversationId}
     `);
     const ocupados = (capRows.rows ?? capRows)[0]?.n ?? 0;
     if (ocupados >= cap) return res.status(409).json({ message: `Horario lleno (${ocupados}/${cap})` });
     const conv = await storage.getConversation(parsed.data.conversationId);
     if (!conv) return res.status(404).json({ message: "Conversación no encontrada" });
-    // Reprogramar: una sola cita activa por conversación (cancela la anterior).
-    await db.execute(sql`
-      UPDATE citas SET estado = 'cancelada'
-      WHERE conversation_id = ${parsed.data.conversationId} AND estado != 'cancelada'
-    `);
+    // Una cita activa POR CANAL: al reprogramar se cancela solo el mismo canal (permite presencial + virtual).
+    if (kind === "llamada") {
+      await db.execute(sql`
+        UPDATE citas SET estado = 'cancelada'
+        WHERE conversation_id = ${parsed.data.conversationId} AND estado != 'cancelada' AND kind = 'llamada'
+      `);
+    } else {
+      await db.execute(sql`
+        UPDATE citas SET estado = 'cancelada'
+        WHERE conversation_id = ${parsed.data.conversationId} AND estado != 'cancelada' AND kind = 'cita' AND sede = ${sede}
+      `);
+    }
     const ins: any = await db.execute(sql`
       INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
-      VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
+      VALUES (${parsed.data.conversationId}, ${parsed.data.agentId ?? conv.assignedAgentId ?? null}, ${kind}, ${sede}, ${start}, ${end}, 'reservada', ${parsed.data.note?.trim() || null})
       RETURNING id
     `);
     const citaId = ins.rows?.[0]?.id ?? ins[0]?.id;
-    const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+    const sedeLabel = sede === "virtual" ? "Virtual (videollamada)" : sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
     await writeReminderRaw(
       conv.id,
       start,
-      `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+      kind === "llamada"
+        ? `LLAMADA ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+        : `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
       null,
       false,
     );
-    res.json({ success: true, id: citaId, startAt: start, endAt: end, sede });
+    res.json({ success: true, id: citaId, startAt: start, endAt: end, sede, kind });
   });
 
   app.patch("/api/citas/:id", requireAuth, async (req, res) => {
@@ -4905,16 +4974,16 @@ export async function registerRoutes(
         const cap = sedeCapacity(await storage.getAiSettings(), sede);
         const ocupados = await countCitasSameStart(sede, start);
         if (ocupados < cap) {
-          // Reprogramar: cancela la cita activa anterior de esta conversación.
+          // Una cita activa POR CANAL: cancela solo la cita previa del mismo canal.
           await db.execute(sql`
             UPDATE citas SET estado = 'cancelada'
-            WHERE conversation_id = ${conv.id} AND estado != 'cancelada'
+            WHERE conversation_id = ${conv.id} AND estado != 'cancelada' AND kind = 'cita' AND sede = ${sede}
           `);
           await db.execute(sql`
             INSERT INTO citas (conversation_id, agent_id, kind, sede, start_at, end_at, estado, note)
             VALUES (${conv.id}, ${conv.assignedAgentId ?? null}, 'cita', ${sede}, ${start}, ${end}, 'reservada', 'Agendada por IA (sim)')
           `);
-          const sedeLabel = sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
+          const sedeLabel = sede === "virtual" ? "Virtual (videollamada)" : sede === "norte" ? "Norte (Av. Los Cusis #139)" : "Centro (Av. Cochabamba No. 694)";
           await writeReminderRaw(
             conv.id,
             start,
@@ -5305,6 +5374,7 @@ NO uses saludos formales. Se directo y amigable.`
     citaCapacityCentro: z.number().min(1).max(50).optional(),
     citaCapacityNorte: z.number().min(1).max(50).optional(),
     llamadaCapacity: z.number().min(1).max(50).optional(),
+    citaCapacity: z.number().min(1).max(200).optional(),
   });
 
   const promptProfilesUpdateSchema = z.object({

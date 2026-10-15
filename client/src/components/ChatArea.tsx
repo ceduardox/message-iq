@@ -905,7 +905,8 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 
   const [showReengageDialog, setShowReengageDialog] = useState(false);
   const [showCitaDialog, setShowCitaDialog] = useState(false);
-  const [citaPrefillTime, setCitaPrefillTime] = useState<string | null>(null);
+  const [citaKind, setCitaKind] = useState<"cita" | "llamada">("cita");
+  const [citaManualTime, setCitaManualTime] = useState("");
   const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState("");
   const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
@@ -993,22 +994,45 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const existingCita = citaData?.cita || null;
   const [citaSede, setCitaSede] = useState("centro");
   const [citaDate, setCitaDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const { data: slotsData, isLoading: slotsLoading } = useQuery<{ date: string; sede: string; slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number; disponible: boolean }>; tieneDisponibilidad: boolean }>({
-    queryKey: ["/api/slots", citaDate, citaSede, showCitaDialog],
+
+  // Próximos cupos disponibles (reservar en 1 tap).
+  const { data: upcomingData, isLoading: upcomingLoading } = useQuery<{
+    sede: string;
+    capacidad: number;
+    slots: Array<{ startAt: string; endAt: string; sede: string; ocupados: number; capacidad: number; disponible: boolean }>;
+  }>({
+    queryKey: ["/api/slots/upcoming", citaSede, showCitaDialog],
     queryFn: async () => {
-      const res = await fetch(`/api/slots?date=${citaDate}&sede=${citaSede}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Error slots");
+      const res = await fetch(`/api/slots/upcoming?sede=${citaSede}&days=14&limit=9`, { credentials: "include" });
+      if (!res.ok) throw new Error("Error cupos");
       return res.json();
     },
-    enabled: showCitaDialog && !!citaDate,
+    enabled: showCitaDialog && citaKind === "cita",
   });
-  const citaSlots = slotsData?.slots ?? [];
+  const upcomingSlots = upcomingData?.slots ?? [];
+
+  const buildCitaMessage = (kind: string, sede: string, iso: string) => {
+    const d = new Date(iso);
+    const fecha = d.toLocaleDateString("es-BO", { timeZone: "America/La_Paz", weekday: "long", day: "2-digit", month: "long" });
+    const hora = d.toLocaleTimeString("es-BO", { timeZone: "America/La_Paz", hour: "2-digit", minute: "2-digit", hour12: false });
+    const nombre = (conversation.contactName || "").split(" ")[0];
+    const hola = nombre ? `Hola ${nombre} 😊` : "Hola 😊";
+    if (kind === "llamada") {
+      return `${hola} tu llamada de diagnóstico quedó agendada para el ${fecha} a las ${hora}. ¿Me confirmas por aquí?`;
+    }
+    if (sede === "virtual") {
+      return `${hola} tu cita de diagnóstico quedó agendada para el ${fecha} a las ${hora} en modalidad virtual (videollamada). Te enviaré el enlace antes. ¿Me confirmas?`;
+    }
+    const addr = sede === "norte" ? "Av. Los Cusis #139" : "Av. Cochabamba #694";
+    return `${hola} tu cita de diagnóstico quedó agendada para el ${fecha} a las ${hora} en nuestra sede ${sede === "norte" ? "Norte" : "Centro"} (${addr}). ¡Te esperamos! ¿Me confirmas?`;
+  };
+
   const reserveCitaMutation = useMutation({
-    mutationFn: async (startAt: string) => {
+    mutationFn: async (payload: { startAt: string }) => {
       const res = await fetch("/api/citas", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: conversation.id, sede: citaSede, startAt }),
+        body: JSON.stringify({ conversationId: conversation.id, sede: citaSede, kind: citaKind, startAt: payload.startAt }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1016,11 +1040,16 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: { startAt?: string; sede?: string; kind?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", conversation.id, "cita"] });
-      toast({ title: "Cita reservada" });
+      queryClient.invalidateQueries({ queryKey: ["/api/slots/upcoming"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/citas"] });
+      const iso = data?.startAt ?? new Date().toISOString();
+      setComposerText(buildCitaMessage(data?.kind || citaKind, data?.sede || citaSede, iso));
+      toast({ title: citaKind === "llamada" ? "Llamada agendada" : "Cita agendada", description: "Revisa el mensaje y envíalo al cliente." });
       setShowCitaDialog(false);
+      setCitaManualTime("");
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1499,7 +1528,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const openCitaFromMessage = (text?: string | null) => {
     const t = String(text || "");
     const timeMatch = t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-    setCitaPrefillTime(timeMatch ? `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}` : null);
+    setCitaManualTime(timeMatch ? `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}` : "");
     if (/\bmañana\b/i.test(t)) {
       const d = new Date();
       d.setDate(d.getDate() + 1);
@@ -1508,7 +1537,8 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     setShowCitaDialog(true);
   };
   const openCitaDialog = () => {
-    setCitaPrefillTime(null);
+    setCitaManualTime("");
+    setCitaKind("cita");
     setShowCitaDialog(true);
   };
 
@@ -1877,12 +1907,12 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           </DialogContent>
         </Dialog>
 
-        {/* Agendar cita - slots 45min por sede */}
+        {/* Agendar cita / llamada desde el chat */}
         <Dialog
           open={showCitaDialog}
           onOpenChange={(o) => {
             setShowCitaDialog(o);
-            if (!o) setCitaPrefillTime(null);
+            if (!o) setCitaManualTime("");
           }}
         >
           <DialogTrigger asChild>
@@ -1890,7 +1920,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               variant="ghost"
               size="icon"
               className="flex-shrink-0 h-7 w-7 text-emerald-600 dark:text-emerald-400"
-              title="Agendar cita diagnóstico (45 min)"
+              title="Agendar cita o llamada"
               data-testid="button-cita"
             >
               <CalendarPlus className="h-4 w-4" />
@@ -1900,79 +1930,143 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <CalendarPlus className="h-5 w-5 text-emerald-500" />
-                Agendar cita
+                Agendar {citaKind === "llamada" ? "llamada" : "cita"}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Sede</label>
-                  <select value={citaSede} onChange={(e) => setCitaSede(e.target.value)} className="h-10 w-full rounded-lg border bg-background px-3 text-sm" data-testid="select-cita-sede">
-                    <option value="centro">Centro</option>
-                    <option value="norte">Norte</option>
-                  </select>
+              {/* Contacto */}
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                  {(conversation.contactName || conversation.waId).slice(0, 2).toUpperCase()}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Fecha</label>
-                  <Input type="date" value={citaDate} onChange={(e) => setCitaDate(e.target.value)} className="h-10" data-testid="input-cita-date" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{conversation.contactName || `+${conversation.waId}`}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">+{conversation.waId}</p>
                 </div>
               </div>
 
-              {slotsLoading ? (
-                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Buscando horarios…
-                </div>
-              ) : !slotsData?.tieneDisponibilidad ? (
-                <div className="rounded-lg border border-dashed p-4 text-center">
-                  <p className="text-sm text-muted-foreground">No hay horarios configurados para esa sede y fecha.</p>
-                  <Link href={`/citas?date=${citaDate}&sede=${citaSede}`}>
-                    <Button variant="outline" size="sm" className="mt-2" data-testid="button-config-citas">
-                      Configurar horario en Citas
-                    </Button>
-                  </Link>
-                </div>
-              ) : citaSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sin horarios ese día. Prueba otra fecha.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Elige un horario (cupo disponible)
-                    {citaPrefillTime && <span className="ml-1 text-emerald-600 dark:text-emerald-400">· sugerido {citaPrefillTime}</span>}
-                  </p>
-                  <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1">
-                    {citaSlots.map((s) => {
-                      const lleno = !s.disponible;
-                      const libres = Math.max(0, s.capacidad - s.ocupados);
-                      const label = new Date(s.startAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false });
-                      const sugerido = !!citaPrefillTime && label === citaPrefillTime;
-                      return (
-                        <button
-                          key={s.startAt}
-                          type="button"
-                          disabled={lleno || reserveCitaMutation.isPending}
-                          onClick={() => reserveCitaMutation.mutate(s.startAt)}
-                          className={cn(
-                            "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all",
-                            lleno
-                              ? "cursor-not-allowed border-slate-300 bg-muted opacity-60"
-                              : "border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-[0.98]",
-                            sugerido && !lleno && "ring-2 ring-emerald-500",
-                          )}
-                          data-testid={`button-slot-${s.startAt}`}
-                        >
-                          <span className="text-sm font-semibold tabular-nums">
-                            {label}
-                          </span>
-                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", lleno ? "bg-slate-400/30 text-slate-600" : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300")}>
-                            {lleno ? "Lleno" : `${libres} libre${libres > 1 ? "s" : ""}`}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">Se guarda en el calendario (/citas) y en la agenda.</p>
+              {/* Cita existente */}
+              {existingCita && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+                  Ya tiene {existingCita.estado === "cancelada" ? "" : `${existingCita.sede === "virtual" ? "Virtual" : existingCita.sede === "norte" ? "Norte" : "Centro"} `}
+                  el {String(existingCita.startAt).slice(0, 10).split("-").reverse().join("/")} a las {String(existingCita.startAt).slice(11, 16)}.
+                  <span className="ml-1 opacity-80">Al guardar se reprograma.</span>
                 </div>
               )}
+
+              {/* Tipo */}
+              <div className="grid grid-cols-2 gap-2">
+                {(["cita", "llamada"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setCitaKind(k)}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-xl border-2 py-2 text-sm font-medium transition-all",
+                      citaKind === k
+                        ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        : "border-border bg-muted/40 text-muted-foreground hover:border-emerald-500/40",
+                    )}
+                    data-testid={`cita-kind-${k}`}
+                  >
+                    {k === "cita" ? <MapPin className="h-4 w-4" /> : <Phone className="h-4 w-4" />}
+                    {k === "cita" ? "Cita presencial" : "Llamada"}
+                  </button>
+                ))}
+              </div>
+
+              {citaKind === "cita" && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Próximos cupos
+                    <span className="ml-1 text-muted-foreground/70">· {citaSede === "virtual" ? "Virtual" : citaSede === "norte" ? "Norte" : "Centro"}</span>
+                  </p>
+                  {upcomingLoading ? (
+                    <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando cupos…
+                    </div>
+                  ) : upcomingSlots.length === 0 ? (
+                    <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+                      No hay cupos configurados. Usa la hora manual de abajo.
+                    </p>
+                  ) : (
+                    <div className="grid max-h-40 grid-cols-3 gap-2 overflow-y-auto pr-1">
+                      {upcomingSlots.map((s) => {
+                        const d = new Date(s.startAt);
+                        const dia = d.toLocaleDateString("es-BO", { timeZone: "America/La_Paz", weekday: "short", day: "2-digit", month: "2-digit" });
+                        const hora = d.toLocaleTimeString("es-BO", { timeZone: "America/La_Paz", hour: "2-digit", minute: "2-digit", hour12: false });
+                        return (
+                          <button
+                            key={s.startAt}
+                            type="button"
+                            disabled={reserveCitaMutation.isPending}
+                            onClick={() => reserveCitaMutation.mutate({ startAt: s.startAt })}
+                            className="flex flex-col items-center rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-1 py-1.5 text-center transition-all hover:bg-emerald-500/20 active:scale-[0.97] disabled:opacity-50"
+                            data-testid={`button-upcoming-${s.startAt}`}
+                          >
+                            <span className="text-[10px] capitalize text-muted-foreground">{dia}</span>
+                            <span className="text-sm font-semibold tabular-nums">{hora}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Canal + fecha + hora manual */}
+              {citaKind === "cita" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Canal</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(["centro", "norte", "virtual"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setCitaSede(s)}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition-colors",
+                          citaSede === s
+                            ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "border-border bg-muted/40 text-muted-foreground hover:border-emerald-500/40",
+                        )}
+                        data-testid={`canal-${s}`}
+                      >
+                        {s === "virtual" ? <Video className="h-3.5 w-3.5" /> : <MapPin className="h-3.5 w-3.5" />}
+                        {s === "centro" ? "Centro" : s === "norte" ? "Norte" : "Virtual"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Fecha</label>
+                <Input type="date" value={citaDate} onChange={(e) => setCitaDate(e.target.value)} className="h-10" data-testid="input-cita-date" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Hora manual (cualquier hora)</label>
+                <div className="flex items-center gap-2">
+                  <Input type="time" value={citaManualTime} onChange={(e) => setCitaManualTime(e.target.value)} className="h-10 flex-1" data-testid="input-cita-manual-time" />
+                  <Button
+                    type="button"
+                    disabled={!citaManualTime || reserveCitaMutation.isPending}
+                    onClick={() => {
+                      const startAt = new Date(`${citaDate}T${citaManualTime}:00-04:00`).toISOString();
+                      reserveCitaMutation.mutate({ startAt });
+                    }}
+                    className="h-10 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white"
+                    data-testid="button-cita-manual"
+                  >
+                    {reserveCitaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Agendar
+                  </Button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                Se guarda en la agenda. Al agendar, se prepara un mensaje para el cliente: revísalo y envíalo.
+              </p>
             </div>
           </DialogContent>
         </Dialog>
@@ -2502,7 +2596,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                     data-testid={`button-view-cita-${msg.id}`}
                   >
                     <CalendarPlus className="h-3.5 w-3.5" />
-                    Ver cita · {String(existingCita.startAt).slice(0, 10).split("-").reverse().slice(0, 2).join("/")} {String(existingCita.startAt).slice(11, 16)} · {existingCita.sede === "norte" ? "Norte" : "Centro"}
+                    Ver cita · {String(existingCita.startAt).slice(0, 10).split("-").reverse().slice(0, 2).join("/")} {String(existingCita.startAt).slice(11, 16)} · {existingCita.sede === "virtual" ? "Virtual" : existingCita.sede === "norte" ? "Norte" : "Centro"}
                   </Link>
                 ) : isOut && conversation.shouldCall && /llamada/i.test(msg.text || "") ? (
                   <Link

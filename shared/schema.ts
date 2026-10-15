@@ -202,6 +202,7 @@ export const aiSettings = pgTable("ai_settings", {
   citaCapacityCentro: integer("cita_capacity_centro").default(5),
   citaCapacityNorte: integer("cita_capacity_norte").default(5),
   llamadaCapacity: integer("llamada_capacity").default(5),
+  citaCapacity: integer("cita_capacity").default(5),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
