@@ -589,6 +589,24 @@ async function applyLocalDateTimeStrings(conversations: any[]): Promise<void> {
       if (r[f] != null) c[f] = r[f];
     }
   }
+  // Normaliza la nota del recordatorio para que no muestre una hora que pueda contradecir reminder_at.
+  for (const c of conversations) {
+    if (c && typeof c.reminderNote === "string") c.reminderNote = cleanReminderNote(c.reminderNote);
+  }
+}
+
+// Quita la fecha/hora embebida de notas automáticas de recordatorio, para que la nota
+// nunca contradiga al horario real (reminder_at). Ej: "CITA Centro … vie, 18 sept, 10:00 a. m." -> "CITA Centro …".
+function cleanReminderNote(note: string | null | undefined): string | null {
+  if (note == null) return null;
+  const t = String(note).trim();
+  if (!t) return null;
+  if (!/^(cita|llamada)\b/i.test(t)) return t;
+  const cleaned = t
+    .replace(/\s+(lun|mar|mi[eé]|jue|vie|s[áa]b|dom)[a-záéñ.]*,?\s+\d{1,2}\s+[a-záéñ]+\.?\s+\d{1,2}:\d{2}(\s*[ap]\.?\s?m\.?)?\s*$/i, "")
+    .replace(/\s+\d{1,2}\s+[a-záéñ]+\.?\s+\d{1,2}:\d{2}(\s*[ap]\.?\s?m\.?)?\s*$/i, "")
+    .trim();
+  return cleaned || t;
 }
 
 async function writeReminderRaw(
@@ -600,10 +618,11 @@ async function writeReminderRaw(
 ): Promise<void> {
   if (reminderAt) {
     const wall = toLaPazWallClock(reminderAt);
+    const cleanNote = cleanReminderNote(note);
     await db.execute(sql`
       UPDATE conversations
       SET reminder_at = ${wall}::timestamp,
-          reminder_note = ${note},
+          reminder_note = ${cleanNote},
           reminder_color = ${color},
           reminder_done = ${done},
           reminder_updated_at = NOW()
@@ -1047,7 +1066,7 @@ async function processAiResponse(data: BufferedMessage) {
             await writeReminderRaw(
               conversationId,
               callDate,
-              `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: APP_TZ, weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              "LLAMADA",
               null,
               false,
             );
@@ -1100,7 +1119,7 @@ async function processAiResponse(data: BufferedMessage) {
             await writeReminderRaw(
               conversationId,
               start,
-              `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+              `CITA ${sedeLabel}`,
               null,
               false,
             );
@@ -4905,8 +4924,8 @@ export async function registerRoutes(
       conv.id,
       start,
       kind === "llamada"
-        ? `LLAMADA ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
-        : `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+        ? "LLAMADA"
+        : `CITA ${sedeLabel}`,
       null,
       false,
     );
@@ -4987,7 +5006,7 @@ export async function registerRoutes(
           await writeReminderRaw(
             conv.id,
             start,
-            `CITA ${sedeLabel} ${start.toLocaleString("es-BO", { timeZone: APP_TZ, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            `CITA ${sedeLabel}`,
             null,
             false,
           );
@@ -5004,7 +5023,7 @@ export async function registerRoutes(
           await writeReminderRaw(
             conv.id,
             callDate,
-            `LLAMADA ${callDate.toLocaleString("es-BO", { timeZone: APP_TZ, weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            "LLAMADA",
             null,
             false,
           );
