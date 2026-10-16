@@ -9,16 +9,6 @@ export function BrandFooter({ className }: BrandFooterProps) {
     <footer className={cn("text-center text-xs text-slate-500", className)}>
       Developed by{" "}
       <a
-        href="https://neraversestudio.com/es/"
-        target="_blank"
-        rel="noreferrer noopener"
-        className="font-medium text-emerald-400 transition-colors hover:text-cyan-400"
-      >
-        Neraverse Studios
-      </a>
-      {" · "}
-      Powered by{" "}
-      <a
         href="https://ryztor.us/"
         target="_blank"
         rel="noreferrer noopener"
