@@ -16,6 +16,16 @@ export function BrandFooter({ className }: BrandFooterProps) {
       >
         Neraverse Studios
       </a>
+      {" · "}
+      Powered by{" "}
+      <a
+        href="https://ryztor.us/"
+        target="_blank"
+        rel="noreferrer noopener"
+        className="font-medium text-emerald-400 transition-colors hover:text-cyan-400"
+      >
+        RYZTOR
+      </a>
     </footer>
   );
 }
