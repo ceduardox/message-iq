@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Slider } from "@/components/ui/slider";
+import { CheckBadge } from "./CheckBadge";
 
 interface ChatAreaProps {
   conversation: Conversation;
@@ -2181,7 +2182,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                currentColumn === "llamar" ? <Phone className="h-4 w-4" /> :
                currentColumn === "listo" ? <PackageCheck className="h-4 w-4" /> :
                currentColumn === "proceso" ? <Package className="h-4 w-4" /> :
-               currentColumn === "entregado" ? <Check className="h-4 w-4" /> :
+               currentColumn === "entregado" ? <CheckBadge className="h-4 w-4" /> :
                <Package className="h-4 w-4" />}
             </Button>
           </DropdownMenuTrigger>
@@ -2192,7 +2193,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                  col === "llamar" ? <Phone className="h-4 w-4 mr-2 text-emerald-500" /> :
                  col === "proceso" ? <Package className="h-4 w-4 mr-2 text-yellow-600" /> :
                  col === "listo" ? <PackageCheck className="h-4 w-4 mr-2 text-green-600" /> :
-                 col === "entregado" ? <Check className="h-4 w-4 mr-2 text-blue-600" /> :
+                 col === "entregado" ? <CheckBadge className="h-4 w-4 mr-2" /> :
                  <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />}
                 {colLabel(col)}
                 {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}

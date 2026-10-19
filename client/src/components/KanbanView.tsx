@@ -1,10 +1,11 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import type { Conversation, Label } from "@shared/schema";
 import { useConversation } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { ChatArea } from "./ChatArea";
 import { Phone, Clock, AlertCircle, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CheckBadge } from "./CheckBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -266,7 +267,7 @@ function KanbanCard({
             <CheckCircle className="h-4 w-4 text-cyan-400 flex-shrink-0" />
           )}
           {columnType === "entregado" && (
-            <Check className="h-4 w-4 text-slate-400 flex-shrink-0" />
+            <CheckBadge className="h-4 w-4 flex-shrink-0" />
           )}
         </div>
       </div>
@@ -397,7 +398,7 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
       case "listo":
         return <CheckCircle className="h-4 w-4" />;
       case "entregado":
-        return <Check className="h-4 w-4" />;
+        return <CheckBadge className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
@@ -501,13 +502,13 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
 
 type TabType = "humano" | "nuevo" | "llamar" | "proceso" | "listo" | "entregado";
 
-const tabConfig: { key: TabType; label: string; shortLabel: string; icon: typeof AlertCircle }[] = [
+const tabConfig: { key: TabType; label: string; shortLabel: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: "humano", label: "Interaccion Humana", shortLabel: "Humano", icon: AlertCircle },
   { key: "nuevo", label: "Esperando Confirmaci.", shortLabel: "Nuevos", icon: Clock },
   { key: "llamar", label: "Llamar", shortLabel: "Llamar", icon: Phone },
   { key: "proceso", label: "Cierre en Proceso", shortLabel: "Proceso", icon: Package },
   { key: "listo", label: "Por Cerrar", shortLabel: "Por Cerrar", icon: CheckCircle },
-  { key: "entregado", label: "Cerrado", shortLabel: "Cerrado", icon: Check },
+  { key: "entregado", label: "Cerrado", shortLabel: "Cerrado", icon: CheckBadge },
 ];
 
 export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, columnVisibleLimit, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
