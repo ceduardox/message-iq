@@ -2885,17 +2885,6 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
           />
 
           <Button
-            onClick={openCitaDialog}
-            size="icon"
-            variant="ghost"
-            className="rounded-full h-9 w-9 md:h-10 md:w-10 flex-shrink-0 text-emerald-600 dark:text-emerald-400"
-            data-testid="button-agendar-cita-composer"
-            title="Agendar cita"
-          >
-            <CalendarPlus className="h-4 w-4 md:h-5 md:w-5" />
-          </Button>
-
-          <Button
             onClick={() => (isRecording ? stopRecording() : startRecording())}
             disabled={uploadImageMutation.isPending || uploadAudioMutation.isPending || uploadVideoMutation.isPending || uploadDocumentMutation.isPending}
             size="icon"
