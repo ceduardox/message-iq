@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, Truck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone, CalendarPlus, StickyNote } from "lucide-react";
+import { Send, Image as ImageIcon, Mic, Plus, Check, CheckCheck, MapPin, Bug, Copy, ExternalLink, X, Zap, Tag, Trash2, Package, PackageCheck, PackageX, Bot, BotOff, AlertCircle, Phone, Lightbulb, Loader2, UserRoundCog, Clock, Pencil, FileText, Video, EllipsisVertical, ChevronRight, Megaphone, CalendarPlus, StickyNote } from "lucide-react";
 import type { Conversation, Message, Label, QuickMessage, Agent } from "@shared/schema";
 import {
   DropdownMenu,
@@ -2181,7 +2181,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                currentColumn === "llamar" ? <Phone className="h-4 w-4" /> :
                currentColumn === "listo" ? <PackageCheck className="h-4 w-4" /> :
                currentColumn === "proceso" ? <Package className="h-4 w-4" /> :
-               currentColumn === "entregado" ? <Truck className="h-4 w-4" /> :
+               currentColumn === "entregado" ? <Check className="h-4 w-4" /> :
                <Package className="h-4 w-4" />}
             </Button>
           </DropdownMenuTrigger>
@@ -2192,7 +2192,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                  col === "llamar" ? <Phone className="h-4 w-4 mr-2 text-emerald-500" /> :
                  col === "proceso" ? <Package className="h-4 w-4 mr-2 text-yellow-600" /> :
                  col === "listo" ? <PackageCheck className="h-4 w-4 mr-2 text-green-600" /> :
-                 col === "entregado" ? <Truck className="h-4 w-4 mr-2 text-blue-600" /> :
+                 col === "entregado" ? <Check className="h-4 w-4 mr-2 text-blue-600" /> :
                  <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />}
                 {colLabel(col)}
                 {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}

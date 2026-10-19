@@ -3,7 +3,7 @@ import type { Conversation, Label } from "@shared/schema";
 import { useConversation } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { ChatArea } from "./ChatArea";
-import { Phone, Clock, AlertCircle, Truck, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X, Pencil } from "lucide-react";
+import { Phone, Clock, AlertCircle, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,7 +182,7 @@ function KanbanCard({
       case "listo":
         return { text: "Listo", bgColor: "bg-cyan-500/20", textColor: "text-cyan-400", dotColor: "bg-cyan-500" };
       case "entregado":
-        return { text: "Entregado", bgColor: "bg-slate-500/20", textColor: "text-slate-400", dotColor: "bg-slate-500" };
+        return { text: "Cerrado", bgColor: "bg-slate-500/20", textColor: "text-slate-400", dotColor: "bg-slate-500" };
       default:
         return null;
     }
@@ -266,7 +266,7 @@ function KanbanCard({
             <CheckCircle className="h-4 w-4 text-cyan-400 flex-shrink-0" />
           )}
           {columnType === "entregado" && (
-            <Truck className="h-4 w-4 text-slate-400 flex-shrink-0" />
+            <Check className="h-4 w-4 text-slate-400 flex-shrink-0" />
           )}
         </div>
       </div>
@@ -397,7 +397,7 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
       case "listo":
         return <CheckCircle className="h-4 w-4" />;
       case "entregado":
-        return <Truck className="h-4 w-4" />;
+        return <Check className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
@@ -507,7 +507,7 @@ const tabConfig: { key: TabType; label: string; shortLabel: string; icon: typeof
   { key: "llamar", label: "Llamar", shortLabel: "Llamar", icon: Phone },
   { key: "proceso", label: "Cierre en Proceso", shortLabel: "Proceso", icon: Package },
   { key: "listo", label: "Por Cerrar", shortLabel: "Por Cerrar", icon: CheckCircle },
-  { key: "entregado", label: "Cerrado", shortLabel: "Cerrado", icon: Truck },
+  { key: "entregado", label: "Cerrado", shortLabel: "Cerrado", icon: Check },
 ];
 
 export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange, onLoadMore, hasMoreConversations, maxDays, columnVisibleLimit, searchQuery, onSearchChange, onClearSearch }: KanbanViewProps) {
