@@ -818,6 +818,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
       toast({ title: aiDisabled ? "IA desactivada - Modo humano" : "IA activada en este chat" });
     },
     onError: (error: Error) => {
+      setAiOptimistic(null);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -909,6 +910,17 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   const [citaManualTime, setCitaManualTime] = useState("");
   const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState("");
+  // Optimista: refleja el cambio de IA al instante, sin esperar al servidor.
+  const [aiOptimistic, setAiOptimistic] = useState<boolean | null>(null);
+  const aiDisabledNow = aiOptimistic ?? Boolean(conversation.aiDisabled);
+  const toggleAiNow = () => {
+    const next = !aiDisabledNow;
+    setAiOptimistic(next);
+    toggleAiMutation.mutate(next);
+  };
+  useEffect(() => {
+    if (aiOptimistic !== null && Boolean(conversation.aiDisabled) === aiOptimistic) setAiOptimistic(null);
+  }, [conversation.aiDisabled, aiOptimistic]);
   const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
     queryKey: ["/api/kanban-labels"],
   });
@@ -1848,17 +1860,17 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
 	        {/* AI Toggle Button (admin and agents) */}
 	        {canToggleConversationAi && (
           <Button 
-            variant={conversation.aiDisabled ? "default" : "ghost"} 
+            variant={aiDisabledNow ? "default" : "ghost"} 
             size="icon" 
             className={cn(
-              "flex-shrink-0 h-7 w-7",
-              conversation.aiDisabled && "bg-orange-500 text-white"
+              "flex-shrink-0 h-7 w-7 transition-colors",
+              aiDisabledNow && "bg-orange-500 text-white"
             )}
-            onClick={() => toggleAiMutation.mutate(!conversation.aiDisabled)}
-            title={conversation.aiDisabled ? "IA desactivada - Click para activar" : "IA activa - Click para desactivar"}
+            onClick={toggleAiNow}
+            title={aiDisabledNow ? "IA desactivada - Click para activar" : "IA activa - Click para desactivar"}
             data-testid="button-ai-toggle"
           >
-            {conversation.aiDisabled ? <BotOff className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+            {aiDisabledNow ? <BotOff className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
           </Button>
         )}
 
@@ -2266,9 +2278,9 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
                 </>
               )}
               {canToggleConversationAi && (
-                <DropdownMenuItem onClick={() => toggleAiMutation.mutate(!conversation.aiDisabled)} data-testid="mobile-action-ai">
-                  {conversation.aiDisabled ? <Bot className="h-4 w-4 mr-2" /> : <BotOff className="h-4 w-4 mr-2" />}
-                  {conversation.aiDisabled ? "Activar IA" : "Desactivar IA"}
+                <DropdownMenuItem onClick={toggleAiNow} data-testid="mobile-action-ai">
+                  {aiDisabledNow ? <Bot className="h-4 w-4 mr-2" /> : <BotOff className="h-4 w-4 mr-2" />}
+                  {aiDisabledNow ? "Activar IA" : "Desactivar IA"}
                 </DropdownMenuItem>
               )}
               {conversation.needsHumanAttention && (
