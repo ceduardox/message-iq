@@ -2879,7 +2879,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               requestAnimationFrame(() => resizeMessageInput());
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Escribe un mensaje..."
+            placeholder="Mensaje"
             className="flex-1 min-w-0 min-h-[40px] max-h-[200px] md:max-h-[140px] resize-none overflow-hidden border-0 bg-white dark:bg-[#2a3942] rounded-3xl px-3 md:px-4 py-2 text-sm leading-[1.35] focus-visible:ring-0"
             rows={1}
           />
