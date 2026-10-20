@@ -407,7 +407,7 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
 
   return (
     <div className={cn(
-      "flex flex-col h-full min-w-0 flex-1 mx-1.5 first:ml-0 last:mr-0",
+      "flex flex-col h-full min-w-[260px] flex-1 mx-1.5 first:ml-0 last:mr-0",
       "bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30",
       "shadow-xl", getColumnGlow(),
       isDropTarget && "ring-2 ring-emerald-400/70 border-emerald-400/60"
@@ -1064,7 +1064,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
 
       {/* Desktop: Grid view with glassmorphism */}
       <div className="hidden md:flex flex-1 min-h-0">
-        <div className="flex-1 flex gap-0 min-h-0 overflow-hidden p-3">
+        <div className="flex-1 flex gap-0 min-h-0 overflow-x-auto overflow-y-hidden p-3">
           <KanbanColumn
             title={labelFor("humano")}
             items={humano}
