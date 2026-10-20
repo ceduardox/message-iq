@@ -1081,6 +1081,24 @@ async function processAiResponse(data: BufferedMessage) {
               console.log("=== CALL REMINDER SET ===", conversationId, callDate.toISOString());
             } else {
               console.warn("=== LLAMADA LLENA (cupo global) ===", { conversationId, callDate: callDate.toISOString(), locup, lcap });
+              // No se agendó: avisar al cliente para no dejar una confirmación falsa.
+              const correction = "Ese horario se acaba de ocupar 😊 ¿Te sirve otro horario?";
+              try {
+                await writeReminderRaw(conversationId, null, null, null, false);
+                await sendAiResponseToWhatsApp(from, correction);
+                await storage.createMessage({
+                  conversationId,
+                  waMessageId: `call_full_${Date.now()}_${conversationId}`,
+                  direction: "out",
+                  type: "text",
+                  text: correction,
+                  timestamp: Math.floor(Date.now() / 1000).toString(),
+                  status: "sent",
+                });
+                updateData.lastMessage = correction;
+              } catch (corrErr) {
+                console.error("=== ERROR AVISO LLAMADA LLENA ===", corrErr);
+              }
             }
           }
         }

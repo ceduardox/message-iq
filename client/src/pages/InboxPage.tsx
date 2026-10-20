@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useConversations } from "@/hooks/use-inbox";
 import { NotificationBell } from "@/components/NotificationBell";
 import { BrandFooter } from "@/components/BrandFooter";
 import { KanbanView } from "@/components/KanbanView";
 import { Button } from "@/components/ui/button";
-import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Send, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound } from "lucide-react";
+import { LogOut, Bot, BotOff, ClipboardList, LayoutGrid, Sparkles, MessageSquare, Zap, Activity, BarChart3, Send, Search, X, Users, Bell, Clock, EllipsisVertical, KeyRound, CalendarCheck, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Link, useLocation } from "wouter";
 import {
@@ -34,6 +35,13 @@ export default function InboxPage() {
   const [visibleConversations, setVisibleConversations] = useState(INITIAL_VISIBLE_CONVERSATIONS);
   const maxDays = 30;
   const iaHref = isAdmin ? "/ai-agent" : "/agent-ai";
+
+  const { data: availabilities = [] } = useQuery<Array<{ id: number }>>({
+    queryKey: ["/api/availabilities"],
+    enabled: isAdmin,
+    staleTime: 0,
+  });
+  const noAvailability = isAdmin && availabilities.length === 0;
   const serverLimit = useMemo(
     () => {
       const query = searchQuery.trim();
@@ -226,6 +234,17 @@ export default function InboxPage() {
           </Button>
         </div>
       </div>
+      {noAvailability && (
+        <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1">La IA no tiene horarios configurados, así que no podrá ofrecer citas.</span>
+          <Link href="/citas">
+            <Button size="sm" variant="outline" className="h-7 border-amber-500/40 bg-transparent text-amber-800 hover:bg-amber-500/10 dark:text-amber-200">
+              Configurar
+            </Button>
+          </Link>
+        </div>
+      )}
       {/* Kanban View - responsive para movil y desktop */}
       <div className="flex flex-1 min-h-0 pb-14 md:pb-0">
         <KanbanView
@@ -273,6 +292,12 @@ export default function InboxPage() {
           <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${location === '/analytics' ? 'text-[#00CFFF] bg-[#00CFFF]/10 dark:text-white dark:bg-[#00CFFF]/25' : 'text-slate-500 dark:text-slate-300'}`}>
             <BarChart3 className="h-5 w-5" />
             <span className="text-[10px] mt-0.5 font-medium">Stats</span>
+          </button>
+        </Link>
+        <Link href="/citas">
+          <button className={`flex flex-col items-center px-3 py-1 rounded-xl transition-all ${location === '/citas' ? 'text-[#7A3DB8] bg-[#7A3DB8]/10 dark:text-white dark:bg-[#7A3DB8]/30' : 'text-slate-500 dark:text-slate-300'}`}>
+            <CalendarCheck className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5 font-medium">Citas</span>
           </button>
         </Link>
         <DropdownMenu>
