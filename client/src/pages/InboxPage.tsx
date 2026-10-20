@@ -124,12 +124,13 @@ export default function InboxPage() {
       <style dangerouslySetInnerHTML={{ __html: pulseLineAnimation }} />
       
       {/* Desktop Header - Futuristic */}
-      <div className="hidden md:flex items-center justify-between px-5 py-3 bg-slate-800/80 backdrop-blur-lg flex-shrink-0 border-b border-emerald-500/20 relative overflow-hidden">
-        {/* Animated line effect */}
+      <div className="hidden md:flex items-center justify-between px-5 py-3 bg-slate-900/85 backdrop-blur-xl flex-shrink-0 border-b border-emerald-500/20 relative overflow-hidden shadow-[0_8px_30px_-16px_rgba(16,185,129,0.45)] [&_button]:transition-transform [&_button]:duration-100 [&_button]:active:scale-90">
+        {/* Glow + line effects */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)]" />
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-pulse-line" />
         
-        <div className="flex items-center gap-4">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+        <div className="relative flex items-center gap-4">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/40 ring-1 ring-white/10">
             <MessageSquare className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -153,7 +154,7 @@ export default function InboxPage() {
               placeholder="Buscar por nombre, mensaje o telefono..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-8 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500/20"
+              className="h-10 rounded-xl pl-10 pr-8 bg-slate-800/70 border-slate-600/70 text-white placeholder:text-slate-400 transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/25"
               data-testid="input-search"
             />
             {searchQuery && (
@@ -216,7 +217,7 @@ export default function InboxPage() {
               <Clock className="h-5 w-5" />
             </Button>
           </Link>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/50 border border-slate-600">
+          <div className="flex items-center gap-2 rounded-xl bg-slate-800/70 px-3 py-1.5 ring-1 ring-slate-600/60">
             <div className="h-2 w-2 bg-emerald-400 rounded-full animate-pulse" />
             <span className="text-sm text-slate-300 font-medium">{user?.username}</span>
           </div>
