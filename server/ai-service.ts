@@ -150,11 +150,13 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
     const lines: string[] = [];
     const slotsById: Record<string, { sede: string; startAt: string }> = {};
 
+    const MAX_PER_CANAL = 8;
+    const MAX_PER_BLOCK = 2;
     for (const sede of ["centro", "norte", "virtual"]) {
       const blocks = avail.filter((a: any) => a.sede === sede);
       if (blocks.length === 0) continue;
       const slots: Date[] = [];
-      for (let d = 1; d <= 7 && slots.length < 3; d++) {
+      for (let d = 1; d <= 7 && slots.length < MAX_PER_CANAL; d++) {
         const day = new Date();
         day.setDate(day.getDate() + d);
         day.setHours(0, 0, 0, 0);
@@ -162,16 +164,20 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
         for (const a of blocks.filter((x: any) => Number(x.weekday) === wd)) {
           const s = toMin(a.startTime);
           const e = toMin(a.endTime);
-          for (let m = s; m + CITA_MINUTES <= e && slots.length < 3; m += CITA_MINUTES) {
+          let perBlock = 0;
+          for (let m = s; m + CITA_MINUTES <= e && slots.length < MAX_PER_CANAL && perBlock < MAX_PER_BLOCK; m += CITA_MINUTES) {
             const st = new Date(day);
             st.setHours(Math.floor(m / 60), m % 60, 0, 0);
             if (st.getTime() < now + 60 * 60 * 1000) continue;
             const ocupados = countByStart[keyOf(st)] || 0;
-            if (ocupados < capacity) slots.push(st);
+            if (ocupados < capacity) {
+              slots.push(st);
+              perBlock++;
+            }
           }
-          if (slots.length >= 3) break;
         }
       }
+      slots.sort((a, b) => a.getTime() - b.getTime());
       if (slots.length === 0) continue;
       const prefix = sede === "norte" ? "N" : sede === "virtual" ? "V" : "C";
       const parts = slots.map((s, i) => {
@@ -604,7 +610,7 @@ ${currentDateContext}
 - Un cierre esta "en proceso" cuando la llamada o cita con el Asesor Educativo ya se realizo y solo falta el cierre comercial.
 - Si NO puedes responder la pregunta con la información disponible, escribe exactamente [NECESITO_HUMANO] y no respondas nada más.
 - Si el cliente pide que lo llamen (cualquier forma: "llámenme", "me pueden llamar", "prefiero llamada", "que me llame", "quiero hablar por teléfono"), o menciona llamada telefónica, o detectas que una llamada cerraría la venta, escribe [LLAMAR] al final SIEMPRE. Recuerda: ya tienes su número de WhatsApp, NO le pidas número.
-${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas (ej: "el jueves 17 a las 15:00 o 16:00").\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1], [CITA: N2] o [CITA: V1]. Usa el codigo (C1, C2, N1, V1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Para CITA VIRTUAL, di "modalidad virtual (videollamada)" y NO menciones direccion. Para presencial, menciona la sede y su direccion.\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si no hay horario disponible, no uses [CITA:].\n- PARA LLAMADAS: usa SOLO estos mismos horarios. Si el cliente propone otro dia/hora que NO esta en la lista, NO confirmes; ofrece 2 opciones de la lista.\n- NUNCA confirmes (ni con [CITA:] ni con [LLAMAR]) un horario que no este en HORARIOS DISPONIBLES.` : ""}
+${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas (ej: "el jueves 17 a las 15:00 o 16:00").\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1], [CITA: N2] o [CITA: V1]. Usa el codigo (C1, C2, N1, V1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Para CITA VIRTUAL, di "modalidad virtual (videollamada)" y NO menciones direccion. Para presencial, menciona la sede y su direccion.\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si en la lista hay horarios de manana Y de tarde, y el cliente pide un turno (ej. "por las tardes"), ofrece SOLO 2 opciones de ese turno (de los que aparecen en la lista). Si no hay de ese turno, dilo y ofrece los de otro turno.\n- Si no hay horario disponible, no uses [CITA:].\n- PARA LLAMADAS: usa SOLO estos mismos horarios. Si el cliente propone otro dia/hora que NO esta en la lista, NO confirmes; ofrece 2 opciones de la lista.\n- NUNCA confirmes (ni con [CITA:] ni con [LLAMAR]) un horario que no este en HORARIOS DISPONIBLES.` : ""}
 ${learnedRulesContext}
 ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
 
