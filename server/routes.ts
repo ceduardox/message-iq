@@ -4548,29 +4548,36 @@ export async function registerRoutes(
   // Set kanban column status in one operation (used by drag & drop)
   app.patch("/api/conversations/:id/kanban-status", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
-    const parsed = z.object({
-      column: z.enum(["humano", "nuevo", "llamar", "proceso", "listo", "entregado"]),
-    }).safeParse(req.body);
+    const parsed = z.object({ column: z.string().trim().min(1).max(40) }).safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid column" });
     }
 
     const { column } = parsed.data;
+    const SYSTEM_COLUMNS = ["humano", "nuevo", "llamar", "proceso", "listo", "entregado"];
+    const isSystem = SYSTEM_COLUMNS.includes(column);
+    if (!isSystem) {
+      const cols = await storage.getKanbanColumns();
+      if (!cols.some((c) => c.key === column)) return res.status(400).json({ error: "Column not found" });
+    }
     let updates: Record<string, any>;
 
     if (column === "humano") {
-      updates = { needsHumanAttention: true, shouldCall: false, orderStatus: null };
+      updates = { needsHumanAttention: true, shouldCall: false, orderStatus: null, kanbanColumn: null };
     } else if (column === "nuevo") {
-      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: null };
+      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: null, kanbanColumn: null };
     } else if (column === "llamar") {
-      updates = { needsHumanAttention: false, shouldCall: true, orderStatus: null };
+      updates = { needsHumanAttention: false, shouldCall: true, orderStatus: null, kanbanColumn: null };
     } else if (column === "proceso") {
-      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "pending" };
+      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "pending", kanbanColumn: null };
     } else if (column === "listo") {
-      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "ready" };
+      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "ready", kanbanColumn: null };
+    } else if (column === "entregado") {
+      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "delivered", kanbanColumn: null };
     } else {
-      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: "delivered" };
+      // Columna personalizada
+      updates = { needsHumanAttention: false, shouldCall: false, orderStatus: null, kanbanColumn: column };
     }
 
     const updated = await storage.updateConversation(id, updates);
@@ -6541,6 +6548,43 @@ Maximo 2 lineas. Se especifico y practico.`;
     if (!key || !label) return res.status(400).json({ message: "Datos inválidos" });
     await storage.upsertKanbanLabel(key, label);
     res.json({ success: true, key, label });
+  });
+
+  // Columnas del Kanban (sistema + personalizadas)
+  const slugifyKey = (text: string) =>
+    text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 20) || "col";
+
+  app.get("/api/kanban-columns", requireAuth, async (_req, res) => {
+    res.json(await storage.getKanbanColumns());
+  });
+
+  app.post("/api/kanban-columns", requireAdmin, async (req, res) => {
+    const label = String(req.body?.label ?? "").trim().slice(0, 60);
+    if (!label) return res.status(400).json({ message: "Nombre requerido" });
+    const existing = await storage.getKanbanColumns();
+    let key = slugifyKey(label);
+    let i = 2;
+    while (existing.some((c) => c.key === key)) key = `${slugifyKey(label).slice(0, 17)}_${i++}`;
+    const maxSort = existing.reduce((m, c) => Math.max(m, Number(c.sortOrder) || 0), 0);
+    await storage.createKanbanColumn(key, label, maxSort + 1);
+    res.json({ success: true, key, label });
+  });
+
+  app.patch("/api/kanban-columns/:key", requireAdmin, async (req, res) => {
+    const key = String(req.params.key || "").trim().slice(0, 20);
+    const data: { label?: string; isActive?: boolean; sortOrder?: number } = {};
+    if (req.body?.label !== undefined) data.label = String(req.body.label).trim().slice(0, 60);
+    if (req.body?.isActive !== undefined) data.isActive = !!req.body.isActive;
+    if (req.body?.sortOrder !== undefined) data.sortOrder = Number(req.body.sortOrder) || 0;
+    await storage.updateKanbanColumn(key, data);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/kanban-columns/:key", requireAdmin, async (req, res) => {
+    const key = String(req.params.key || "").trim().slice(0, 20);
+    await storage.deleteKanbanColumn(key);
+    res.json({ success: true });
   });
 
   // Comentarios internos por conversación

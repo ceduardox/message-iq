@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import type { Conversation, Label } from "@shared/schema";
 import { useConversation } from "@/hooks/use-inbox";
 import { useAuth } from "@/hooks/use-auth";
@@ -6,6 +6,7 @@ import { ChatArea } from "./ChatArea";
 import { Phone, Clock, AlertCircle, CheckCircle, Check, Zap, ArrowLeft, Tag, Package, Search, X, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckBadge } from "./CheckBadge";
+import { KanbanColumnsManager } from "./KanbanColumnsManager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -66,7 +67,7 @@ interface ColumnProps {
   items: Conversation[];
   activeId: number | null;
   onSelect: (id: number) => void;
-  columnType: "humano" | "nuevo" | "llamar" | "proceso" | "listo" | "entregado";
+  columnType: string;
   labels: Label[];
   showAgentAssignment: boolean;
   getAssignedAgentName: (assignedAgentId: number | null) => string | null;
@@ -160,7 +161,7 @@ function KanbanCard({
   conv: Conversation; 
   isActive: boolean; 
   onSelect: () => void;
-  columnType: "humano" | "nuevo" | "llamar" | "proceso" | "listo" | "entregado";
+  columnType: string;
   labels: Label[];
   showAgentAssignment: boolean;
   assignedAgentName: string | null;
@@ -500,9 +501,11 @@ function KanbanColumn({ title, items, activeId, onSelect, columnType, labels, sh
   );
 }
 
-type TabType = "humano" | "nuevo" | "llamar" | "proceso" | "listo" | "entregado";
+type TabType = string;
 
-const tabConfig: { key: TabType; label: string; shortLabel: string; icon: ComponentType<{ className?: string }> }[] = [
+const SYSTEM_KEYS = ["humano", "nuevo", "llamar", "proceso", "listo", "entregado"];
+
+const tabConfig: { key: string; label: string; shortLabel: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: "humano", label: "Interaccion Humana", shortLabel: "Humano", icon: AlertCircle },
   { key: "nuevo", label: "Esperando Confirmaci.", shortLabel: "Nuevos", icon: Clock },
   { key: "llamar", label: "Llamar", shortLabel: "Llamar", icon: Phone },
@@ -527,12 +530,27 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const { data: kanbanLabels = [] } = useQuery<Array<{ key: string; label: string }>>({
     queryKey: ["/api/kanban-labels"],
   });
+  const { data: kanbanColumns = [] } = useQuery<Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>>({
+    queryKey: ["/api/kanban-columns"],
+  });
   const labelMap = useMemo(() => {
     const m: Record<string, string> = {};
     for (const r of kanbanLabels) m[r.key] = r.label;
     return m;
   }, [kanbanLabels]);
-  const labelFor = (key: TabType) => labelMap[key] || tabConfig.find((t) => t.key === key)?.label || key;
+  const activeColumns = useMemo(() => {
+    const merged = [...kanbanColumns];
+    for (const k of SYSTEM_KEYS) {
+      if (!merged.some((c) => c.key === k)) {
+        merged.push({ key: k, label: tabConfig.find((t) => t.key === k)?.label || k, sortOrder: SYSTEM_KEYS.indexOf(k) + 1, isActive: true, isSystem: true });
+      }
+    }
+    return merged
+      .filter((c) => c.isActive !== false)
+      .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+  }, [kanbanColumns]);
+  const iconFor = (key: string) => tabConfig.find((t) => t.key === key)?.icon || Tag;
+  const labelFor = (key: TabType) => labelMap[key] || kanbanColumns.find((c) => c.key === key)?.label || tabConfig.find((t) => t.key === key)?.label || key;
   const renameMutation = useMutation({
     mutationFn: async ({ key, label }: { key: TabType; label: string }) => {
       const res = await fetch(`/api/kanban-labels/${key}`, {
@@ -555,14 +573,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const hasAppliedUrlConversation = useRef(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
-  const tabRefs = useRef<Record<TabType, HTMLButtonElement | null>>({
-    humano: null,
-    nuevo: null,
-    llamar: null,
-    proceso: null,
-    listo: null,
-    entregado: null,
-  });
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const { data: activeConversation } = useConversation(activeId);
   const isMobileChatOpen = !!(activeId && activeConversation);
   const { data: labels = [] } = useQuery<Label[]>({ queryKey: ["/api/labels"] });
@@ -715,19 +726,26 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   const enProceso = sortByRecent(
     filtered.filter((c) => c.orderStatus === "pending" && !c.needsHumanAttention),
   ).slice(0, displayLimit);
-  const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention)).slice(0, displayLimit);
+  const nuevos = sortByRecent(filtered.filter((c) => !c.orderStatus && !c.shouldCall && !c.needsHumanAttention && !c.kanbanColumn)).slice(0, displayLimit);
 
-  const columnData: Record<TabType, { items: Conversation[]; title: string }> = {
-    humano: { items: humano, title: labelFor("humano") },
-    nuevo: { items: nuevos, title: labelFor("nuevo") },
-    llamar: { items: llamar, title: labelFor("llamar") },
-    proceso: { items: enProceso, title: labelFor("proceso") },
-    listo: { items: listos, title: labelFor("listo") },
-    entregado: { items: entregados, title: labelFor("entregado") },
+  const systemItems: Record<string, Conversation[]> = {
+    humano,
+    nuevo: nuevos,
+    llamar,
+    proceso: enProceso,
+    listo: listos,
+    entregado: entregados,
   };
+  const columnData: Record<string, { items: Conversation[]; title: string }> = {};
+  for (const col of activeColumns) {
+    const items = col.isSystem
+      ? systemItems[col.key] || []
+      : sortByRecent(filtered.filter((c) => c.kanbanColumn === col.key)).slice(0, displayLimit);
+    columnData[col.key] = { items, title: labelFor(col.key) };
+  }
 
-  const getTabColor = (tab: TabType, isActive: boolean) => {
-    const colors: Record<TabType, string> = {
+  const getTabColor = (tab: string, isActive: boolean) => {
+    const colors: Record<string, string> = {
       humano: isActive ? "bg-red-500/20 text-red-400 border-red-500/50" : "text-slate-500 border-transparent",
       nuevo: isActive ? "bg-slate-600/30 text-slate-300 border-slate-500/50" : "text-slate-500 border-transparent",
       llamar: isActive ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" : "text-slate-500 border-transparent",
@@ -735,12 +753,12 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
       listo: isActive ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50" : "text-slate-500 border-transparent",
       entregado: isActive ? "bg-slate-500/20 text-slate-400 border-slate-500/50" : "text-slate-500 border-transparent",
     };
-    return colors[tab];
+    return colors[tab] || (isActive ? "bg-violet-500/20 text-violet-300 border-violet-500/50" : "text-slate-500 border-transparent");
   };
 
   const moveMobileTab = (direction: "next" | "prev") => {
-    const order: TabType[] = ["humano", "nuevo", "llamar", "proceso", "listo", "entregado"];
-    const currentIndex = order.indexOf(mobileTab);
+    const order: string[] = activeColumns.map((c) => c.key);
+    const currentIndex = Math.max(0, order.indexOf(mobileTab));
     const nextIndex = direction === "next"
       ? Math.min(order.length - 1, currentIndex + 1)
       : Math.max(0, currentIndex - 1);
@@ -910,6 +928,8 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <KanbanColumnsManager isAdmin={isAdmin} />
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -955,28 +975,28 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
         "md:hidden flex overflow-x-auto bg-slate-800/80 backdrop-blur-lg border-b border-slate-700/50 gap-1 p-2",
         isMobileChatOpen && "hidden",
       )}>
-        {tabConfig.map((tab) => {
-          const Icon = tab.icon;
-          const count = columnData[tab.key].items.length;
+        {activeColumns.map((col) => {
+          const Icon = iconFor(col.key);
+          const count = columnData[col.key]?.items.length ?? 0;
           return (
             <button
-              key={tab.key}
+              key={col.key}
               ref={(el) => {
-                tabRefs.current[tab.key] = el;
+                tabRefs.current[col.key] = el;
               }}
-              onClick={() => setMobileTab(tab.key)}
+              onClick={() => setMobileTab(col.key)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap border select-none",
                 "transition-transform duration-100 active:scale-95",
-                getTabColor(tab.key, mobileTab === tab.key)
+                getTabColor(col.key, mobileTab === col.key)
               )}
-              data-testid={`tab-${tab.key}`}
+              data-testid={`tab-${col.key}`}
             >
               <Icon className="h-4 w-4" />
-              <span>{labelMap[tab.key] || tab.shortLabel}</span>
+              <span>{labelFor(col.key)}</span>
               <span className={cn(
                 "text-xs px-1.5 py-0.5 rounded-full font-bold",
-                mobileTab === tab.key ? "bg-white/20" : "bg-slate-700"
+                mobileTab === col.key ? "bg-white/20" : "bg-slate-700"
               )}>
                 {count}
               </span>
@@ -1002,8 +1022,8 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
         >
           <div className={cn("h-full", isMobileChatOpen && "pointer-events-none opacity-0")}>
             <KanbanColumn
-              title={columnData[mobileTab].title}
-              items={columnData[mobileTab].items}
+              title={columnData[mobileTab]?.title ?? labelFor(mobileTab)}
+              items={columnData[mobileTab]?.items ?? []}
               activeId={activeId}
               onSelect={handleSelectConversation}
               columnType={mobileTab}
@@ -1163,6 +1183,29 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
             canRename={isAdmin}
             onRename={handleRename}
           />
+          {activeColumns.filter((c) => !c.isSystem).map((col) => (
+            <KanbanColumn
+              key={col.key}
+              title={labelFor(col.key)}
+              items={columnData[col.key]?.items ?? []}
+              activeId={activeId}
+              onSelect={handleSelectConversation}
+              columnType={col.key}
+              labels={labels}
+              showAgentAssignment={isAdmin}
+              getAssignedAgentName={getAssignedAgentName}
+              enableDrag={canDragKanban}
+              draggingConversationId={draggingConversationId}
+              isDropTarget={dragOverColumn === col.key}
+              onDragStartCard={handleDragStartCard}
+              onDragEndCard={handleDragEndCard}
+              onDragOverColumn={handleDragOverColumn}
+              onDropOnColumn={handleDropOnColumn}
+              unreadIds={unreadIds}
+              canRename={isAdmin}
+              onRename={handleRename}
+            />
+          ))}
         </div>
 
         {activeId && activeConversation ? (

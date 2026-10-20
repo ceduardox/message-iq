@@ -890,6 +890,45 @@ export class DatabaseStorage implements IStorage {
     `);
   }
 
+  async getKanbanColumns(): Promise<Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>> {
+    const rows: any = await db.execute(sql`
+      SELECT key, label, COALESCE(sort_order, 0) AS "sortOrder",
+             COALESCE(is_active, true) AS "isActive", COALESCE(is_system, false) AS "isSystem"
+      FROM kanban_column_labels
+      ORDER BY COALESCE(sort_order, 0), key
+    `);
+    return (rows.rows ?? rows) as Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>;
+  }
+
+  async createKanbanColumn(key: string, label: string, sortOrder: number): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO kanban_column_labels (key, label, sort_order, is_active, is_system)
+      VALUES (${key}, ${label}, ${sortOrder}, true, false)
+    `);
+  }
+
+  async updateKanbanColumn(key: string, data: { label?: string; isActive?: boolean; sortOrder?: number }): Promise<void> {
+    if (data.label !== undefined) {
+      await db.execute(sql`UPDATE kanban_column_labels SET label = ${data.label}, updated_at = NOW() WHERE key = ${key}`);
+    }
+    if (data.isActive !== undefined) {
+      await db.execute(sql`UPDATE kanban_column_labels SET is_active = ${data.isActive}, updated_at = NOW() WHERE key = ${key}`);
+    }
+    if (data.sortOrder !== undefined) {
+      await db.execute(sql`UPDATE kanban_column_labels SET sort_order = ${data.sortOrder}, updated_at = NOW() WHERE key = ${key}`);
+    }
+  }
+
+  async deleteKanbanColumn(key: string): Promise<void> {
+    // Los chats de esa columna vuelven a "Esperando Confirmación" (nuevo).
+    await db.execute(sql`
+      UPDATE conversations
+      SET kanban_column = NULL, order_status = NULL, should_call = false, needs_human_attention = false
+      WHERE kanban_column = ${key}
+    `);
+    await db.execute(sql`DELETE FROM kanban_column_labels WHERE key = ${key} AND COALESCE(is_system, false) = false`);
+  }
+
   async getComments(conversationId: number): Promise<Array<{ id: number; author: string | null; text: string; createdAt: string }>> {
     const rows: any = await db.execute(sql`
       SELECT id, author, text, to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "createdAt"

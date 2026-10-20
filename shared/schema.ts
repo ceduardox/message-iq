@@ -48,6 +48,7 @@ export const conversations = pgTable("conversations", {
   labelId2: integer("label_id_2").references(() => labels.id),
   isPinned: boolean("is_pinned").default(false),
   orderStatus: varchar("order_status", { length: 20 }),
+  kanbanColumn: varchar("kanban_column", { length: 40 }),
   aiDisabled: boolean("ai_disabled").default(false),
   needsHumanAttention: boolean("needs_human_attention").default(false),
   shouldCall: boolean("should_call").default(false),

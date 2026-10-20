@@ -356,6 +356,22 @@ export async function ensureDatabaseSchema(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`ALTER TABLE kanban_column_labels ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE kanban_column_labels ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`);
+  await db.execute(sql`ALTER TABLE kanban_column_labels ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT false`);
+  await db.execute(sql`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS kanban_column VARCHAR(40)`);
+  // Columnas del sistema (no borrables). No pisa el label si ya fue renombrado.
+  await db.execute(sql`
+    INSERT INTO kanban_column_labels (key, label, sort_order, is_active, is_system) VALUES
+      ('humano', 'Interacción Humana', 1, true, true),
+      ('nuevo', 'Esperando Confirmación', 2, true, true),
+      ('llamar', 'Llamar', 3, true, true),
+      ('proceso', 'Cierre en proceso', 4, true, true),
+      ('listo', 'Por cerrar', 5, true, true),
+      ('entregado', 'Cerrado', 6, true, true)
+    ON CONFLICT (key) DO UPDATE SET is_system = true, sort_order = EXCLUDED.sort_order
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS conversation_comments (
       id SERIAL PRIMARY KEY,

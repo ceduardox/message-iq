@@ -938,10 +938,24 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
     listo: "Por cerrar",
     entregado: "Cerrado",
   };
+  const { data: kanbanCols = [] } = useQuery<Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>>({
+    queryKey: ["/api/kanban-columns"],
+  });
+  const statusColumns = useMemo(() => {
+    if (kanbanCols.length > 0) {
+      return kanbanCols
+        .filter((c) => c.isActive !== false)
+        .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+    }
+    return ["nuevo", "humano", "llamar", "proceso", "listo", "entregado"].map((k, i) => ({
+      key: k, label: "", sortOrder: i + 1, isActive: true, isSystem: true,
+    }));
+  }, [kanbanCols]);
   const colLabel = (col: string) => kanbanLabelMap[col] || COL_DEFAULTS[col] || col;
   const statusLabel = (key: "pending" | "ready" | "delivered") =>
     colLabel(key === "pending" ? "proceso" : key === "ready" ? "listo" : "entregado");
-  const currentColumn = conversation.needsHumanAttention ? "humano"
+  const currentColumn = conversation.kanbanColumn ? conversation.kanbanColumn
+    : conversation.needsHumanAttention ? "humano"
     : conversation.shouldCall ? "llamar"
     : conversation.orderStatus === "pending" ? "proceso"
     : conversation.orderStatus === "ready" ? "listo"
@@ -2187,18 +2201,21 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {(["nuevo", "humano", "llamar", "proceso", "listo", "entregado"] as const).map((col) => (
-              <DropdownMenuItem key={col} onClick={() => setColumnMutation.mutate(col)} className={cn(currentColumn === col && "font-semibold")}>
-                {col === "humano" ? <AlertCircle className="h-4 w-4 mr-2 text-red-500" /> :
-                 col === "llamar" ? <Phone className="h-4 w-4 mr-2 text-emerald-500" /> :
-                 col === "proceso" ? <Package className="h-4 w-4 mr-2 text-yellow-600" /> :
-                 col === "listo" ? <PackageCheck className="h-4 w-4 mr-2 text-green-600" /> :
-                 col === "entregado" ? <CheckBadge className="h-4 w-4 mr-2" /> :
-                 <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />}
-                {colLabel(col)}
-                {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
-              </DropdownMenuItem>
-            ))}
+            {statusColumns.map((c) => {
+              const col = c.key;
+              return (
+                <DropdownMenuItem key={col} onClick={() => setColumnMutation.mutate(col)} className={cn(currentColumn === col && "font-semibold")}>
+                  {col === "humano" ? <AlertCircle className="h-4 w-4 mr-2 text-red-500" /> :
+                   col === "llamar" ? <Phone className="h-4 w-4 mr-2 text-emerald-500" /> :
+                   col === "proceso" ? <Package className="h-4 w-4 mr-2 text-yellow-600" /> :
+                   col === "listo" ? <PackageCheck className="h-4 w-4 mr-2 text-green-600" /> :
+                   col === "entregado" ? <CheckBadge className="h-4 w-4 mr-2" /> :
+                   <PackageX className="h-4 w-4 mr-2 text-muted-foreground" />}
+                  {colLabel(col)}
+                  {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
         </div>
@@ -2318,10 +2335,10 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
               </DropdownMenuItem>
               {mobileMenuExpandedSection === "status" && (
                 <div className="pl-6 pr-1 py-1 space-y-0.5 border-l-2 border-slate-700/40 ml-4">
-                  {(["nuevo", "humano", "llamar", "proceso", "listo", "entregado"] as const).map((col) => (
-                    <DropdownMenuItem key={col} onClick={() => setColumnMutation.mutate(col)} className={cn(currentColumn === col && "font-semibold")}>
-                      {colLabel(col)}
-                      {currentColumn === col && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
+                  {statusColumns.map((c) => (
+                    <DropdownMenuItem key={c.key} onClick={() => setColumnMutation.mutate(c.key)} className={cn(currentColumn === c.key && "font-semibold")}>
+                      {colLabel(c.key)}
+                      {currentColumn === c.key && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
                     </DropdownMenuItem>
                   ))}
                 </div>
