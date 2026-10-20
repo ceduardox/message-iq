@@ -65,6 +65,15 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
 
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
+  const orderedColumns = (() => {
+    const base = [...columns].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+    if (!previewOrder) return base;
+    const byKey = new Map(base.map((c) => [c.key, c]));
+    const mapped = previewOrder.map((k) => byKey.get(k)).filter(Boolean) as KanbanColumnDef[];
+    for (const c of base) if (!previewOrder.includes(c.key)) mapped.push(c);
+    return mapped;
+  })();
 
   const reorderMutation = useMutation({
     mutationFn: async (orderedKeys: string[]) => {
@@ -80,19 +89,26 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const handleDropOn = (targetKey: string) => {
-    if (!dragKey || dragKey === targetKey) { setDragKey(null); setOverKey(null); return; }
-    const ordered = [...columns]
-      .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0))
-      .map((c) => c.key);
-    const from = ordered.indexOf(dragKey);
-    const to = ordered.indexOf(targetKey);
-    if (from < 0 || to < 0) { setDragKey(null); setOverKey(null); return; }
-    ordered.splice(from, 1);
-    ordered.splice(to, 0, dragKey);
-    reorderMutation.mutate(ordered);
+  const handleDragOverRow = (targetKey: string) => {
+    setOverKey(targetKey);
+    if (!dragKey) return;
+    setPreviewOrder((prev) => {
+      const base = prev ?? [...columns].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0)).map((c) => c.key);
+      const from = base.indexOf(dragKey);
+      const to = base.indexOf(targetKey);
+      if (from < 0 || to < 0 || from === to) return prev ?? base;
+      const next = [...base];
+      next.splice(from, 1);
+      next.splice(to, 0, dragKey);
+      return next;
+    });
+  };
+
+  const handleDropOn = () => {
+    if (dragKey) reorderMutation.mutate(previewOrder ?? orderedColumns.map((c) => c.key));
     setDragKey(null);
     setOverKey(null);
+    setPreviewOrder(null);
   };
 
   const moveMutation = useMutation({
@@ -165,17 +181,20 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
             <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : (
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              {columns.map((col, idx) => (
+              {orderedColumns.map((col, idx) => (
                 <div
                   key={col.key}
                   draggable={editingKey !== col.key}
-                  onDragStart={() => setDragKey(col.key)}
-                  onDragOver={(e) => { e.preventDefault(); setOverKey(col.key); }}
+                  onDragStart={() => {
+                    setDragKey(col.key);
+                    setPreviewOrder(orderedColumns.map((c) => c.key));
+                  }}
+                  onDragOver={(e) => { e.preventDefault(); handleDragOverRow(col.key); }}
                   onDragLeave={() => setOverKey((prev) => (prev === col.key ? null : prev))}
-                  onDrop={(e) => { e.preventDefault(); handleDropOn(col.key); }}
-                  onDragEnd={() => { setDragKey(null); setOverKey(null); }}
+                  onDrop={(e) => { e.preventDefault(); handleDropOn(); }}
+                  onDragEnd={() => { setDragKey(null); setOverKey(null); setPreviewOrder(null); }}
                   className={cn(
-                    "group flex select-none items-center gap-2 rounded-lg border p-2 transition-all duration-150 ease-out",
+                    "group flex select-none items-center gap-2 rounded-lg border p-2 transition-all duration-100 ease-out",
                     col.isActive ? "" : "opacity-60",
                     dragKey === col.key && "scale-[0.98] border-dashed border-emerald-400/70 opacity-50 shadow-inner",
                     overKey === col.key && dragKey && dragKey !== col.key && "scale-[1.02] border-emerald-400 bg-emerald-50/70 shadow-md ring-2 ring-emerald-400/80",
