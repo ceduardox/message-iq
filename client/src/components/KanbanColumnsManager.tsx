@@ -175,15 +175,15 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                   onDrop={(e) => { e.preventDefault(); handleDropOn(col.key); }}
                   onDragEnd={() => { setDragKey(null); setOverKey(null); }}
                   className={cn(
-                    "flex items-center gap-2 rounded-lg border p-2 transition-colors",
+                    "group flex select-none items-center gap-2 rounded-lg border p-2 transition-all duration-150 ease-out",
                     col.isActive ? "" : "opacity-60",
-                    dragKey === col.key && "opacity-40",
-                    overKey === col.key && dragKey && dragKey !== col.key && "ring-2 ring-emerald-400/70 border-emerald-400/60",
+                    dragKey === col.key && "scale-[0.98] border-dashed border-emerald-400/70 opacity-50 shadow-inner",
+                    overKey === col.key && dragKey && dragKey !== col.key && "scale-[1.02] border-emerald-400 bg-emerald-50/70 shadow-md ring-2 ring-emerald-400/80",
                   )}
                   data-testid={`column-row-${col.key}`}
                 >
                   {editingKey !== col.key && (
-                    <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-slate-400 active:cursor-grabbing" aria-label="Arrastrar para ordenar" />
+                    <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-slate-400 transition-colors group-hover:text-emerald-500 active:cursor-grabbing" aria-label="Arrastrar para ordenar" />
                   )}
                   {editingKey === col.key ? (
                     <>
