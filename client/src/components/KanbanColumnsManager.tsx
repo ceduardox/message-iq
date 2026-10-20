@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Settings2, Plus, Eye, EyeOff, Trash2, Check, Loader2 } from "lucide-react";
+import { Settings2, Plus, Eye, EyeOff, Trash2, Check, Loader2, ArrowUp, ArrowDown } from "lucide-react";
 
 interface KanbanColumnDef {
   key: string;
@@ -63,6 +63,25 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: async ({ key, dir }: { key: string; dir: "up" | "down" }) => {
+      const ordered = [...columns].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+      const idx = ordered.findIndex((c) => c.key === key);
+      const swapWith = dir === "up" ? idx - 1 : idx + 1;
+      if (idx < 0 || swapWith < 0 || swapWith >= ordered.length) return;
+      [ordered[idx], ordered[swapWith]] = [ordered[swapWith], ordered[idx]];
+      for (let i = 0; i < ordered.length; i++) {
+        await fetch(`/api/kanban-columns/${ordered[i].key}`, {
+          method: "PATCH", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sortOrder: i + 1 }),
+        });
+      }
+    },
+    onSuccess: () => { invalidate(); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (key: string) => {
       const res = await fetch(`/api/kanban-columns/${key}`, { method: "DELETE", credentials: "include" });
@@ -114,7 +133,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
             <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : (
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              {columns.map((col) => (
+              {columns.map((col, idx) => (
                 <div key={col.key} className={cn("flex items-center gap-2 rounded-lg border p-2", col.isActive ? "" : "opacity-60")} data-testid={`column-row-${col.key}`}>
                   {editingKey === col.key ? (
                     <>
@@ -143,6 +162,22 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                         {col.label}
                         {col.isSystem && <span className="ml-1 text-[10px] text-slate-400">(sistema)</span>}
                       </button>
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8"
+                        disabled={idx === 0 || moveMutation.isPending}
+                        onClick={() => moveMutation.mutate({ key: col.key, dir: "up" })}
+                        title="Mover a la izquierda / arriba"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8"
+                        disabled={idx === columns.length - 1 || moveMutation.isPending}
+                        onClick={() => moveMutation.mutate({ key: col.key, dir: "down" })}
+                        title="Mover a la derecha / abajo"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost" size="icon" className="h-8 w-8"
                         onClick={() => updateMutation.mutate({ key: col.key, data: { isActive: !col.isActive } })}
