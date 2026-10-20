@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,7 @@ import {
   Eye,
   EyeOff,
   User,
+  Pencil,
 } from "lucide-react";
 
 interface Availability {
@@ -150,6 +153,8 @@ export default function CitasPage() {
   const [afternoonOn, setAfternoonOn] = useState(true);
   const [afternoonStart, setAfternoonStart] = useState("14:00");
   const [afternoonEnd, setAfternoonEnd] = useState("18:00");
+  const [horarioSheetOpen, setHorarioSheetOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   // ===== Nueva cita dialog =====
   const [showNueva, setShowNueva] = useState(false);
@@ -511,6 +516,127 @@ export default function CitasPage() {
     </div>
   );
 
+  const daysLabel =
+    days.length === 0
+      ? "Ningún día"
+      : days.length === 7
+        ? "Todos los días"
+        : [1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d)).map((d) => WEEKDAYS_SHORT[d]).join(" · ");
+  const turnosLabel =
+    [morningOn ? `Mañana ${morningStart}–${morningEnd}` : null, afternoonOn ? `Tarde ${afternoonStart}–${afternoonEnd}` : null]
+      .filter(Boolean)
+      .join(" · ") || "Sin turnos";
+
+  const horarioEditor = (
+    <>
+      <div className="mb-4">
+        <Label className="mb-2 block text-xs text-slate-400">Canal</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {CANALES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSede(s)}
+              className={cn(
+                "flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all active:scale-[0.97]",
+                sede === s ? SEDE_ACCENT[s].tab : "border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-slate-500",
+              )}
+              data-testid={`button-sede-${s}`}
+            >
+              <MapPin className={cn("h-4 w-4", sede === s ? "" : "text-slate-500")} />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">{SEDE_LABEL[s]}</span>
+                <span className="block truncate text-[11px] opacity-70">{SEDE_ADDR[s]}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <Label className="text-xs text-slate-400">Días</Label>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <button onClick={() => setDays([1, 2, 3, 4, 5])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 transition-transform active:scale-95 hover:border-emerald-500/50">Lun–Vie</button>
+            <button onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 transition-transform active:scale-95 hover:border-emerald-500/50">Todos</button>
+            <button onClick={() => setDays([])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 transition-transform active:scale-95 hover:border-red-500/50">Ninguno</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+            const on = days.includes(d);
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => toggleDay(d)}
+                className={cn(
+                  "flex h-12 flex-col items-center justify-center rounded-xl border-2 text-xs font-semibold transition-all active:scale-95",
+                  on ? "border-emerald-500 bg-emerald-500/20 text-white" : "border-slate-600/50 bg-slate-800/50 text-slate-400",
+                )}
+                data-testid={`day-${d}`}
+              >
+                {WEEKDAYS_SHORT[d]}
+                {on && <Check className="mt-0.5 h-3 w-3" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className={cn("rounded-xl border p-3 transition-all", morningOn ? "border-amber-500/50 bg-amber-500/10" : "border-slate-600/50 bg-slate-800/40")}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sun className={cn("h-4 w-4", morningOn ? "text-amber-400" : "text-slate-500")} />
+              <span className="text-sm font-medium">Turno mañana</span>
+            </div>
+            <Switch checked={morningOn} onCheckedChange={setMorningOn} />
+          </div>
+          {morningOn && (
+            <div className="mt-3 flex items-center gap-2">
+              <Input type="time" value={morningStart} onChange={(e) => setMorningStart(e.target.value)} className="min-w-0 flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+              <span className="shrink-0 text-slate-500">–</span>
+              <Input type="time" value={morningEnd} onChange={(e) => setMorningEnd(e.target.value)} className="min-w-0 flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+            </div>
+          )}
+        </div>
+
+        <div className={cn("rounded-xl border p-3 transition-all", afternoonOn ? "border-indigo-500/50 bg-indigo-500/10" : "border-slate-600/50 bg-slate-800/40")}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Moon className={cn("h-4 w-4", afternoonOn ? "text-indigo-300" : "text-slate-500")} />
+              <span className="text-sm font-medium">Turno tarde</span>
+            </div>
+            <Switch checked={afternoonOn} onCheckedChange={setAfternoonOn} />
+          </div>
+          {afternoonOn && (
+            <div className="mt-3 flex items-center gap-2">
+              <Input type="time" value={afternoonStart} onChange={(e) => setAfternoonStart(e.target.value)} className="min-w-0 flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+              <span className="shrink-0 text-slate-500">–</span>
+              <Input type="time" value={afternoonEnd} onChange={(e) => setAfternoonEnd(e.target.value)} className="min-w-0 flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <Button
+          onClick={() => saveMutation.mutate(undefined, { onSuccess: () => setHorarioSheetOpen(false) })}
+          disabled={saveMutation.isPending}
+          className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white transition-transform active:scale-[0.98]"
+        >
+          {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+          Guardar horario
+        </Button>
+        <Button variant="outline" onClick={() => clearDayMutation.mutate()} disabled={clearDayMutation.isPending} className="border-slate-600 bg-slate-800/60 text-slate-200 transition-transform active:scale-95">
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">Reemplaza el horario de {SEDE_LABEL[sede]} en los días elegidos. Se crean citas de 1 hora.</p>
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-28 text-slate-100 lg:pb-8">
       {/* Header */}
@@ -784,112 +910,43 @@ export default function CitasPage() {
               </div>
             )}
             <section className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 shadow-xl backdrop-blur-sm">
-              <div className="mb-3 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-amber-400" />
-                <h2 className="text-sm font-semibold">Configurar horario</h2>
-              </div>
-
-              <div className="mb-4">
-                <Label className="mb-2 block text-xs text-slate-400">Canal</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {CANALES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSede(s)}
-                      className={cn(
-                        "flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
-                        sede === s ? SEDE_ACCENT[s].tab : "border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-slate-500",
-                      )}
-                      data-testid={`button-sede-${s}`}
-                    >
-                      <MapPin className={cn("h-4 w-4", sede === s ? "" : "text-slate-500")} />
-                      <span>
-                        <span className="block text-sm font-semibold">{SEDE_LABEL[s]}</span>
-                        <span className="block text-[11px] opacity-70">{SEDE_ADDR[s]}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-xs text-slate-400">Días</Label>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => setDays([1, 2, 3, 4, 5])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50">Lun–Vie</button>
-                    <button onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500/50">Todos</button>
-                    <button onClick={() => setDays([])} className="rounded-full border border-slate-600/50 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-300 hover:border-red-500/50">Ninguno</button>
+              {isMobile ? (
+                <>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-400" />
+                    <h2 className="text-sm font-semibold">Horario</h2>
+                    <span className={cn("ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium", SEDE_ACCENT[sede].chip)}>
+                      <MapPin className="h-3 w-3" />
+                      {SEDE_LABEL[sede]}
+                    </span>
                   </div>
-                </div>
-                <div className="grid grid-cols-7 gap-1.5">
-                  {[1, 2, 3, 4, 5, 6, 0].map((d) => {
-                    const on = days.includes(d);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => toggleDay(d)}
-                        className={cn(
-                          "flex h-12 flex-col items-center justify-center rounded-xl border-2 text-xs font-semibold transition-all",
-                          on ? "border-emerald-500 bg-emerald-500/20 text-white" : "border-slate-600/50 bg-slate-800/50 text-slate-400",
-                        )}
-                        data-testid={`day-${d}`}
-                      >
-                        {WEEKDAYS_SHORT[d]}
-                        {on && <Check className="mt-0.5 h-3 w-3" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className={cn("rounded-xl border p-3 transition-all", morningOn ? "border-amber-500/50 bg-amber-500/10" : "border-slate-600/50 bg-slate-800/40")}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sun className={cn("h-4 w-4", morningOn ? "text-amber-400" : "text-slate-500")} />
-                      <span className="text-sm font-medium">Turno mañana</span>
+                  <dl className="space-y-1.5 text-sm">
+                    <div className="flex gap-2">
+                      <dt className="w-16 shrink-0 text-xs text-slate-500">Días</dt>
+                      <dd className="min-w-0 text-slate-200">{daysLabel}</dd>
                     </div>
-                    <Switch checked={morningOn} onCheckedChange={setMorningOn} />
+                    <div className="flex gap-2">
+                      <dt className="w-16 shrink-0 text-xs text-slate-500">Turnos</dt>
+                      <dd className="min-w-0 text-slate-200 tabular-nums">{turnosLabel}</dd>
+                    </div>
+                  </dl>
+                  <Button
+                    onClick={() => setHorarioSheetOpen(true)}
+                    className="mt-3 w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white transition-transform active:scale-[0.98]"
+                    data-testid="button-editar-horario"
+                  >
+                    <Pencil className="mr-2 h-4 w-4" /> Editar horario
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-400" />
+                    <h2 className="text-sm font-semibold">Configurar horario</h2>
                   </div>
-                  {morningOn && (
-                    <div className="mt-3 flex items-center gap-2">
-                      <Input type="time" value={morningStart} onChange={(e) => setMorningStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
-                      <span className="text-slate-500">–</span>
-                      <Input type="time" value={morningEnd} onChange={(e) => setMorningEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
-                    </div>
-                  )}
-                </div>
-
-                <div className={cn("rounded-xl border p-3 transition-all", afternoonOn ? "border-indigo-500/50 bg-indigo-500/10" : "border-slate-600/50 bg-slate-800/40")}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Moon className={cn("h-4 w-4", afternoonOn ? "text-indigo-300" : "text-slate-500")} />
-                      <span className="text-sm font-medium">Turno tarde</span>
-                    </div>
-                    <Switch checked={afternoonOn} onCheckedChange={setAfternoonOn} />
-                  </div>
-                  {afternoonOn && (
-                    <div className="mt-3 flex items-center gap-2">
-                      <Input type="time" value={afternoonStart} onChange={(e) => setAfternoonStart(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
-                      <span className="text-slate-500">–</span>
-                      <Input type="time" value={afternoonEnd} onChange={(e) => setAfternoonEnd(e.target.value)} className="flex-1 bg-slate-900/60 border-slate-600/60 text-white" />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center gap-2">
-                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="flex-1 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white">
-                  {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-                  Guardar horario
-                </Button>
-                <Button variant="outline" onClick={() => clearDayMutation.mutate()} disabled={clearDayMutation.isPending} className="border-slate-600 bg-slate-800/60 text-slate-200">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">Reemplaza el horario de {SEDE_LABEL[sede]} en los días elegidos. Se crean citas de 1 hora.</p>
+                  {horarioEditor}
+                </>
+              )}
             </section>
 
             {/* Resumen semanal */}
@@ -975,15 +1032,19 @@ export default function CitasPage() {
         </Tabs>
       </div>
 
-      {/* Sticky guardar horario (mobile, solo tab horarios) */}
-      {tab === "horarios" && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-700/60 bg-slate-900/95 p-3 backdrop-blur-xl lg:hidden">
-          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white">
-            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-            Guardar horario · {SEDE_LABEL[sede]}
-          </Button>
-        </div>
-      )}
+      {/* Bottom sheet: editar horario (mobile) */}
+      <Sheet open={horarioSheetOpen} onOpenChange={setHorarioSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[90vh] overflow-y-auto rounded-t-3xl border-slate-700 bg-slate-900 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-slate-100"
+        >
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-700 lg:hidden" />
+          <SheetTitle className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <Sparkles className="h-4 w-4 text-amber-400" /> Configurar horario
+          </SheetTitle>
+          {horarioEditor}
+        </SheetContent>
+      </Sheet>
 
       {/* ================= Diálogo Nueva cita ================= */}
       <Dialog open={showNueva} onOpenChange={(o) => (o ? setShowNueva(true) : closeNueva())}>
