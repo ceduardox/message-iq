@@ -150,7 +150,7 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
     const lines: string[] = [];
     const slotsById: Record<string, { sede: string; startAt: string }> = {};
 
-    const MAX_PER_CANAL = 8;
+    const MAX_PER_CANAL = 12;
     const MAX_PER_BLOCK = 2;
     for (const sede of ["centro", "norte", "virtual"]) {
       const blocks = avail.filter((a: any) => a.sede === sede);
