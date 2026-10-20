@@ -26,6 +26,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
   const { data: columns = [], isLoading } = useQuery<KanbanColumnDef[]>({
     queryKey: ["/api/kanban-columns"],
     enabled: isAdmin && open,
+    staleTime: 0,
   });
 
   const invalidate = () => {

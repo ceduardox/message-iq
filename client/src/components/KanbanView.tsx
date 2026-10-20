@@ -532,6 +532,7 @@ export function KanbanView({ conversations, isLoading, daysToShow, onDaysChange,
   });
   const { data: kanbanColumns = [] } = useQuery<Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>>({
     queryKey: ["/api/kanban-columns"],
+    staleTime: 0,
   });
   const labelMap = useMemo(() => {
     const m: Record<string, string> = {};

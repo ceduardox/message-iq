@@ -940,6 +940,7 @@ export function ChatArea({ conversation, messages, onClose }: ChatAreaProps) {
   };
   const { data: kanbanCols = [] } = useQuery<Array<{ key: string; label: string; sortOrder: number; isActive: boolean; isSystem: boolean }>>({
     queryKey: ["/api/kanban-columns"],
+    staleTime: 0,
   });
   const statusColumns = useMemo(() => {
     if (kanbanCols.length > 0) {
