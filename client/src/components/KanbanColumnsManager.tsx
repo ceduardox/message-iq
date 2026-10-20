@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Settings2, Plus, Eye, EyeOff, Trash2, Check, Loader2, ArrowUp, ArrowDown } from "lucide-react";
+import { Settings2, Plus, Eye, EyeOff, Trash2, Check, Loader2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 
 interface KanbanColumnDef {
   key: string;
@@ -62,6 +62,38 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
     onSuccess: () => { invalidate(); setEditingKey(null); toast({ title: "Columna actualizada" }); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+
+  const reorderMutation = useMutation({
+    mutationFn: async (orderedKeys: string[]) => {
+      for (let i = 0; i < orderedKeys.length; i++) {
+        await fetch(`/api/kanban-columns/${orderedKeys[i]}`, {
+          method: "PATCH", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sortOrder: i + 1 }),
+        });
+      }
+    },
+    onSuccess: () => { invalidate(); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const handleDropOn = (targetKey: string) => {
+    if (!dragKey || dragKey === targetKey) { setDragKey(null); setOverKey(null); return; }
+    const ordered = [...columns]
+      .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0))
+      .map((c) => c.key);
+    const from = ordered.indexOf(dragKey);
+    const to = ordered.indexOf(targetKey);
+    if (from < 0 || to < 0) { setDragKey(null); setOverKey(null); return; }
+    ordered.splice(from, 1);
+    ordered.splice(to, 0, dragKey);
+    reorderMutation.mutate(ordered);
+    setDragKey(null);
+    setOverKey(null);
+  };
 
   const moveMutation = useMutation({
     mutationFn: async ({ key, dir }: { key: string; dir: "up" | "down" }) => {
@@ -134,7 +166,25 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
           ) : (
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
               {columns.map((col, idx) => (
-                <div key={col.key} className={cn("flex items-center gap-2 rounded-lg border p-2", col.isActive ? "" : "opacity-60")} data-testid={`column-row-${col.key}`}>
+                <div
+                  key={col.key}
+                  draggable={editingKey !== col.key}
+                  onDragStart={() => setDragKey(col.key)}
+                  onDragOver={(e) => { e.preventDefault(); setOverKey(col.key); }}
+                  onDragLeave={() => setOverKey((prev) => (prev === col.key ? null : prev))}
+                  onDrop={(e) => { e.preventDefault(); handleDropOn(col.key); }}
+                  onDragEnd={() => { setDragKey(null); setOverKey(null); }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border p-2 transition-colors",
+                    col.isActive ? "" : "opacity-60",
+                    dragKey === col.key && "opacity-40",
+                    overKey === col.key && dragKey && dragKey !== col.key && "ring-2 ring-emerald-400/70 border-emerald-400/60",
+                  )}
+                  data-testid={`column-row-${col.key}`}
+                >
+                  {editingKey !== col.key && (
+                    <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-slate-400 active:cursor-grabbing" aria-label="Arrastrar para ordenar" />
+                  )}
                   {editingKey === col.key ? (
                     <>
                       <Input
@@ -163,7 +213,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                         {col.isSystem && <span className="ml-1 text-[10px] text-slate-400">(sistema)</span>}
                       </button>
                       <Button
-                        variant="ghost" size="icon" className="h-8 w-8"
+                        variant="ghost" size="icon" className="h-8 w-8 transition-transform active:scale-90"
                         disabled={idx === 0 || moveMutation.isPending}
                         onClick={() => moveMutation.mutate({ key: col.key, dir: "up" })}
                         title="Mover a la izquierda / arriba"
@@ -171,7 +221,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                         <ArrowUp className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost" size="icon" className="h-8 w-8"
+                        variant="ghost" size="icon" className="h-8 w-8 transition-transform active:scale-90"
                         disabled={idx === columns.length - 1 || moveMutation.isPending}
                         onClick={() => moveMutation.mutate({ key: col.key, dir: "down" })}
                         title="Mover a la derecha / abajo"
@@ -179,7 +229,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                         <ArrowDown className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost" size="icon" className="h-8 w-8"
+                        variant="ghost" size="icon" className="h-8 w-8 transition-transform active:scale-90"
                         onClick={() => updateMutation.mutate({ key: col.key, data: { isActive: !col.isActive } })}
                         title={col.isActive ? "Ocultar" : "Mostrar"}
                       >
@@ -187,7 +237,7 @@ export function KanbanColumnsManager({ isAdmin }: { isAdmin: boolean }) {
                       </Button>
                       {!col.isSystem && (
                         <Button
-                          variant="ghost" size="icon" className="h-8 w-8 text-red-500"
+                          variant="ghost" size="icon" className="h-8 w-8 text-red-500 transition-transform active:scale-90"
                           onClick={() => { if (confirm(`Eliminar columna "${col.label}"? Los chats pasarán a Esperando Confirmación.`)) deleteMutation.mutate(col.key); }}
                           title="Eliminar"
                         >
