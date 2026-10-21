@@ -24,8 +24,14 @@ import {
   MessageSquare,
   Clock,
   TrendingUp,
+  LayoutDashboard,
+  Megaphone,
+  ShieldCheck,
+  Wallet,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Agent } from "@shared/schema";
 import {
   BarChart,
@@ -133,6 +139,9 @@ export default function AgentsPage() {
   const [officialRateBs, setOfficialRateBs] = useState("");
   const [parallelRateBs, setParallelRateBs] = useState("");
   const [analyticsPermissionsDraft, setAnalyticsPermissionsDraft] = useState<Record<number, number[]>>({});
+  const [activeSection, setActiveSection] = useState<"resumen" | "agentes" | "costos" | "anuncios" | "permisos">("resumen");
+  const [agentDetailId, setAgentDetailId] = useState<number | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const { data: agents = [], isLoading } = useQuery<AgentWithStats[]>({
     queryKey: ["/api/agents", dateFrom, dateTo],
@@ -442,8 +451,92 @@ export default function AgentsPage() {
 
   const pieColors = ["#10b981", "#06b6d4", "#0ea5e9", "#22d3ee", "#14b8a6", "#0891b2"];
 
+  const SECTIONS = [
+    { key: "resumen", label: "Resumen", icon: LayoutDashboard },
+    { key: "agentes", label: "Agentes", icon: Users },
+    { key: "costos", label: "Costos", icon: Wallet },
+    { key: "anuncios", label: "Anuncios", icon: Megaphone },
+    { key: "permisos", label: "Permisos", icon: ShieldCheck },
+  ] as const;
+
+  const topAgents = [...agents]
+    .sort((a, b) => (b.inboundMessages || 0) - (a.inboundMessages || 0))
+    .slice(0, 5);
+
+  const agentDetail = agents.find((agent) => agent.id === agentDetailId) || null;
+  const rangeLabel = dateFrom || dateTo ? `${dateFrom || "…"} → ${dateTo || "…"}` : "Acumulado";
+
+  const chartsBlock = (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4 shadow-xl backdrop-blur-xl">
+        <div className="mb-3 flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-emerald-400" />
+          <h3 className="text-sm font-semibold text-white">Mensajes por agente</h3>
+        </div>
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={performanceData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+              <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+              <Tooltip
+                cursor={{ fill: "rgba(16,185,129,0.08)" }}
+                contentStyle={{
+                  background: "rgba(15,23,42,0.95)",
+                  border: "1px solid rgba(148,163,184,0.25)",
+                  borderRadius: "12px",
+                  color: "#e2e8f0",
+                }}
+              />
+              <Bar dataKey="mensajes" radius={[8, 8, 0, 0]} fill="#10b981" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4 shadow-xl backdrop-blur-xl">
+        <div className="mb-3 flex items-center gap-2">
+          <Users className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-semibold text-white">Distribución de chats (activos)</h3>
+        </div>
+        <div className="h-56">
+          {distributionData.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-sm text-slate-500">
+              Sin chats asignados aún
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={distributionData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={58}
+                  outerRadius={82}
+                  paddingAngle={2}
+                >
+                  {distributionData.map((entry, index) => (
+                    <Cell key={`${entry.name}-${index}`} fill={pieColors[index % pieColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(15,23,42,0.95)",
+                    border: "1px solid rgba(148,163,184,0.25)",
+                    borderRadius: "12px",
+                    color: "#e2e8f0",
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-white relative">
       <style dangerouslySetInnerHTML={{ __html: glowAnimation }} />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-96 h-96 bg-emerald-500/8 rounded-full blur-3xl" />
@@ -451,21 +544,69 @@ export default function AgentsPage() {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[size:60px_60px]" />
       </div>
 
-      <div className="relative z-10 max-w-4xl mx-auto p-4 md:p-8">
-        <div className="flex items-center gap-4 mb-6">
+      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl">
+        <div className="relative z-10 mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <Link href="/">
-            <Button variant="ghost" size="icon" className="text-slate-400" data-testid="button-back-agents">
+            <Button variant="ghost" size="icon" className="shrink-0 text-slate-400" data-testid="button-back-agents">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 shadow-lg shadow-emerald-500/20">
             <Users className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">Gestión de Agentes</h1>
-            <p className="text-xs text-slate-500">Crea y administra agentes que atienden mensajes</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-bold text-white">Gestión de Agentes</h1>
+            <p className="truncate text-xs text-slate-500">{rangeLabel} · {agents.length} agentes</p>
           </div>
         </div>
+      </header>
+
+      <div className="relative z-10 mx-auto flex max-w-6xl gap-6 px-4 pb-28 pt-4 lg:pb-10">
+        <aside className="hidden w-56 shrink-0 lg:block">
+          <div className="sticky top-20 space-y-1">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secciones</p>
+            {SECTIONS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveSection(key)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98]",
+                  activeSection === key
+                    ? "bg-gradient-to-r from-emerald-500/20 to-cyan-500/10 text-white ring-1 ring-emerald-500/40"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+
+            <div className="mt-4 space-y-2 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Resumen rápido</p>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Activos</span>
+                <span className="font-semibold tabular-nums text-emerald-300">{activeAgents.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Chats inbound</span>
+                <span className="font-semibold tabular-nums">{totalInboundChats}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Por llamar</span>
+                <span className="font-semibold tabular-nums text-amber-300">{totalShouldCall}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Costo paralelo</span>
+                <span className="font-semibold tabular-nums text-violet-300">
+                  {totalParallelCostBs == null ? "—" : formatBs(totalParallelCostBs)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1 space-y-4">
 
         {agentAiColumnStatus && (
           <div
@@ -483,7 +624,24 @@ export default function AgentsPage() {
           </div>
         )}
 
-        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4 backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white">Rango de fechas</h3>
+            <span className="hidden text-xs text-slate-500 sm:inline">{rangeLabel}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className="ml-auto h-8 border-slate-700 bg-slate-900/60 text-xs text-slate-200 lg:hidden"
+              data-testid="button-agents-toggle-filters"
+            >
+              {rangeLabel}
+              <ChevronDown className={cn("ml-1 h-3.5 w-3.5 transition-transform", filtersOpen && "rotate-180")} />
+            </Button>
+          </div>
+
+          <div className={cn("mt-3 space-y-2", !filtersOpen && "hidden lg:block")}>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="text-xs text-slate-500 mb-1 block">Desde</label>
@@ -545,14 +703,17 @@ export default function AgentsPage() {
               Limpiar
             </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="text-xs text-slate-500">
             {dateFrom || dateTo
-              ? `Mostrando metricas del rango ${dateFrom || "..."} a ${dateTo || "..."}` 
+              ? `Mostrando metricas del rango ${dateFrom || "..."} a ${dateTo || "..."}`
               : "Mostrando metricas acumuladas (sin filtro de fechas)"}
           </p>
+          </div>
         </div>
 
-        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+        {activeSection === "costos" && (
+          <>
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-white">Costo por agente (base: Chats con inbound)</h3>
             <p className="text-xs text-slate-400">
@@ -635,8 +796,12 @@ export default function AgentsPage() {
             </div>
           </div>
         </div>
+          </>
+        )}
 
-        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+        {activeSection === "anuncios" && (
+          <>
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-white">Asignacion por anuncio (ad_id)</h3>
             <p className="text-xs text-slate-400">
@@ -744,8 +909,12 @@ export default function AgentsPage() {
             )}
           </div>
         </div>
+          </>
+        )}
 
-        <div className="mb-5 rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
+        {activeSection === "permisos" && (
+          <>
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 backdrop-blur-xl p-4">
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-white">Permisos de Analytics entre agentes</h3>
             <p className="text-xs text-slate-400">
@@ -820,107 +989,84 @@ export default function AgentsPage() {
             )}
           </div>
         </div>
+          </>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        {activeSection === "resumen" && (
+          <>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-emerald-300">Agentes activos</p>
-            <p className="text-2xl font-bold text-white mt-1">{activeAgents.length}</p>
+            <p className="mt-1 text-2xl font-bold text-white tabular-nums">{activeAgents.length}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-600/40 bg-slate-700/20 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Inactivos</p>
+            <p className="mt-1 text-2xl font-bold text-white tabular-nums">{inactiveAgents.length}</p>
           </div>
           <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-sky-300">Chats con inbound</p>
-            <p className="text-2xl font-bold text-white mt-1">{totalInboundChats}</p>
+            <p className="mt-1 text-2xl font-bold text-white tabular-nums">{totalInboundChats}</p>
           </div>
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-[11px] uppercase tracking-wide text-amber-300">Pendientes llamar</p>
-            <p className="text-2xl font-bold text-white mt-1">{totalShouldCall}</p>
+            <p className="mt-1 text-2xl font-bold text-white tabular-nums">{totalShouldCall}</p>
           </div>
         </div>
 
-        {!showForm ? (
-          <Button
-            onClick={() => setShowForm(true)}
-            className="mb-5 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0 shadow-lg shadow-emerald-500/20"
-            data-testid="button-add-agent"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Agente
-          </Button>
-        ) : (
-          <div className="mb-5 bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-600/80 to-cyan-600/80 px-5 py-3 relative overflow-hidden">
-              <div className="absolute inset-0 animate-glow-line" />
-              <h3 className="relative text-sm font-semibold text-white flex items-center gap-2">
-                <Plus className="h-4 w-4" />
-                Crear Agente
-              </h3>
-            </div>
-            <div className="p-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Nombre</label>
-                  <Input
-                    placeholder="Ej: María García"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
-                    data-testid="input-agent-name"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Usuario</label>
-                  <Input
-                    placeholder="Ej: maria"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
-                    data-testid="input-agent-username"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Contraseña</label>
-                  <Input
-                    type="text"
-                    placeholder="Contraseña"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
-                    data-testid="input-agent-password"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Peso (proporción de chats)</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={weight}
-                    onChange={(e) => setWeight(parseInt(e.target.value) || 1)}
-                    className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
-                    data-testid="input-agent-weight"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-slate-600 mb-4">
-                Peso = proporción de chats. Agente con peso 3 recibe 3x más que uno con peso 1.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleCreate}
-                  disabled={createMutation.isPending}
-                  className="bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
-                  data-testid="button-save-agent"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {createMutation.isPending ? "Creando..." : "Crear Agente"}
-                </Button>
-                <Button variant="ghost" onClick={resetForm} className="text-slate-400" data-testid="button-cancel-agent">
-                  <X className="h-4 w-4 mr-2" />
-                  Cancelar
-                </Button>
-              </div>
-            </div>
+        {chartsBlock}
+
+        <div className="rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4 backdrop-blur-xl">
+          <div className="mb-3 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">Top agentes por mensajes</h3>
+            <span className="ml-auto text-[11px] text-slate-500">Toca para ver detalle</span>
           </div>
+          {topAgents.length > 0 ? (
+            <div className="space-y-3">
+              {topAgents.map((agent) => {
+                const max = topAgents[0]?.inboundMessages || 1;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => setAgentDetailId(agent.id)}
+                    className="w-full text-left transition-transform active:scale-[0.99]"
+                    data-testid={`button-agent-top-${agent.id}`}
+                  >
+                    <div className="mb-1 flex items-center gap-2 text-sm">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-600 text-[10px] font-bold text-white">
+                        {agent.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 truncate font-medium">{agent.name}</span>
+                      <span className="ml-auto shrink-0 tabular-nums text-slate-400">{agent.inboundMessages || 0}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                        style={{ width: `${Math.round(((agent.inboundMessages || 0) / max) * 100)}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No hay agentes para mostrar.</p>
+          )}
+        </div>
+          </>
         )}
+
+        {activeSection === "agentes" && (
+          <>
+        <Button
+          onClick={() => setShowForm(true)}
+          className="w-full bg-gradient-to-r from-emerald-600 to-cyan-600 border-0 shadow-lg shadow-emerald-500/20 transition-transform active:scale-[0.98] sm:w-auto"
+          data-testid="button-add-agent"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Nuevo Agente
+        </Button>
 
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16">
@@ -936,74 +1082,7 @@ export default function AgentsPage() {
             <p className="text-slate-600 text-xs mt-1">Los mensajes se manejan solo desde la cuenta admin</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <TrendingUp className="h-4 w-4 text-emerald-400" />
-                  <h3 className="text-sm font-semibold text-white">Mensajes por agente</h3>
-                </div>
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={performanceData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip
-                        cursor={{ fill: "rgba(16,185,129,0.08)" }}
-                        contentStyle={{
-                          background: "rgba(15,23,42,0.95)",
-                          border: "1px solid rgba(148,163,184,0.25)",
-                          borderRadius: "12px",
-                          color: "#e2e8f0",
-                        }}
-                      />
-                      <Bar dataKey="mensajes" radius={[8, 8, 0, 0]} fill="#10b981" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="h-4 w-4 text-cyan-400" />
-                  <h3 className="text-sm font-semibold text-white">Distribucion de chats (activos)</h3>
-                </div>
-                <div className="h-56">
-                  {distributionData.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-sm text-slate-500">
-                      Sin chats asignados aun
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={distributionData}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={58}
-                          outerRadius={82}
-                          paddingAngle={2}
-                        >
-                          {distributionData.map((entry, index) => (
-                            <Cell key={`${entry.name}-${index}`} fill={pieColors[index % pieColors.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            background: "rgba(15,23,42,0.95)",
-                            border: "1px solid rgba(148,163,184,0.25)",
-                            borderRadius: "12px",
-                            color: "#e2e8f0",
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </div>
-            </div>
-
+          <div className="space-y-3">
             {activeAgents.length > 0 && (
               <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl border border-slate-700/30 shadow-xl shadow-emerald-500/10 overflow-hidden">
                 <div className="bg-gradient-to-r from-emerald-600/80 to-teal-600/80 px-4 py-3 relative overflow-hidden">
@@ -1033,6 +1112,7 @@ export default function AgentsPage() {
                         }
                       }}
                       onUpdate={(updates) => updateMutation.mutate({ id: agent.id, ...updates })}
+                      onOpenDetail={() => setAgentDetailId(agent.id)}
                       isPending={updateMutation.isPending}
                       unitCostBs={unitCostBs}
                       officialRate={officialRate}
@@ -1072,6 +1152,7 @@ export default function AgentsPage() {
                         }
                       }}
                       onUpdate={(updates) => updateMutation.mutate({ id: agent.id, ...updates })}
+                      onOpenDetail={() => setAgentDetailId(agent.id)}
                       isPending={updateMutation.isPending}
                       unitCostBs={unitCostBs}
                       officialRate={officialRate}
@@ -1083,7 +1164,192 @@ export default function AgentsPage() {
             )}
           </div>
         )}
+          </>
+        )}
+        </main>
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-700/60 bg-slate-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
+          {SECTIONS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveSection(key)}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[9px] font-medium transition-all active:scale-90",
+                activeSection === key ? "bg-emerald-500/10 text-emerald-300" : "text-slate-400 hover:text-slate-200",
+              )}
+              data-testid={`button-agents-section-${key}`}
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <Dialog open={showForm} onOpenChange={(open) => (open ? setShowForm(true) : resetForm())}>
+        <DialogContent className="max-w-md border-slate-700 bg-slate-900 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-emerald-400" /> Crear agente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Nombre</label>
+                <Input
+                  placeholder="Ej: María García"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
+                  data-testid="input-agent-name"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Usuario</label>
+                <Input
+                  placeholder="Ej: maria"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
+                  data-testid="input-agent-username"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Contraseña</label>
+                <Input
+                  type="text"
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
+                  data-testid="input-agent-password"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Peso (proporción de chats)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={weight}
+                  onChange={(e) => setWeight(parseInt(e.target.value) || 1)}
+                  className="bg-slate-800/60 border-slate-700/50 text-white placeholder:text-slate-600"
+                  data-testid="input-agent-weight"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Peso = proporción de chats. Agente con peso 3 recibe 3x más que uno con peso 1.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleCreate}
+                disabled={createMutation.isPending}
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0 transition-transform active:scale-[0.98]"
+                data-testid="button-save-agent"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {createMutation.isPending ? "Creando..." : "Crear agente"}
+              </Button>
+              <Button variant="ghost" onClick={resetForm} className="text-slate-400" data-testid="button-cancel-agent">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={agentDetailId != null} onOpenChange={(open) => { if (!open) setAgentDetailId(null); }}>
+        <DialogContent className="max-w-md border-slate-700 bg-slate-900 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-cyan-400" />
+              {agentDetail?.name ?? "Detalle del agente"}
+            </DialogTitle>
+          </DialogHeader>
+          {agentDetail ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-300">Chats inbound</p>
+                  <p className="text-2xl font-bold tabular-nums">{agentDetail.inboundChats || 0}</p>
+                </div>
+                <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-sky-300">Mensajes inbound</p>
+                  <p className="text-2xl font-bold tabular-nums">{agentDetail.inboundMessages || 0}</p>
+                </div>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-300">Por llamar</p>
+                  <p className="text-2xl font-bold tabular-nums">{agentDetail.shouldCallCount || 0}</p>
+                </div>
+                <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-violet-300">Nuevos leads</p>
+                  <p className="text-2xl font-bold tabular-nums">{agentDetail.newLeads || 0}</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 rounded-xl border border-slate-700/60 bg-slate-950/50 p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Usuario</span>
+                  <span className="min-w-0 truncate font-medium">@{agentDetail.username}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Estado</span>
+                  <span className={agentDetail.isActive ? "font-medium text-emerald-300" : "font-medium text-red-300"}>
+                    {agentDetail.isActive ? "Activo" : "Inactivo"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">IA automática</span>
+                  <span className={agentDetail.isAiAutoReplyEnabled ? "font-medium text-cyan-300" : "font-medium text-slate-400"}>
+                    {agentDetail.isAiAutoReplyEnabled ? "ON" : "OFF"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Peso</span>
+                  <span className="font-medium tabular-nums">{agentDetail.weight || 1}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Chats asignados</span>
+                  <span className="font-medium tabular-nums">{agentDetail.assignedConversations || 0}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Costo estimado (Meta Ads)</p>
+                {hasValidCostConfig ? (
+                  <div className="space-y-1 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Base</span>
+                      <span className="font-semibold tabular-nums">{formatBs((agentDetail.inboundChats || 0) * unitCostBs)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">USD</span>
+                      <span className="font-semibold tabular-nums">
+                        {formatUsd(((agentDetail.inboundChats || 0) * unitCostBs) / officialRate)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Paralelo</span>
+                      <span className="font-semibold tabular-nums text-violet-300">
+                        {formatBs((((agentDetail.inboundChats || 0) * unitCostBs) / officialRate) * parallelRate)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Configura el costo diario en la sección Costos.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No se encontró el agente.</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1098,6 +1364,7 @@ function AgentCard({
   onToggleAgentAiAutoReply,
   onDelete,
   onUpdate,
+  onOpenDetail,
   isPending,
   unitCostBs,
   officialRate,
@@ -1112,6 +1379,7 @@ function AgentCard({
   onToggleAgentAiAutoReply: () => void;
   onDelete: () => void;
   onUpdate: (updates: Record<string, any>) => void;
+  onOpenDetail: () => void;
   isPending: boolean;
   unitCostBs: number;
   officialRate: number;
@@ -1317,6 +1585,16 @@ function AgentCard({
 
         {!isEditing && (
           <div className="flex items-center gap-1 self-end md:self-auto">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenDetail}
+              title="Ver detalle"
+              className="text-cyan-300"
+              data-testid={`button-detail-agent-${agent.id}`}
+            >
+              <TrendingUp className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
