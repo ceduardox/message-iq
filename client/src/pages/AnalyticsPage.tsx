@@ -4,9 +4,32 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Tooltip } from "recharts";
-import { ArrowLeft, TrendingUp, Users, Phone, Truck, CheckCircle, AlertCircle, MessageSquare, Calendar, Zap, Inbox, Send as SendIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  TrendingUp,
+  Users,
+  Phone,
+  Truck,
+  CheckCircle,
+  AlertCircle,
+  MessageSquare,
+  Calendar,
+  Zap,
+  Inbox,
+  Send as SendIcon,
+  LayoutDashboard,
+  BarChart3,
+  Wallet,
+  Percent,
+  Trophy,
+  Activity,
+  Eye,
+  ChevronDown,
+} from "lucide-react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface AgentStat {
   agent_id: number;
@@ -92,6 +115,9 @@ export default function AnalyticsPage() {
   const [officialRateInput, setOfficialRateInput] = useState("");
   const [parallelRateInput, setParallelRateInput] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
+  const [activeSection, setActiveSection] = useState<"resumen" | "graficos" | "agentes" | "costos">("resumen");
+  const [agentDetailId, setAgentDetailId] = useState<number | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const agentsFilterInitializedRef = useRef(false);
 
   const normalizeDecimalInput = (value: string) => value.replace(",", ".").trim();
@@ -401,6 +427,50 @@ export default function AnalyticsPage() {
     return Array.from(grouped.values()).sort((a, b) => b.inboundChats - a.inboundChats);
   }, [agentStatsFiltered]);
 
+  const SECTIONS = [
+    { key: "resumen", label: "Resumen", icon: LayoutDashboard },
+    { key: "graficos", label: "Gráficos", icon: BarChart3 },
+    { key: "agentes", label: "Agentes", icon: Users },
+    { key: "costos", label: "Costos", icon: Wallet },
+  ] as const;
+
+  const appliedDays = useMemo(() => {
+    const from = new Date(`${appliedRange.dateFrom}T00:00:00Z`).getTime();
+    const to = new Date(`${appliedRange.dateTo}T00:00:00Z`).getTime();
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return 1;
+    return Math.max(1, Math.round((to - from) / 86400000) + 1);
+  }, [appliedRange.dateFrom, appliedRange.dateTo]);
+
+  const closingRate = stats.total > 0 ? Math.round((stats.entregado / stats.total) * 100) : 0;
+
+  const peakHour = useMemo(
+    () => hourlyData.reduce((best, item) => (item.mensajes > best.mensajes ? item : best), { hour: "0h", mensajes: 0 }),
+    [hourlyData],
+  );
+
+  const topAgents = useMemo(() => {
+    const grouped = new Map<number, { id: number; name: string; total: number; inbound: number }>();
+    for (const row of agentStatsFiltered) {
+      const id = Number(row.agent_id);
+      const current = grouped.get(id) || { id, name: String(row.agent_name || `Agente ${id}`), total: 0, inbound: 0 };
+      current.total += Number(row.incoming || 0) + Number(row.outgoing || 0);
+      current.inbound += Number(row.inbound_chats || 0);
+      grouped.set(id, current);
+    }
+    return Array.from(grouped.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3);
+  }, [agentStatsFiltered]);
+
+  const agentDetail = useMemo(
+    () => agentSummaryCards.find((item) => item.agentId === agentDetailId) || null,
+    [agentSummaryCards, agentDetailId],
+  );
+  const agentDetailRows = useMemo(
+    () => agentStatsFiltered.filter((row) => Number(row.agent_id) === agentDetailId),
+    [agentStatsFiltered, agentDetailId],
+  );
+
   const StatCard = ({ icon: Icon, label, value, color, gradient }: { 
     icon: typeof AlertCircle; 
     label: string; 
@@ -422,30 +492,96 @@ export default function AnalyticsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
-      <div className="sticky top-0 z-10 bg-slate-800/80 backdrop-blur-lg border-b border-slate-700/50 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="font-bold text-lg flex items-center gap-2">
-                Analytics <Zap className="h-4 w-4 text-yellow-400" />
-              </h1>
-              <p className="text-xs text-slate-400">Panel de estadisticas</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" className="shrink-0 text-slate-400 hover:text-white">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-2 truncate text-lg font-bold">
+              Analytics <Zap className="h-4 w-4 shrink-0 text-yellow-400" />
+            </h1>
+            <p className="truncate text-xs text-slate-400">
+              {appliedRange.isSingleDay ? appliedRange.dateFrom : `${appliedRange.dateFrom} → ${appliedRange.dateTo}`}
+            </p>
+          </div>
+          <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 sm:inline-flex">
+            <Activity className="h-3.5 w-3.5" /> {stats.total} conversaciones
+          </span>
+        </div>
+      </header>
+
+      <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-28 pt-4 lg:pb-10">
+        <aside className="hidden w-60 shrink-0 lg:block">
+          <div className="sticky top-20 space-y-1">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secciones</p>
+            {SECTIONS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveSection(key)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all active:scale-[0.98]",
+                  activeSection === key
+                    ? "bg-gradient-to-r from-emerald-500/20 to-cyan-500/10 text-white ring-1 ring-emerald-500/40"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+                {key === "agentes" && availableAgents.length > 0 && (
+                  <span className="ml-auto rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-400">{availableAgents.length}</span>
+                )}
+              </button>
+            ))}
+
+            <div className="mt-4 space-y-2 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Resumen rápido</p>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Total</span>
+                <span className="font-semibold tabular-nums">{stats.total}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Tasa de cierre</span>
+                <span className="font-semibold tabular-nums text-cyan-300">{closingRate}%</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Hora pico</span>
+                <span className="font-semibold tabular-nums text-emerald-300">{peakHour.hour}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">Días</span>
+                <span className="font-semibold tabular-nums">{appliedDays}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </aside>
 
-      <div className="p-4 space-y-6 pb-20">
+        <main className="min-w-0 flex-1 space-y-4">
         <div className="rounded-2xl border border-slate-700/40 bg-slate-800/60 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">Filtro por fecha</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white">Filtro por fecha</h3>
+            <span className="hidden text-xs text-slate-500 sm:inline">
+              {appliedRange.isSingleDay ? "1 día" : `${appliedDays} días`}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className="ml-auto h-8 border-slate-700 bg-slate-900/60 text-xs text-slate-200 lg:hidden"
+              data-testid="button-analytics-toggle-filters"
+            >
+              {appliedRange.isSingleDay ? appliedRange.dateFrom : `${appliedRange.dateFrom} → ${appliedRange.dateTo}`}
+              <ChevronDown className={cn("ml-1 h-3.5 w-3.5 transition-transform", filtersOpen && "rotate-180")} />
+            </Button>
+          </div>
 
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className={cn("mt-3 space-y-3", !filtersOpen && "hidden lg:block")}>
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant={filterMode === "day" ? "default" : "outline"}
@@ -530,65 +666,14 @@ export default function AnalyticsPage() {
             </Button>
           </div>
 
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-slate-500">
             Periodo aplicado: {appliedRange.isSingleDay ? appliedRange.dateFrom : `${appliedRange.dateFrom} a ${appliedRange.dateTo}`}
           </p>
+          </div>
         </div>
 
-        {isAdmin && (
-          <div className="rounded-2xl border border-cyan-500/30 bg-slate-800/70 p-4">
-            <h3 className="text-sm font-semibold text-white mb-3">Costo diario (admin)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Fecha</label>
-                <Input
-                  type="date"
-                  value={costDate}
-                  onChange={(e) => setCostDate(e.target.value)}
-                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Costo por chat (Bs)</label>
-                <Input
-                  value={unitCostBsInput}
-                  onChange={(e) => setUnitCostBsInput(e.target.value)}
-                  placeholder="Ej. 1.23"
-                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">TC oficial (Bs/USD)</label>
-                <Input
-                  value={officialRateInput}
-                  onChange={(e) => setOfficialRateInput(e.target.value)}
-                  placeholder="Ej. 6.6"
-                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Dolar paralelo (Bs/USD)</label>
-                <Input
-                  value={parallelRateInput}
-                  onChange={(e) => setParallelRateInput(e.target.value)}
-                  placeholder="Ej. 9.23"
-                  className="h-9 bg-slate-900/80 border-slate-700/60 text-white"
-                />
-              </div>
-              <Button
-                onClick={() => saveDailyCostMutation.mutate()}
-                disabled={saveDailyCostMutation.isPending || !costDate}
-                className="h-9 bg-gradient-to-r from-emerald-600 to-cyan-600 border-0"
-              >
-                {saveDailyCostMutation.isPending ? "Guardando..." : "Guardar dia"}
-              </Button>
-            </div>
-            <p className="text-xs text-slate-500 mt-2">
-              Si un dia no tiene precio guardado, el monto se muestra como `N/D`.
-            </p>
-          </div>
-        )}
-
+        {activeSection === "resumen" && (
+          <>
         <div className="group bg-gradient-to-r from-emerald-600/20 via-teal-600/20 to-cyan-600/20 rounded-2xl p-6 border border-emerald-500/30 shadow-xl shadow-emerald-500/10 hover:shadow-2xl hover:shadow-emerald-500/20 transition-all duration-300 relative overflow-hidden transform hover:scale-[1.02]">
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-2xl" />
           <div className="absolute -top-20 -right-20 w-60 h-60 bg-emerald-500/20 rounded-full blur-3xl" />
@@ -609,9 +694,89 @@ export default function AnalyticsPage() {
           <StatCard icon={Phone} label="Llamar" value={stats.llamar} color="text-emerald-400" gradient="bg-gradient-to-br from-emerald-500 to-teal-600" />
           <StatCard icon={CheckCircle} label="Por Cerrar" value={stats.listo} color="text-cyan-400" gradient="bg-gradient-to-br from-cyan-500 to-blue-600" />
           <StatCard icon={Truck} label="Cerrado" value={stats.entregado} color="text-slate-400" gradient="bg-gradient-to-br from-slate-500 to-slate-600" />
-          <StatCard icon={Users} label="Nuevos" value={stats.nuevos} color="text-violet-400" gradient="bg-gradient-to-br from-violet-500 to-purple-600" />
+          <div className="col-span-2 md:col-span-1">
+            <StatCard icon={Users} label="Nuevos" value={stats.nuevos} color="text-violet-400" gradient="bg-gradient-to-br from-violet-500 to-purple-600" />
+          </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Percent className="h-3.5 w-3.5" />
+              <span className="text-[11px] uppercase tracking-wide">Tasa de cierre</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-cyan-300">{closingRate}%</p>
+            <p className="text-[11px] text-slate-500">{stats.entregado} cerradas</p>
+          </div>
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Activity className="h-3.5 w-3.5" />
+              <span className="text-[11px] uppercase tracking-wide">Promedio diario</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-300">
+              {(stats.total / appliedDays).toLocaleString("es-BO", { maximumFractionDigits: 1 })}
+            </p>
+            <p className="text-[11px] text-slate-500">en {appliedDays} día{appliedDays === 1 ? "" : "s"}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Calendar className="h-3.5 w-3.5" />
+              <span className="text-[11px] uppercase tracking-wide">Hora pico</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-amber-300">{peakHour.hour}</p>
+            <p className="text-[11px] text-slate-500">{peakHour.mensajes} conversaciones</p>
+          </div>
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Trophy className="h-3.5 w-3.5" />
+              <span className="text-[11px] uppercase tracking-wide">Top agente</span>
+            </div>
+            <p className="mt-1 truncate text-lg font-bold text-violet-300">{topAgents[0]?.name ?? "—"}</p>
+            <p className="text-[11px] text-slate-500">{topAgents[0]?.total ?? 0} mensajes</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-amber-400" />
+            <h3 className="text-sm font-semibold">Top agentes por mensajes</h3>
+            <span className="ml-auto text-[11px] text-slate-500">Toca para ver detalle</span>
+          </div>
+          {topAgents.length > 0 ? (
+            <div className="space-y-3">
+              {topAgents.map((agent, i) => {
+                const max = topAgents[0]?.total || 1;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => setAgentDetailId(agent.id)}
+                    className="w-full text-left transition-transform active:scale-[0.99]"
+                  >
+                    <div className="mb-1 flex items-center gap-2 text-sm">
+                      <span className="w-5 shrink-0 text-xs font-bold text-slate-500">#{i + 1}</span>
+                      <span className="min-w-0 truncate font-medium">{agent.name}</span>
+                      <span className="ml-auto shrink-0 tabular-nums text-slate-400">{agent.total}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                        style={{ width: `${Math.round((agent.total / max) * 100)}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Sin datos de agentes en el periodo.</p>
+          )}
+        </div>
+          </>
+        )}
+
+        {activeSection === "graficos" && (
+          <>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 hover:shadow-2xl transition-all duration-300 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent rounded-2xl" />
@@ -694,6 +859,9 @@ export default function AnalyticsPage() {
               <Calendar className="h-4 w-4 text-white" />
             </div>
             Actividad por hora
+            <span className="ml-auto rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
+              Pico {peakHour.hour} · {peakHour.mensajes}
+            </span>
           </h3>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
@@ -716,7 +884,11 @@ export default function AnalyticsPage() {
             </ResponsiveContainer>
           </div>
         </div>
+          </>
+        )}
 
+        {activeSection === "agentes" && (
+          <>
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent rounded-2xl" />
           <div className="pointer-events-none absolute -top-10 -left-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl" />
@@ -783,7 +955,7 @@ export default function AnalyticsPage() {
               <p className="text-[11px] uppercase tracking-wide text-amber-300">Total</p>
               <p className="text-lg font-semibold text-white">{selectedTotals.totalMessages}</p>
             </div>
-            <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-2">
+            <div className="col-span-2 rounded-lg border border-violet-500/30 bg-violet-500/10 p-2 md:col-span-1">
               <p className="text-[11px] uppercase tracking-wide text-violet-300">Monto paralelo</p>
               <p className="text-lg font-semibold text-white">
                 {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
@@ -791,6 +963,72 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </div>
+          </>
+        )}
+
+        {activeSection === "costos" && (
+          <>
+        {isAdmin ? (
+          <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-cyan-400" />
+              <h3 className="text-sm font-semibold text-white">Costo diario (admin)</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-5 lg:items-end">
+              <div className="col-span-2 lg:col-span-1">
+                <label className="text-[11px] text-slate-400 mb-1 block">Fecha</label>
+                <Input
+                  type="date"
+                  value={costDate}
+                  onChange={(e) => setCostDate(e.target.value)}
+                  className="h-9 border-slate-700/60 bg-slate-950/70 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Costo por chat (Bs)</label>
+                <Input
+                  value={unitCostBsInput}
+                  onChange={(e) => setUnitCostBsInput(e.target.value)}
+                  placeholder="Ej. 1.23"
+                  className="h-9 border-slate-700/60 bg-slate-950/70 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">TC oficial (Bs/USD)</label>
+                <Input
+                  value={officialRateInput}
+                  onChange={(e) => setOfficialRateInput(e.target.value)}
+                  placeholder="Ej. 6.6"
+                  className="h-9 border-slate-700/60 bg-slate-950/70 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Dólar paralelo (Bs/USD)</label>
+                <Input
+                  value={parallelRateInput}
+                  onChange={(e) => setParallelRateInput(e.target.value)}
+                  placeholder="Ej. 9.23"
+                  className="h-9 border-slate-700/60 bg-slate-950/70 text-white"
+                />
+              </div>
+              <Button
+                onClick={() => saveDailyCostMutation.mutate()}
+                disabled={saveDailyCostMutation.isPending || !costDate}
+                className="col-span-2 h-9 border-0 bg-gradient-to-r from-emerald-500 to-cyan-500 transition-transform active:scale-[0.98] lg:col-span-1"
+              >
+                {saveDailyCostMutation.isPending ? "Guardando..." : "Guardar día"}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Si un día no tiene precio guardado, el monto se muestra como N/D.</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/60 p-4 text-sm text-slate-400">
+            <div className="mb-1 flex items-center gap-2 text-slate-300">
+              <Wallet className="h-4 w-4" /> Costos
+            </div>
+            Solo un administrador puede configurar el costo diario. Los montos se muestran cuando hay un precio cargado.
+          </div>
+        )}
 
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-sky-500/5 to-transparent rounded-2xl" />
@@ -809,7 +1047,17 @@ export default function AnalyticsPage() {
                   className="rounded-xl border border-slate-700/70 bg-slate-900/70 p-3"
                   data-testid={`card-agent-cost-summary-${item.agentId}`}
                 >
-                  <p className="text-sm font-semibold text-white mb-2">{item.agentName}</p>
+                  <div className="mb-2 flex items-center gap-2">
+                    <p className="min-w-0 truncate text-sm font-semibold text-white">{item.agentName}</p>
+                    <button
+                      type="button"
+                      onClick={() => setAgentDetailId(item.agentId)}
+                      className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-600/60 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition-all active:scale-95 hover:border-cyan-500/50 hover:text-white"
+                      data-testid={`button-agent-detail-${item.agentId}`}
+                    >
+                      <Eye className="h-3 w-3" /> Detalle
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <div className="rounded-lg border border-cyan-500/30 bg-slate-950/60 p-2.5">
                       <p className="text-[11px] uppercase tracking-wide text-cyan-300">Chats con inbound</p>
@@ -847,7 +1095,11 @@ export default function AnalyticsPage() {
             </div>
           )}
         </div>
+          </>
+        )}
 
+        {activeSection === "agentes" && (
+          <>
         {/* Agent Message Stats */}
         <div className="group bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-sm rounded-2xl p-5 border border-slate-700/50 shadow-xl shadow-black/20 relative overflow-hidden">
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-amber-500/5 to-transparent rounded-2xl" />
@@ -867,11 +1119,19 @@ export default function AnalyticsPage() {
                     className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-3"
                     data-testid={`card-agent-stats-mobile-${i}`}
                   >
-                    <div className="flex items-center justify-between border-b border-slate-700/50 pb-2 mb-2">
-                      <p className="font-semibold text-white">{row.agent_name}</p>
-                      <p className="text-xs text-slate-400">
-                        {formatShortDateFromIso(row.date)}
-                      </p>
+                    <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-700/50 pb-2">
+                      <p className="min-w-0 truncate font-semibold text-white">{row.agent_name}</p>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <p className="text-xs text-slate-400">{formatShortDateFromIso(row.date)}</p>
+                        <button
+                          type="button"
+                          onClick={() => setAgentDetailId(Number(row.agent_id))}
+                          className="rounded-full p-1 text-slate-400 transition-transform active:scale-90 hover:text-white"
+                          aria-label="Ver detalle del agente"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-1.5 text-sm">
                       <div className="flex items-center justify-between">
@@ -916,6 +1176,7 @@ export default function AnalyticsPage() {
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Chats inbound</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Total</th>
                       <th className="text-center py-2 px-2 text-slate-400 font-medium">Monto paralelo</th>
+                      <th className="text-center py-2 px-2 text-slate-400 font-medium">Detalle</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -930,6 +1191,16 @@ export default function AnalyticsPage() {
                         <td className="py-2 px-2 text-center text-violet-300 font-semibold whitespace-nowrap">
                           {row.parallel_cost_bs == null ? "N/D" : formatBs(Number(row.parallel_cost_bs))}
                         </td>
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setAgentDetailId(Number(row.agent_id))}
+                            className="inline-flex rounded-full p-1 text-slate-400 transition-transform active:scale-90 hover:text-white"
+                            aria-label="Ver detalle del agente"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     <tr className="border-t border-cyan-500/40 bg-cyan-500/10">
@@ -942,6 +1213,7 @@ export default function AnalyticsPage() {
                       <td className="py-2 px-2 text-center text-violet-300 font-bold whitespace-nowrap">
                         {selectedTotals.hasParallelCost ? formatBs(selectedTotals.parallelCostTotal) : "N/D"}
                       </td>
+                      <td className="py-2 px-2" />
                     </tr>
                   </tbody>
                 </table>
@@ -953,7 +1225,90 @@ export default function AnalyticsPage() {
             </div>
           )}
         </div>
+          </>
+        )}
+        </main>
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-700/60 bg-slate-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
+          {SECTIONS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveSection(key)}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 text-[10px] font-medium transition-all active:scale-90",
+                activeSection === key ? "bg-emerald-500/10 text-emerald-300" : "text-slate-400 hover:text-slate-200",
+              )}
+              data-testid={`button-analytics-section-${key}`}
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <Dialog open={agentDetailId != null} onOpenChange={(open) => { if (!open) setAgentDetailId(null); }}>
+        <DialogContent className="max-w-lg border-slate-700 bg-slate-900 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-cyan-400" />
+              {agentDetail?.agentName ?? "Detalle del agente"}
+            </DialogTitle>
+          </DialogHeader>
+          {agentDetail ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-cyan-300">Chats inbound</p>
+                  <p className="text-2xl font-bold tabular-nums">{agentDetail.inboundChats}</p>
+                </div>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-300">Mensajes totales</p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {agentDetailRows.reduce((acc, row) => acc + Number(row.incoming || 0) + Number(row.outgoing || 0), 0)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-violet-300">Costo paralelo</p>
+                  <p className="text-lg font-bold tabular-nums">{agentDetail.hasCost ? formatBs(agentDetail.parallelCostBs) : "N/D"}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-300">Costo USD</p>
+                  <p className="text-lg font-bold tabular-nums">{agentDetail.hasCost ? formatUsd(agentDetail.usdCost) : "N/D"}</p>
+                </div>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-700/60">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-900/95 text-[11px] uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-2 py-2 text-left font-medium">Fecha</th>
+                      <th className="px-2 py-2 text-center font-medium">Recibidos</th>
+                      <th className="px-2 py-2 text-center font-medium">Enviados</th>
+                      <th className="px-2 py-2 text-center font-medium">Inbound</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agentDetailRows.map((row, i) => (
+                      <tr key={`detail-${i}`} className="border-t border-slate-800/70">
+                        <td className="px-2 py-1.5 text-slate-300">{formatShortDateFromIso(row.date)}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold text-emerald-400">{row.incoming}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold text-cyan-400">{row.outgoing}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold text-sky-300">{row.inbound_chats}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">Ese agente no tiene datos en el periodo seleccionado.</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
