@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic, setStaticAssetHeaders } from "./static";
 import { ensureDatabaseSchema } from "./database-bootstrap";
 import { createServer } from "http";
+
+// deploy trigger
 import path from "path";
 import { fileURLToPath } from "url";
 
