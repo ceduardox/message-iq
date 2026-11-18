@@ -112,6 +112,45 @@ function normalizeAiProvider(value?: string | null): AiProvider {
   return "openai";
 }
 
+const WEEKDAY_LABEL_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+// Compact weekly business hours per channel, e.g. "Lun–Vie 08:00–12:00 y 14:00–18:00 | Sáb 08:00–12:00".
+// This is the source of truth for closing time; the slot list below is intentionally truncated.
+export function formatBusinessHours(blocks: Array<{ weekday: number; startTime: string; endTime: string }>): string {
+  const byDay = new Map<number, string[]>();
+  for (const b of blocks) {
+    const wd = Number(b.weekday);
+    if (!Number.isFinite(wd)) continue;
+    const range = `${String(b.startTime).slice(0, 5)}–${String(b.endTime).slice(0, 5)}`;
+    const list = byDay.get(wd) || [];
+    if (!list.includes(range)) list.push(range);
+    byDay.set(wd, list);
+  }
+
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const groups: Array<{ days: number[]; ranges: string[]; sig: string }> = [];
+  for (const wd of order) {
+    const ranges = (byDay.get(wd) || []).slice().sort();
+    if (ranges.length === 0) continue;
+    const sig = ranges.join("|");
+    const prev = groups[groups.length - 1];
+    const consecutive =
+      prev != null && order.indexOf(wd) === order.indexOf(prev.days[prev.days.length - 1]) + 1;
+    if (prev && consecutive && prev.sig === sig) prev.days.push(wd);
+    else groups.push({ days: [wd], ranges, sig });
+  }
+
+  if (groups.length === 0) return "sin atención configurada";
+  return groups
+    .map((g) => {
+      const first = WEEKDAY_LABEL_ES[g.days[0]];
+      const last = WEEKDAY_LABEL_ES[g.days[g.days.length - 1]];
+      const label = g.days.length > 1 ? `${first}–${last}` : first;
+      return `${label} ${g.ranges.join(" y ")}`;
+    })
+    .join(" | ");
+}
+
 // Build a short list of real free slots (up to 3 per sede) so the AI can offer and book them.
 // Each slot gets a short code (C1, N2...) that the AI emits as [CITA: C1]; the server resolves it.
 export async function getUpcomingAvailability(): Promise<{ context: string; slotsById: Record<string, { sede: string; startAt: string }> }> {
@@ -186,7 +225,8 @@ export async function getUpcomingAvailability(): Promise<{ context: string; slot
         const label = `${s.toLocaleDateString("es-BO", { weekday: "long", day: "2-digit", month: "short" })} ${s.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
         return `${code}=${label}`;
       });
-      lines.push(`Canal ${SEDE_LABEL[sede]}: ${parts.join(" | ")}`);
+      lines.push(`Canal ${SEDE_LABEL[sede]} — Horario de atención: ${formatBusinessHours(blocks)}`);
+      lines.push(`Canal ${SEDE_LABEL[sede]} — Cupos libres: ${parts.join(" | ")}`);
     }
     return { context: lines.join("\n"), slotsById };
   } catch (err) {
@@ -610,7 +650,7 @@ ${currentDateContext}
 - Un cierre esta "en proceso" cuando la llamada o cita con el Asesor Educativo ya se realizo y solo falta el cierre comercial.
 - Si NO puedes responder la pregunta con la información disponible, escribe exactamente [NECESITO_HUMANO] y no respondas nada más.
 - Si el cliente pide que lo llamen (cualquier forma: "llámenme", "me pueden llamar", "prefiero llamada", "que me llame", "quiero hablar por teléfono"), o menciona llamada telefónica, o detectas que una llamada cerraría la venta, escribe [LLAMAR] al final SIEMPRE. Recuerda: ya tienes su número de WhatsApp, NO le pidas número.
-${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas (ej: "el jueves 17 a las 15:00 o 16:00").\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1], [CITA: N2] o [CITA: V1]. Usa el codigo (C1, C2, N1, V1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Para CITA VIRTUAL, di "modalidad virtual (videollamada)" y NO menciones direccion. Para presencial, menciona la sede y su direccion.\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si en la lista hay horarios de manana Y de tarde, y el cliente pide un turno (ej. "por las tardes"), ofrece SOLO 2 opciones de ese turno (de los que aparecen en la lista). Si no hay de ese turno, dilo y ofrece los de otro turno.\n- Si no hay horario disponible, no uses [CITA:].\n- PARA LLAMADAS: usa SOLO estos mismos horarios. Si el cliente propone otro dia/hora que NO esta en la lista, NO confirmes; ofrece 2 opciones de la lista.\n- NUNCA confirmes (ni con [CITA:] ni con [LLAMAR]) un horario que no este en HORARIOS DISPONIBLES.` : ""}
+${availabilityContext ? `\n=== HORARIOS DISPONIBLES (usa SOLO estos, nunca inventes) ===\n${availabilityContext}\n- Ofrece 2 opciones concretas tomadas de la lista, con sus horas exactas.\n- El "Horario de atención" de cada canal es la UNICA fuente de verdad sobre los días y la hora de cierre. NUNCA deduzcas el cierre a partir del ultimo cupo listado (la lista esta recortada) ni inventes horarios fuera de ese rango.\n- Si preguntan "hasta que hora atienden" o por un dia/hora fuera del horario de atención, responde con el "Horario de atención" real y ofrece 2 cupos de la lista.\n- Cuando el cliente confirme CUALQUIERA de las opciones (ej: "si", "la primera", "15:00", "me sirve"), DEBES escribir al final EXACTAMENTE el codigo del horario elegido: [CITA: C1], [CITA: N2] o [CITA: V1]. Usa el codigo (C1, C2, N1, V1...) que aparece antes del "=".\n- Al confirmar, el texto debe AFIRMAR la reserva, NO volver a preguntar ni repetir la lista. Ejemplo: "¡Listo, Pepito! 🎉 Tu diagnóstico gratuito quedó reservado para el jueves 17 a las 15:00 en la Sede Norte (Av. Los Cusis #139). ¿Podrán venir ambos padres? 😊" seguido de [CITA: N1].\n- Para CITA VIRTUAL, di "modalidad virtual (videollamada)" y NO menciones direccion. Para presencial, menciona la sede y su direccion.\n- Si el cliente aun no eligio, ofrece 2 opciones y NO uses [CITA:] todavia.\n- Si en la lista hay horarios de manana Y de tarde, y el cliente pide un turno (ej. "por las tardes"), ofrece SOLO 2 opciones de ese turno (de los que aparecen en la lista). Si no hay de ese turno, dilo y ofrece los de otro turno.\n- Si no hay horario disponible, no uses [CITA:].\n- PARA LLAMADAS: usa SOLO estos mismos horarios. Si el cliente propone otro dia/hora que NO esta en la lista, NO confirmes; ofrece 2 opciones de la lista.\n- NUNCA confirmes (ni con [CITA:] ni con [LLAMAR]) un horario que no este en HORARIOS DISPONIBLES.` : ""}
 ${learnedRulesContext}
 ${productContext ? `\n=== PRODUCTOS ===\n${productContext}` : ""}`;
 
